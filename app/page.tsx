@@ -117,7 +117,7 @@ type Transaction = {
   kind: "entrada" | "saida";
 };
 
-const STORAGE_KEY = "pool-caixa-prototype-v2-cardapio-completo";
+const STORAGE_KEY = "pool-caixa-prototype-v3-requisitos-confirmados";
 const categories = [
   "Todos",
   "Hambúrgueres",
@@ -338,7 +338,7 @@ const DEMO_PRODUCTS: Product[] = [
   },
   {
     id: "guaracai",
-    name: "Guaraçaí 500 ml",
+    name: "Guaraçaí / Guaraná do Amazonas 500 ml",
     category: "Sobremesas",
     price: 8,
     stock: 12,
@@ -383,7 +383,7 @@ const DEMO_PRODUCTS: Product[] = [
   },
   {
     id: "coca-1l",
-    name: "Coca-Cola 1 L",
+    name: "Coca-Cola LS 1L",
     category: "Bebidas",
     price: 8.5,
     stock: 8,
@@ -480,8 +480,8 @@ function getGreeting(hour: number) {
   return "Boa noite";
 }
 
-const BUSINESS_HOURS = "Qua, Sex, Sáb e Dom • 16h–23h";
-const BUSINESS_DAYS = new Set(["Sun", "Wed", "Fri", "Sat"]);
+const BUSINESS_HOURS = "Qui, Sex, Sáb e Dom • 16h–23h";
+const BUSINESS_DAYS = new Set(["Sun", "Thu", "Fri", "Sat"]);
 
 function getRecifeClock(date: Date) {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -1405,7 +1405,7 @@ export default function Home() {
                 </div>
                 <div className="mt-3 flex h-40 items-end justify-around gap-3 border-b border-[#ebe5e1] px-2">
                   {[
-                    ["Qua", 38, 180],
+                    ["Qui", 38, 180],
                     ["Sex", 53, 252],
                     ["Sáb", 68, 322],
                     ["Dom", 91, 431],
