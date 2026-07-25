@@ -41,6 +41,7 @@ import {
   SkipBack,
   SkipForward,
   Sparkles,
+  Store,
   Upload,
   UserRound,
   Volume2,
@@ -59,7 +60,8 @@ type Product = {
     | "Salgados"
     | "Petiscos"
     | "Sobremesas"
-    | "Bebidas";
+    | "Bebidas"
+    | "Adicionais";
   price: number;
   stock: number;
   minimum: number;
@@ -115,7 +117,7 @@ type Transaction = {
   kind: "entrada" | "saida";
 };
 
-const STORAGE_KEY = "pool-caixa-prototype-v1";
+const STORAGE_KEY = "pool-caixa-prototype-v2-cardapio-completo";
 const categories = [
   "Todos",
   "Hambúrgueres",
@@ -123,6 +125,7 @@ const categories = [
   "Petiscos",
   "Sobremesas",
   "Bebidas",
+  "Adicionais",
 ] as const;
 
 const DEMO_PRODUCTS: Product[] = [
@@ -145,8 +148,8 @@ const DEMO_PRODUCTS: Product[] = [
     emoji: "🍔",
   },
   {
-    id: "xbacon",
-    name: "X-Bacon",
+    id: "xbacon-trad",
+    name: "X-Bacon tradicional",
     category: "Hambúrgueres",
     price: 14.99,
     stock: 14,
@@ -154,8 +157,17 @@ const DEMO_PRODUCTS: Product[] = [
     emoji: "🥓",
   },
   {
-    id: "xcalabresa",
-    name: "X-Calabresa",
+    id: "xbacon-art",
+    name: "X-Bacon artesanal",
+    category: "Hambúrgueres",
+    price: 19.99,
+    stock: 11,
+    minimum: 8,
+    emoji: "🥓",
+  },
+  {
+    id: "xcalabresa-trad",
+    name: "X-Calabresa tradicional",
     category: "Hambúrgueres",
     price: 14.99,
     stock: 17,
@@ -163,8 +175,17 @@ const DEMO_PRODUCTS: Product[] = [
     emoji: "🌭",
   },
   {
-    id: "xcheddar",
-    name: "X-Cheddar",
+    id: "xcalabresa-art",
+    name: "X-Calabresa artesanal",
+    category: "Hambúrgueres",
+    price: 19.99,
+    stock: 13,
+    minimum: 8,
+    emoji: "🌭",
+  },
+  {
+    id: "xcheddar-trad",
+    name: "X-Cheddar tradicional",
     category: "Hambúrgueres",
     price: 14.99,
     stock: 11,
@@ -172,11 +193,29 @@ const DEMO_PRODUCTS: Product[] = [
     emoji: "🧀",
   },
   {
-    id: "xtudo",
-    name: "X-Tudo",
+    id: "xcheddar-art",
+    name: "X-Cheddar artesanal",
+    category: "Hambúrgueres",
+    price: 19.99,
+    stock: 10,
+    minimum: 8,
+    emoji: "🧀",
+  },
+  {
+    id: "xtudo-trad",
+    name: "X-Tudo tradicional",
     category: "Hambúrgueres",
     price: 19.99,
     stock: 9,
+    minimum: 8,
+    emoji: "🍔",
+  },
+  {
+    id: "xtudo-art",
+    name: "X-Tudo artesanal",
+    category: "Hambúrgueres",
+    price: 24.99,
+    stock: 8,
     minimum: 8,
     emoji: "🍔",
   },
@@ -262,6 +301,51 @@ const DEMO_PRODUCTS: Product[] = [
     emoji: "🍦",
   },
   {
+    id: "sobremesa-200",
+    name: "Sobremesa gelada 200 g",
+    category: "Sobremesas",
+    price: 5,
+    stock: 18,
+    minimum: 8,
+    emoji: "🍧",
+  },
+  {
+    id: "sobremesa-500",
+    name: "Sobremesa gelada 500 g",
+    category: "Sobremesas",
+    price: 11,
+    stock: 12,
+    minimum: 6,
+    emoji: "🍧",
+  },
+  {
+    id: "moreninha",
+    name: "Moreninha",
+    category: "Sobremesas",
+    price: 4,
+    stock: 16,
+    minimum: 8,
+    emoji: "🍫",
+  },
+  {
+    id: "sundae",
+    name: "Sundae",
+    category: "Sobremesas",
+    price: 5,
+    stock: 14,
+    minimum: 6,
+    emoji: "🍨",
+  },
+  {
+    id: "guaracai",
+    name: "Guaraçaí 500 ml",
+    category: "Sobremesas",
+    price: 8,
+    stock: 12,
+    minimum: 6,
+    emoji: "🥤",
+  },
+  {
     id: "suco",
     name: "Suco da polpa",
     category: "Bebidas",
@@ -298,13 +382,58 @@ const DEMO_PRODUCTS: Product[] = [
     emoji: "💧",
   },
   {
-    id: "guarana",
+    id: "coca-1l",
+    name: "Coca-Cola 1 L",
+    category: "Bebidas",
+    price: 8.5,
+    stock: 8,
+    minimum: 6,
+    emoji: "🍶",
+  },
+  {
+    id: "guarana-1l",
     name: "Guaraná 1 L",
     category: "Bebidas",
     price: 8,
     stock: 7,
     minimum: 8,
     emoji: "🍶",
+  },
+  {
+    id: "brahma-litrao",
+    name: "Brahma litrão",
+    category: "Bebidas",
+    price: 10,
+    stock: 10,
+    minimum: 6,
+    emoji: "🍺",
+  },
+  {
+    id: "schin-litrao",
+    name: "Schin litrão",
+    category: "Bebidas",
+    price: 7,
+    stock: 10,
+    minimum: 6,
+    emoji: "🍺",
+  },
+  {
+    id: "guarana-caculinha",
+    name: "Guaraná caçulinha",
+    category: "Bebidas",
+    price: 2,
+    stock: 18,
+    minimum: 10,
+    emoji: "🥤",
+  },
+  {
+    id: "embalagem",
+    name: "Embalagem para viagem",
+    category: "Adicionais",
+    price: 1,
+    stock: 40,
+    minimum: 15,
+    emoji: "🥡",
   },
 ];
 
@@ -351,6 +480,64 @@ function getGreeting(hour: number) {
   return "Boa noite";
 }
 
+const BUSINESS_HOURS = "Qua, Sex, Sáb e Dom • 16h–23h";
+const BUSINESS_DAYS = new Set(["Sun", "Wed", "Fri", "Sat"]);
+
+function getRecifeClock(date: Date) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Recife",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const value = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+  return {
+    weekday: value("weekday"),
+    hour: Number(value("hour")),
+    minute: Number(value("minute")),
+  };
+}
+
+function getBusinessStatus(date: Date | null) {
+  if (!date) {
+    return {
+      label: "Consultando horário",
+      helper: BUSINESS_HOURS,
+      open: false,
+    };
+  }
+  const { weekday, hour, minute } = getRecifeClock(date);
+  if (!BUSINESS_DAYS.has(weekday)) {
+    return {
+      label: "Hoje não há atendimento",
+      helper: BUSINESS_HOURS,
+      open: false,
+    };
+  }
+  const currentMinutes = hour * 60 + minute;
+  if (currentMinutes < 16 * 60) {
+    return {
+      label: "Abre hoje às 16h",
+      helper: "Atendimento até 23h",
+      open: false,
+    };
+  }
+  if (currentMinutes < 23 * 60) {
+    return {
+      label: "Aberto agora",
+      helper: "Atendimento até 23h",
+      open: true,
+    };
+  }
+  return {
+    label: "Encerrado por hoje",
+    helper: BUSINESS_HOURS,
+    open: false,
+  };
+}
+
 function normalizeText(value: string) {
   return value
     .normalize("NFD")
@@ -368,8 +555,8 @@ function createDemoSales(): Sale[] {
       payment: "Pix",
       items: [
         {
-          productId: "xbacon",
-          name: "X-Bacon",
+          productId: "xbacon-trad",
+          name: "X-Bacon tradicional",
           price: 14.99,
           quantity: 2,
         },
@@ -428,8 +615,8 @@ function createDemoSales(): Sale[] {
       payment: "Pix",
       items: [
         {
-          productId: "xtudo",
-          name: "X-Tudo",
+          productId: "xtudo-trad",
+          name: "X-Tudo tradicional",
           price: 19.99,
           quantity: 1,
         },
@@ -667,6 +854,9 @@ export default function Home() {
       timeZone: "America/Recife",
     }).format(now);
   }, [now]);
+
+  const recifeHour = now ? getRecifeClock(now).hour : 15;
+  const businessStatus = getBusinessStatus(now);
 
   const currentTrack =
     currentTrackIndex >= 0 ? tracks[currentTrackIndex] : undefined;
@@ -1062,7 +1252,7 @@ export default function Home() {
                   Tudo pronto por aqui
                 </span>
                 <h1 className="mt-2 text-3xl font-extrabold tracking-[-.04em] sm:text-[40px]">
-                  {getGreeting(now?.getHours() ?? 15)}, Elaine!
+                  {getGreeting(recifeHour)}, Elaine!
                 </h1>
                 <p className="mt-2 max-w-[480px] text-xs leading-6 text-[#776f6b] sm:text-sm">
                   Acompanhe as vendas, o caixa e o estoque da Pool sem
@@ -1093,6 +1283,32 @@ export default function Home() {
                   alt=""
                   className="size-20 rounded-full object-cover sm:size-40"
                 />
+              </div>
+            </section>
+
+            <section className="flex flex-col gap-3 rounded-2xl border border-[#ebe5e1] bg-white p-4 shadow-[0_7px_22px_rgba(66,45,37,.035)] sm:flex-row sm:items-center">
+              <span
+                className={`grid size-11 shrink-0 place-items-center rounded-xl ${
+                  businessStatus.open
+                    ? "bg-[#eaf8f1] text-[#27865d]"
+                    : "bg-[#fff8de] text-[#a97300]"
+                }`}
+              >
+                <Store size={21} />
+              </span>
+              <div className="min-w-0 flex-1">
+                <span className="text-[9px] font-extrabold uppercase tracking-[.13em] text-[#9c928d]">
+                  Funcionamento confirmado
+                </span>
+                <div className="mt-0.5 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                  <strong className="text-sm">{businessStatus.label}</strong>
+                  <span className="text-[10px] text-[#776f6b]">
+                    {businessStatus.helper}
+                  </span>
+                </div>
+              </div>
+              <div className="rounded-xl bg-[#f7f5f2] px-3 py-2 text-[9px] font-bold text-[#6d6561]">
+                Cardápio revisado • {products.length} opções cadastradas
               </div>
             </section>
 
@@ -1190,9 +1406,9 @@ export default function Home() {
                 <div className="mt-3 flex h-40 items-end justify-around gap-3 border-b border-[#ebe5e1] px-2">
                   {[
                     ["Qua", 38, 180],
-                    ["Qui", 53, 252],
-                    ["Sex", 68, 322],
-                    ["Sáb", 91, 431],
+                    ["Sex", 53, 252],
+                    ["Sáb", 68, 322],
+                    ["Dom", 91, 431],
                     ["Hoje", Math.max(32, Math.min(90, revenue / 5)), revenue],
                   ].map(([day, height, value]) => (
                     <div
@@ -1364,7 +1580,7 @@ export default function Home() {
               </div>
               <span className="flex items-center gap-2 self-start rounded-full bg-white px-3 py-2 text-[10px] font-bold text-[#776f6b] shadow-sm sm:self-auto">
                 <CheckCircle2 size={16} className="text-[#27865d]" />
-                A baixa no estoque é automática
+                Baixa automática por item
               </span>
             </div>
 
@@ -1804,12 +2020,12 @@ export default function Home() {
               <Sparkles size={18} className="shrink-0 text-[#b27a00]" />
               <div>
                 <strong className="block text-[10px] text-[#8d6100]">
-                  Próxima evolução: ficha técnica dos lanches
+                  Modelo recomendado para a versão real
                 </strong>
                 <p className="mt-1 text-[9px] leading-4 text-[#8d6e2e]">
-                  Na versão definitiva, vender um X-Bacon poderá diminuir
-                  automaticamente pão, carne, queijo, ovo e bacon, em vez de
-                  controlar apenas o lanche pronto.
+                  Bebidas, pastel, coxinha e embalagens podem ser controlados
+                  por unidade. Já os hambúrgueres devem usar ficha técnica:
+                  vender um X-Bacon diminui pão, carne, queijo, ovo e bacon.
                 </p>
               </div>
             </div>
@@ -1882,7 +2098,7 @@ export default function Home() {
                 {
                   label: "Saldo em caixa",
                   value: cashBalance,
-                  helper: `Abertura: ${currency.format(openingBalance)}`,
+                  helper: `Abertura ilustrativa: ${currency.format(openingBalance)}`,
                   icon: WalletCards,
                   colors: "bg-[#f1eefc] text-[#7458b4]",
                 },
