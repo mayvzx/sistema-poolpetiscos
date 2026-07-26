@@ -100,7 +100,7 @@ npm run check
 
 ## Instalação no computador do caixa
 
-O usuário final deve executar somente `PoolPetiscos-Setup-1.0.0.exe`. O
+O usuário final deve executar somente `PoolPetiscos-Setup-1.0.1.exe`. O
 instalador prepara o aplicativo e oferece atalhos; Node.js, Python, yt-dlp e
 FFmpeg não precisam ser instalados separadamente.
 

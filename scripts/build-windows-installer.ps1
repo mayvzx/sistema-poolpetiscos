@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [ValidatePattern('^\d+\.\d+\.\d+(?:\.\d+)?$')]
-    [string]$Version = '1.0.0',
+    [string]$Version = '1.0.1',
     [string]$OutputDirectory = '',
     [string]$WorkDirectory = '',
     [string]$CertificateThumbprint = '',
@@ -329,6 +329,61 @@ function Invoke-CodeSigning {
         -Arguments @('verify', '/pa', '/all', $FilePath)
 }
 
+function Assert-RenderedAssetsAvailable {
+    param(
+        [Parameter(Mandatory)]
+        [string]$BaseUri,
+        [Parameter(Mandatory)]
+        [object]$PageResponse
+    )
+
+    $assetPattern = '(?i)(?:src|href)=["''](?<path>/assets/[^"''?#]+\.(?:css|js))(?:\?[^"'']*)?["'']'
+    $assetPaths = @(
+        [regex]::Matches([string]$PageResponse.Content, $assetPattern) |
+            ForEach-Object { $_.Groups['path'].Value } |
+            Sort-Object -Unique
+    )
+    if ($assetPaths.Count -eq 0) {
+        throw 'O HTML não referenciou nenhum arquivo CSS ou JavaScript em /assets/.'
+    }
+    if (-not ($assetPaths | Where-Object { $_ -match '(?i)\.css$' })) {
+        throw 'O HTML não referenciou o CSS compilado.'
+    }
+    if (-not ($assetPaths | Where-Object { $_ -match '(?i)\.js$' })) {
+        throw 'O HTML não referenciou o JavaScript compilado.'
+    }
+
+    $origin = [Uri]$BaseUri
+    foreach ($assetPath in $assetPaths) {
+        $assetUri = [Uri]::new($origin, $assetPath)
+        $assetResponse = Invoke-WebRequest `
+            -UseBasicParsing `
+            -Uri $assetUri.AbsoluteUri `
+            -TimeoutSec 10
+        if ($assetResponse.StatusCode -ne 200) {
+            throw "O asset '$assetPath' respondeu com HTTP $($assetResponse.StatusCode)."
+        }
+
+        $contentType = [string]$assetResponse.Headers['Content-Type']
+        if (
+            $assetPath -match '(?i)\.css$' -and
+            $contentType -notmatch '(?i)^text/css(?:;|$)'
+        ) {
+            throw "O asset CSS '$assetPath' respondeu com o tipo '$contentType'."
+        }
+        if (
+            $assetPath -match '(?i)\.js$' -and
+            $contentType -notmatch '(?i)(?:javascript|ecmascript)'
+        ) {
+            throw "O asset JavaScript '$assetPath' respondeu com o tipo '$contentType'."
+        }
+    }
+
+    Write-Host (
+        "Assets do site validados: $($assetPaths.Count) arquivo(s) CSS/JavaScript."
+    )
+}
+
 function Test-StandaloneSite {
     param(
         [Parameter(Mandatory)]
@@ -364,15 +419,16 @@ function Test-StandaloneSite {
     try {
         $deadline = (Get-Date).AddSeconds(30)
         $ready = $false
+        $pageResponse = $null
         do {
             if ($process.HasExited) {
                 break
             }
             try {
-                Invoke-WebRequest `
+                $pageResponse = Invoke-WebRequest `
                     -UseBasicParsing `
                     -Uri "http://127.0.0.1:$port/" `
-                    -TimeoutSec 2 | Out-Null
+                    -TimeoutSec 2
                 $ready = $true
             }
             catch {
@@ -382,6 +438,9 @@ function Test-StandaloneSite {
         if (-not $ready) {
             throw 'O site standalone não respondeu no smoke test.'
         }
+        Assert-RenderedAssetsAvailable `
+            -BaseUri "http://127.0.0.1:$port/" `
+            -PageResponse $pageResponse
     }
     finally {
         if (-not $process.HasExited) {
@@ -439,6 +498,7 @@ function Test-PackagedLauncher {
     try {
         $deadline = (Get-Date).AddSeconds(60)
         $ready = $false
+        $pageResponse = $null
         do {
             if ($launcherProcess.HasExited) {
                 break
@@ -447,11 +507,15 @@ function Test-PackagedLauncher {
                 $health = Invoke-RestMethod `
                     -Uri "http://127.0.0.1:$companionPort/api/health" `
                     -TimeoutSec 2
-                Invoke-WebRequest `
+                $pageResponse = Invoke-WebRequest `
                     -UseBasicParsing `
                     -Uri "http://127.0.0.1:$sitePort/" `
-                    -TimeoutSec 2 | Out-Null
-                $ready = $health.service -eq 'Pool Petiscos Companion'
+                    -TimeoutSec 2
+                $ready = (
+                    $health.service -eq 'Pool Petiscos Companion' -and
+                    $health.yt_dlp -eq $true -and
+                    $health.ffmpeg -eq $true
+                )
             }
             catch {
                 Start-Sleep -Milliseconds 500
@@ -460,6 +524,9 @@ function Test-PackagedLauncher {
         if (-not $ready) {
             throw 'O launcher empacotado não iniciou os dois serviços no smoke test.'
         }
+        Assert-RenderedAssetsAvailable `
+            -BaseUri "http://127.0.0.1:$sitePort/" `
+            -PageResponse $pageResponse
     }
     finally {
         if (-not $launcherProcess.HasExited) {
@@ -511,28 +578,9 @@ try {
     }
     Invoke-NativeCommand -FilePath $npmPath -Arguments @('run', 'check')
 
-    $standaloneCode = @'
-(async () => {
-  const path = (await import("node:path")).default;
-  const { pathToFileURL } = await import("node:url");
-  const moduleUrl = pathToFileURL(path.resolve("node_modules/vinext/dist/build/standalone.js")).href;
-  const { emitStandaloneOutput } = await import(moduleUrl);
-  emitStandaloneOutput({
-    root: process.cwd(),
-    outDir: path.resolve("dist"),
-    vinextPackageRoot: path.resolve("node_modules/vinext")
-  });
-})().catch((error) => { console.error(error); process.exit(1); });
-'@
-    $env:POOL_PETISCOS_STANDALONE_CODE = $standaloneCode
-    try {
-        Invoke-NativeCommand `
-            -FilePath (Get-CommandPath -Names @('node.exe', 'node')) `
-            -Arguments @('--eval', 'eval(process.env.POOL_PETISCOS_STANDALONE_CODE)')
-    }
-    finally {
-        Remove-Item Env:POOL_PETISCOS_STANDALONE_CODE -ErrorAction SilentlyContinue
-    }
+    Invoke-NativeCommand `
+        -FilePath (Get-CommandPath -Names @('node.exe', 'node')) `
+        -Arguments @((Join-Path $projectRoot 'scripts\prepare-standalone.mjs'))
 }
 finally {
     Pop-Location

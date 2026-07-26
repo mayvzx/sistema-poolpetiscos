@@ -53,6 +53,7 @@ import {
   X,
 } from "lucide-react";
 import Image from "next/image";
+import { StartupScreen } from "./startup-screen";
 import {
   buildDailyRevenue,
   calculateCashBalance,
@@ -1614,26 +1615,7 @@ export default function PoolPetiscosApp() {
   }
 
   if (!hydrated) {
-    return (
-      <main className="grid min-h-screen place-items-center bg-[#f7f5f2] p-6">
-        <div role="status" className="text-center">
-          <Image
-            src="/pool-logo-round.jpg"
-            alt=""
-            width={80}
-            height={80}
-            unoptimized
-            className="mx-auto size-20 rounded-full object-cover shadow-lg"
-          />
-          <strong className="mt-4 block text-sm">
-            Preparando o caixa da Pool…
-          </strong>
-          <span className="mt-1 block text-xs text-[#6d6561]">
-            Preparando o sistema.
-          </span>
-        </div>
-      </main>
-    );
+    return <StartupScreen />;
   }
 
   return (

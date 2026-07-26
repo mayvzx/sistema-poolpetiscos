@@ -30,6 +30,11 @@ test("renderiza a identidade da Pool sem metadados de rascunho", async () => {
   const html = await response.text();
   assert.match(html, /<html[^>]*lang=["']pt-BR["']/i);
   assert.match(html, /Pool Petiscos &amp; Lanches/i);
-  assert.match(html, /Preparando o caixa da Pool/i);
+  assert.match(html, /id=["']pool-startup["']/i);
+  assert.match(html, /Abrindo o caixa/i);
+  assert.match(html, /Conectando os dados deste computador/i);
+  assert.match(html, /data-pool-startup-critical/i);
+  assert.match(html, /data-testid=["']startup-progress["']/i);
+  assert.match(html, /Tentar novamente/i);
   assert.doesNotMatch(html, /codex-preview/i);
 });

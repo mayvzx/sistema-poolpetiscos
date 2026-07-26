@@ -1,6 +1,6 @@
 {
   "name": "pool-petiscos-caixa",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "engines": {
     "node": ">=22.13.0"
@@ -10,7 +10,7 @@
     "dev": "vite",
     "build": "node scripts/build.mjs",
     "start": "vinext start",
-    "test": "node --import tsx --test tests/domain.test.ts && npm run build && node --test tests/rendered-html.test.mjs",
+    "test": "node --import tsx --test tests/domain.test.ts && node --test tests/standalone-patch.test.mjs && npm run build && node --test tests/rendered-html.test.mjs",
     "typecheck": "tsc --noEmit",
     "validate:artifact": "node scripts/validate-artifact.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",

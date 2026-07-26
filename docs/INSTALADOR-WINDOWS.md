@@ -65,7 +65,7 @@ Use somente para validação interna:
 
 ```powershell
 .\scripts\build-windows-installer.ps1 `
-  -Version 1.0.0 `
+  -Version 1.0.1 `
   -UnsignedPrototype
 ```
 
@@ -73,7 +73,7 @@ O script exige a opção `-UnsignedPrototype`; ele não produz silenciosamente u
 executável que pareça assinado. A saída mostra um aviso claro e fica em:
 
 ```text
-build\windows\installer\PoolPetiscos-Setup-1.0.0.exe
+build\windows\installer\PoolPetiscos-Setup-1.0.1.exe
 ```
 
 Cache e stage são mantidos fora de pastas sincronizadas para evitar bloqueios
@@ -89,7 +89,7 @@ Para manter a árvore usada pelo Inno Setup e poder revisá-la:
 
 ```powershell
 .\scripts\build-windows-installer.ps1 `
-  -Version 1.0.0 `
+  -Version 1.0.1 `
   -UnsignedPrototype `
   -KeepStage
 ```
@@ -103,7 +103,7 @@ Exemplo com o repositório do usuário atual:
 
 ```powershell
 .\scripts\build-windows-installer.ps1 `
-  -Version 1.0.0 `
+  -Version 1.0.1 `
   -CertificateThumbprint '0123456789ABCDEF0123456789ABCDEF01234567' `
   -CertificateStoreLocation CurrentUser
 ```
@@ -112,7 +112,7 @@ Para um certificado instalado no repositório da máquina:
 
 ```powershell
 .\scripts\build-windows-installer.ps1 `
-  -Version 1.0.0 `
+  -Version 1.0.1 `
   -CertificateThumbprint '0123456789ABCDEF0123456789ABCDEF01234567' `
   -CertificateStoreLocation LocalMachine
 ```
