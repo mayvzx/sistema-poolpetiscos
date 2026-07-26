@@ -76,6 +76,15 @@ executável que pareça assinado. A saída mostra um aviso claro e fica em:
 build\windows\installer\PoolPetiscos-Setup-1.0.0.exe
 ```
 
+Cache e stage são mantidos fora de pastas sincronizadas para evitar bloqueios
+do OneDrive durante o empacotamento:
+
+```text
+%LOCALAPPDATA%\PoolPetiscos\installer-build
+```
+
+Outro local pode ser informado com `-WorkDirectory`.
+
 Para manter a árvore usada pelo Inno Setup e poder revisá-la:
 
 ```powershell

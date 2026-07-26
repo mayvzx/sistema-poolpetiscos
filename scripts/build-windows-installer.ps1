@@ -3,6 +3,7 @@ param(
     [ValidatePattern('^\d+\.\d+\.\d+(?:\.\d+)?$')]
     [string]$Version = '1.0.0',
     [string]$OutputDirectory = '',
+    [string]$WorkDirectory = '',
     [string]$CertificateThumbprint = '',
     [ValidateSet('CurrentUser', 'LocalMachine')]
     [string]$CertificateStoreLocation = 'CurrentUser',
@@ -20,8 +21,18 @@ if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
     $OutputDirectory = Join-Path $projectRoot 'build\windows'
 }
 $OutputDirectory = [System.IO.Path]::GetFullPath($OutputDirectory)
-$cacheDirectory = Join-Path $OutputDirectory 'cache'
-$stageDirectory = Join-Path $OutputDirectory 'stage'
+if ([string]::IsNullOrWhiteSpace($WorkDirectory)) {
+    $localBuildRoot = if ($env:LOCALAPPDATA) {
+        $env:LOCALAPPDATA
+    }
+    else {
+        [System.IO.Path]::GetTempPath()
+    }
+    $WorkDirectory = Join-Path $localBuildRoot 'PoolPetiscos\installer-build'
+}
+$WorkDirectory = [System.IO.Path]::GetFullPath($WorkDirectory)
+$cacheDirectory = Join-Path $WorkDirectory 'cache'
+$stageDirectory = Join-Path $WorkDirectory 'stage'
 $installerOutputDirectory = Join-Path $OutputDirectory 'installer'
 $lockPath = Join-Path $projectRoot 'installer\dependencies.lock.json'
 $requirementsPath = Join-Path $projectRoot 'installer\requirements-build.txt'
@@ -481,8 +492,9 @@ if ($RefreshDependencyLock) {
 }
 
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
+New-Item -ItemType Directory -Path $WorkDirectory -Force | Out-Null
 New-Item -ItemType Directory -Path $cacheDirectory -Force | Out-Null
-Reset-ChildDirectory -Path $stageDirectory -Parent $OutputDirectory
+Reset-ChildDirectory -Path $stageDirectory -Parent $WorkDirectory
 Reset-ChildDirectory -Path $installerOutputDirectory -Parent $OutputDirectory
 
 $dependencyLock = Get-Content -LiteralPath $lockPath -Raw | ConvertFrom-Json
@@ -731,7 +743,7 @@ if ($signingContext) {
 $setupHash = (Get-FileHash -LiteralPath $setupPath -Algorithm SHA256).Hash
 
 if (-not $KeepStage) {
-    Reset-ChildDirectory -Path $stageDirectory -Parent $OutputDirectory
+    Reset-ChildDirectory -Path $stageDirectory -Parent $WorkDirectory
     Remove-Item -LiteralPath $stageDirectory -Force
 }
 
