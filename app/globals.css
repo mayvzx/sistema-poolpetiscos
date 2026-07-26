@@ -18,8 +18,8 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family:
-    Inter, ui-rounded, "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont,
-    sans-serif;
+    var(--font-geist-sans), "Segoe UI", system-ui, -apple-system,
+    BlinkMacSystemFont, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -39,8 +39,9 @@ button:focus-visible,
 a:focus-visible,
 input:focus-visible,
 select:focus-visible {
-  outline: 3px solid rgba(217, 32, 44, 0.2);
+  outline: 3px solid #d9202c;
   outline-offset: 2px;
+  box-shadow: 0 0 0 5px rgba(255, 255, 255, 0.95);
 }
 
 .no-scrollbar {

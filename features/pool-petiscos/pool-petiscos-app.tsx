@@ -1,0 +1,3037 @@
+"use client";
+
+import {
+  type ChangeEvent,
+  type FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  AlertTriangle,
+  ArrowDownRight,
+  ArrowUpRight,
+  Banknote,
+  Bell,
+  Bluetooth,
+  Boxes,
+  CalendarDays,
+  Check,
+  CheckCircle2,
+  ChevronRight,
+  CircleDollarSign,
+  Clock3,
+  CreditCard,
+  Download,
+  ExternalLink,
+  FileAudio,
+  LayoutDashboard,
+  ListMusic,
+  Minus,
+  Music2,
+  Package,
+  Pause,
+  Play,
+  Plus,
+  QrCode,
+  ReceiptText,
+  RotateCcw,
+  Search,
+  ShoppingCart,
+  SkipBack,
+  SkipForward,
+  Sparkles,
+  Store,
+  Upload,
+  UserRound,
+  Volume2,
+  WalletCards,
+  X,
+} from "lucide-react";
+import Image from "next/image";
+import {
+  buildDailyRevenue,
+  calculateCashBalance,
+  createRecordId,
+  currency,
+  formatDateKey,
+  formatTime,
+  getBusinessStatus,
+  getGreeting,
+  getRecifeClock,
+  normalizeText,
+  parseAmount,
+  RECIFE_TIME_ZONE,
+  roundMoney,
+  shortCurrency,
+} from "./domain";
+import {
+  createDemoExpenses,
+  createDemoSales,
+  DEMO_PRODUCTS,
+} from "./demo-data";
+import {
+  createBackup,
+  parseBackup,
+  parseStoredState,
+  STORAGE_KEY,
+} from "./persistence";
+import type {
+  CartItem,
+  CashClosure,
+  CashMovement,
+  Expense,
+  PaymentMethod,
+  PersistedPoolState,
+  Product,
+  Sale,
+  SaleItem,
+  Toast,
+  Track,
+  Transaction,
+  View,
+} from "./types";
+
+const categories = [
+  "Todos",
+  "Hambúrgueres",
+  "Salgados",
+  "Petiscos",
+  "Sobremesas",
+  "Bebidas",
+  "Adicionais",
+] as const;
+
+const navigation = [
+  { id: "inicio" as const, label: "Início", icon: LayoutDashboard },
+  { id: "venda" as const, label: "Nova venda", icon: ShoppingCart },
+  { id: "estoque" as const, label: "Estoque", icon: Package },
+  { id: "financeiro" as const, label: "Financeiro", icon: WalletCards },
+  { id: "musica" as const, label: "Músicas", icon: Music2, badge: "Beta" },
+];
+
+const views = new Set<View>(navigation.map((item) => item.id));
+
+function viewFromLocation(): View | null {
+  const candidate = window.location.hash.replace(/^#/, "");
+  return views.has(candidate as View) ? (candidate as View) : null;
+}
+
+export default function PoolPetiscosApp() {
+  const [activeView, setActiveView] = useState<View>("inicio");
+  const [now, setNow] = useState<Date | null>(null);
+  const [products, setProducts] = useState<Product[]>(DEMO_PRODUCTS);
+  const [sales, setSales] = useState<Sale[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [cashOpen, setCashOpen] = useState(true);
+  const [openingBalance, setOpeningBalance] = useState(100);
+  const [cashOpenedAt, setCashOpenedAt] = useState(() => Date.now() - 2 * 60 * 60_000);
+  const [cashMovements, setCashMovements] = useState<CashMovement[]>([]);
+  const [cashClosures, setCashClosures] = useState<CashClosure[]>([]);
+  const [hydrated, setHydrated] = useState(false);
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [saleSearch, setSaleSearch] = useState("");
+  const [category, setCategory] = useState<(typeof categories)[number]>("Todos");
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("Pix");
+  const [cashReceived, setCashReceived] = useState("");
+  const [stockSearch, setStockSearch] = useState("");
+  const [stockFilter, setStockFilter] = useState<"Todos" | "Baixo" | "Normal">(
+    "Todos",
+  );
+  const [modal, setModal] = useState<
+    "stock" | "expense" | "cash-open" | "cash-close" | "cash-movement" | null
+  >(null);
+  const [stockForm, setStockForm] = useState({
+    productId: DEMO_PRODUCTS[0].id,
+    quantity: "10",
+    cost: "",
+    payment: "Dinheiro" as PaymentMethod,
+  });
+  const [expenseForm, setExpenseForm] = useState({
+    description: "",
+    category: "Matéria-prima",
+    amount: "",
+    payment: "Dinheiro" as PaymentMethod,
+  });
+  const [cashOpenForm, setCashOpenForm] = useState("100");
+  const [cashCloseForm, setCashCloseForm] = useState("");
+  const [cashMovementForm, setCashMovementForm] = useState({
+    kind: "sangria" as CashMovement["kind"],
+    description: "",
+    amount: "",
+  });
+  const [toast, setToast] = useState<Toast | null>(null);
+  const [tracks, setTracks] = useState<Track[]>([]);
+  const [currentTrackIndex, setCurrentTrackIndex] = useState(-1);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [volume, setVolume] = useState(70);
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const mainRef = useRef<HTMLElement>(null);
+  const previousViewRef = useRef<View>("inicio");
+  const toastTimerRef = useRef<number | null>(null);
+  const persistenceWarningRef = useRef(false);
+  const tracksRef = useRef<Track[]>([]);
+
+  const navigateTo = useCallback((view: View) => {
+    setActiveView(view);
+    if (window.location.hash !== `#${view}`) {
+      window.history.pushState(null, "", `#${view}`);
+    }
+  }, []);
+
+  const showToast = useCallback(
+    (message: string, tone: Toast["tone"] = "success") => {
+      setToast({ message, tone });
+      if (toastTimerRef.current !== null) {
+        window.clearTimeout(toastTimerRef.current);
+      }
+      toastTimerRef.current = window.setTimeout(() => {
+        setToast(null);
+        toastTimerRef.current = null;
+      }, 3200);
+    },
+    [],
+  );
+
+  const restorePoolState = useCallback((state: PersistedPoolState) => {
+    setProducts(state.products);
+    setSales(state.sales);
+    setExpenses(state.expenses);
+    setCashOpen(state.cashOpen);
+    setOpeningBalance(state.openingBalance);
+    setCashOpenForm(String(state.openingBalance));
+    setCashOpenedAt(state.cashOpenedAt);
+    setCashMovements(state.cashMovements);
+    setCashClosures(state.cashClosures);
+    setCart([]);
+    setCashReceived("");
+  }, []);
+
+  useEffect(() => {
+    const updateClock = () => setNow(new Date());
+    updateClock();
+    const timer = window.setInterval(updateClock, 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const syncViewWithLocation = () => {
+      const view = viewFromLocation();
+      if (view) setActiveView(view);
+    };
+    syncViewWithLocation();
+    window.addEventListener("popstate", syncViewWithLocation);
+    return () => window.removeEventListener("popstate", syncViewWithLocation);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    window.queueMicrotask(() => {
+      if (cancelled) return;
+      const saved = window.localStorage.getItem(STORAGE_KEY);
+      const parsed = parseStoredState(saved);
+      if (parsed) {
+        restorePoolState(parsed);
+      } else {
+        setSales(createDemoSales());
+        setExpenses(createDemoExpenses());
+        if (saved) {
+          showToast(
+            "Os dados locais estavam inválidos e foram substituídos pela demonstração.",
+            "warning",
+          );
+        }
+      }
+      setHydrated(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [restorePoolState, showToast]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      window.localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({
+          products,
+          sales,
+          expenses,
+          cashOpen,
+          openingBalance,
+          cashOpenedAt,
+          cashMovements,
+          cashClosures,
+        } satisfies PersistedPoolState),
+      );
+      persistenceWarningRef.current = false;
+    } catch {
+      if (!persistenceWarningRef.current) {
+        persistenceWarningRef.current = true;
+        showToast(
+          "Não foi possível salvar neste navegador. Exporte um backup antes de continuar.",
+          "warning",
+        );
+      }
+    }
+  }, [
+    cashClosures,
+    cashMovements,
+    cashOpen,
+    cashOpenedAt,
+    expenses,
+    hydrated,
+    openingBalance,
+    products,
+    sales,
+    showToast,
+  ]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    const syncFromAnotherTab = (event: StorageEvent) => {
+      if (event.key !== STORAGE_KEY || !event.newValue) return;
+      const state = parseStoredState(event.newValue);
+      if (!state) return;
+      restorePoolState(state);
+      showToast(
+        "Os dados foram atualizados por outra aba. A comanda atual foi limpa.",
+        "info",
+      );
+    };
+    window.addEventListener("storage", syncFromAnotherTab);
+    return () => window.removeEventListener("storage", syncFromAnotherTab);
+  }, [hydrated, restorePoolState, showToast]);
+
+  useEffect(() => {
+    tracksRef.current = tracks;
+  }, [tracks]);
+
+  useEffect(
+    () => () => {
+      if (toastTimerRef.current !== null) {
+        window.clearTimeout(toastTimerRef.current);
+      }
+      tracksRef.current.forEach((track) => URL.revokeObjectURL(track.url));
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!modal) return;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.queueMicrotask(() => dialogRef.current?.focus());
+
+    const handleDialogKeyboard = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setModal(null);
+        return;
+      }
+      if (event.key !== "Tab" || !dialogRef.current) return;
+      const focusable = Array.from(
+        dialogRef.current.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), input:not([disabled]), select:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+        ),
+      );
+      if (!focusable.length) {
+        event.preventDefault();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable.at(-1) ?? first;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener("keydown", handleDialogKeyboard);
+    return () => {
+      window.removeEventListener("keydown", handleDialogKeyboard);
+      document.body.style.overflow = previousOverflow;
+      previouslyFocused?.focus();
+    };
+  }, [modal]);
+
+  useEffect(() => {
+    if (
+      !hydrated ||
+      previousViewRef.current === activeView
+    ) {
+      return;
+    }
+    previousViewRef.current = activeView;
+    const frame = window.requestAnimationFrame(() => {
+      const heading = mainRef.current?.querySelector<HTMLElement>("h1");
+      if (!heading) return;
+      heading.tabIndex = -1;
+      heading.focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeView, hydrated]);
+
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.volume = volume / 100;
+  }, [volume]);
+
+  const todayKey = now ? formatDateKey(now.getTime()) : "";
+  const todaySales = useMemo(
+    () =>
+      todayKey
+        ? sales.filter((sale) => formatDateKey(sale.timestamp) === todayKey)
+        : [],
+    [sales, todayKey],
+  );
+  const todayExpenses = useMemo(
+    () =>
+      todayKey
+        ? expenses.filter(
+            (expense) => formatDateKey(expense.timestamp) === todayKey,
+          )
+        : [],
+    [expenses, todayKey],
+  );
+  const dailyRevenue = useMemo(
+    () => (todayKey ? buildDailyRevenue(sales) : []),
+    [sales, todayKey],
+  );
+  const recentRevenue = useMemo(
+    () => dailyRevenue.reduce((total, day) => total + day.total, 0),
+    [dailyRevenue],
+  );
+  const recentSalesCount = useMemo(() => {
+    const visibleDays = new Set(dailyRevenue.map((day) => day.key));
+    return sales.filter((sale) => visibleDays.has(formatDateKey(sale.timestamp)))
+      .length;
+  }, [dailyRevenue, sales]);
+  const maxDailyRevenue = Math.max(
+    1,
+    ...dailyRevenue.map((day) => day.total),
+  );
+  const revenue = useMemo(
+    () => todaySales.reduce((total, sale) => total + sale.total, 0),
+    [todaySales],
+  );
+  const expenseTotal = useMemo(
+    () => todayExpenses.reduce((total, expense) => total + expense.amount, 0),
+    [todayExpenses],
+  );
+  const ticketAverage = todaySales.length ? revenue / todaySales.length : 0;
+  const sessionSales = useMemo(
+    () => sales.filter((sale) => sale.timestamp >= cashOpenedAt),
+    [cashOpenedAt, sales],
+  );
+  const sessionExpenses = useMemo(
+    () => expenses.filter((expense) => expense.timestamp >= cashOpenedAt),
+    [cashOpenedAt, expenses],
+  );
+  const sessionMovements = useMemo(
+    () =>
+      cashMovements.filter((movement) => movement.timestamp >= cashOpenedAt),
+    [cashMovements, cashOpenedAt],
+  );
+  const cashSalesTotal = useMemo(
+    () =>
+      sessionSales
+        .filter((sale) => sale.payment === "Dinheiro")
+        .reduce((total, sale) => total + sale.total, 0),
+    [sessionSales],
+  );
+  const cashExpenseTotal = useMemo(
+    () =>
+      sessionExpenses
+        .filter((expense) => expense.payment === "Dinheiro")
+        .reduce((total, expense) => total + expense.amount, 0),
+    [sessionExpenses],
+  );
+  const cashMovementTotal = useMemo(
+    () =>
+      sessionMovements.reduce(
+        (total, movement) =>
+          total +
+          (movement.kind === "suprimento" ? movement.amount : -movement.amount),
+        0,
+      ),
+    [sessionMovements],
+  );
+  const cashBalance = calculateCashBalance({
+    openingBalance,
+    cashSalesTotal,
+    cashExpenseTotal,
+    cashMovementTotal,
+  });
+  const lowStock = useMemo(
+    () => products.filter((product) => product.stock <= product.minimum),
+    [products],
+  );
+
+  const cartDetails = useMemo(
+    () =>
+      cart
+        .map((item) => {
+          const product = products.find(
+            (candidate) => candidate.id === item.productId,
+          );
+          return product ? { ...item, product } : null;
+        })
+        .filter(
+          (
+            item,
+          ): item is CartItem & {
+            product: Product;
+          } => Boolean(item),
+        ),
+    [cart, products],
+  );
+
+  const cartTotal = useMemo(
+    () =>
+      roundMoney(
+        cartDetails.reduce(
+        (total, item) => total + item.product.price * item.quantity,
+        0,
+        ),
+      ),
+    [cartDetails],
+  );
+  const cashReceivedAmount = parseAmount(cashReceived);
+  const cashPaymentInvalid =
+    paymentMethod === "Dinheiro" &&
+    (!Number.isFinite(cashReceivedAmount) ||
+      cashReceivedAmount + Number.EPSILON < cartTotal);
+
+  const filteredProducts = useMemo(() => {
+    const query = normalizeText(saleSearch);
+    return products.filter(
+      (product) =>
+        (category === "Todos" || product.category === category) &&
+        (!query || normalizeText(product.name).includes(query)),
+    );
+  }, [category, products, saleSearch]);
+
+  const filteredStock = useMemo(() => {
+    const query = normalizeText(stockSearch);
+    return products.filter((product) => {
+      const matchesSearch =
+        !query || normalizeText(product.name).includes(query);
+      const isLow = product.stock <= product.minimum;
+      const matchesStatus =
+        stockFilter === "Todos" ||
+        (stockFilter === "Baixo" && isLow) ||
+        (stockFilter === "Normal" && !isLow);
+      return matchesSearch && matchesStatus;
+    });
+  }, [products, stockFilter, stockSearch]);
+
+  const transactions = useMemo<Transaction[]>(
+    () =>
+      [
+        ...todaySales.map((sale) => ({
+          id: sale.id,
+          timestamp: sale.timestamp,
+          description: `Venda ${sale.id}`,
+          detail: `${sale.items.reduce((sum, item) => sum + item.quantity, 0)} item(ns) • ${sale.payment}`,
+          amount: sale.total,
+          kind: "entrada" as const,
+        })),
+        ...todayExpenses.map((expense) => ({
+          id: expense.id,
+          timestamp: expense.timestamp,
+          description: expense.description,
+          detail: `${expense.category} • ${expense.payment}`,
+          amount: expense.amount,
+          kind: "saida" as const,
+        })),
+        ...cashMovements
+          .filter(
+            (movement) =>
+              todayKey &&
+              formatDateKey(movement.timestamp) === todayKey,
+          )
+          .map((movement) => ({
+            id: movement.id,
+            timestamp: movement.timestamp,
+            description: movement.description,
+            detail:
+              movement.kind === "suprimento"
+                ? "Suprimento de caixa"
+                : "Sangria de caixa",
+            amount: movement.amount,
+            kind:
+              movement.kind === "suprimento"
+                ? ("entrada" as const)
+                : ("saida" as const),
+          })),
+      ].sort((a, b) => b.timestamp - a.timestamp),
+    [cashMovements, todayExpenses, todayKey, todaySales],
+  );
+
+  const paymentTotals = useMemo(() => {
+    const totals: Record<PaymentMethod, number> = {
+      Pix: 0,
+      Dinheiro: 0,
+      Cartão: 0,
+    };
+    todaySales.forEach((sale) => {
+      totals[sale.payment] += sale.total;
+    });
+    return totals;
+  }, [todaySales]);
+
+  const dateLabel = useMemo(() => {
+    if (!now) return "Carregando data...";
+    return new Intl.DateTimeFormat("pt-BR", {
+      weekday: "long",
+      day: "2-digit",
+      month: "long",
+      timeZone: RECIFE_TIME_ZONE,
+    }).format(now);
+  }, [now]);
+
+  const timeLabel = useMemo(() => {
+    if (!now) return "--:--";
+    return new Intl.DateTimeFormat("pt-BR", {
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: RECIFE_TIME_ZONE,
+    }).format(now);
+  }, [now]);
+
+  const recifeHour = now ? getRecifeClock(now).hour : 15;
+  const businessStatus = getBusinessStatus(now);
+
+  const currentTrack =
+    currentTrackIndex >= 0 ? tracks[currentTrackIndex] : undefined;
+  const modalContent = modal
+    ? {
+        stock: {
+          eyebrow: "Reposição",
+          title: "Registrar entrada",
+          aria: "Registrar entrada de estoque",
+        },
+        expense: {
+          eyebrow: "Financeiro",
+          title: "Registrar saída",
+          aria: "Registrar saída financeira",
+        },
+        "cash-open": {
+          eyebrow: "Caixa",
+          title: "Abrir caixa",
+          aria: "Abrir caixa",
+        },
+        "cash-close": {
+          eyebrow: "Caixa",
+          title: "Fechar caixa",
+          aria: "Fechar caixa",
+        },
+        "cash-movement": {
+          eyebrow: "Dinheiro físico",
+          title: "Movimentar caixa",
+          aria: "Registrar sangria ou suprimento",
+        },
+      }[modal]
+    : null;
+
+  function addToCart(product: Product) {
+    if (!cashOpen) {
+      showToast("Abra o caixa antes de iniciar uma venda.", "warning");
+      return;
+    }
+    const existing = cart.find((item) => item.productId === product.id);
+    if ((existing?.quantity ?? 0) >= product.stock) {
+      showToast(`O estoque de ${product.name} chegou ao limite.`, "warning");
+      return;
+    }
+    setCart((current) => {
+      const found = current.find((item) => item.productId === product.id);
+      if (found) {
+        return current.map((item) =>
+          item.productId === product.id
+            ? { ...item, quantity: item.quantity + 1 }
+            : item,
+        );
+      }
+      return [...current, { productId: product.id, quantity: 1 }];
+    });
+  }
+
+  function changeCartQuantity(productId: string, change: number) {
+    const product = products.find((item) => item.id === productId);
+    setCart((current) =>
+      current
+        .map((item) => {
+          if (item.productId !== productId) return item;
+          const nextQuantity = item.quantity + change;
+          if (product && nextQuantity > product.stock) {
+            showToast("Não há mais unidades disponíveis.", "warning");
+            return item;
+          }
+          return { ...item, quantity: nextQuantity };
+        })
+        .filter((item) => item.quantity > 0),
+    );
+  }
+
+  function finishSale() {
+    if (!cashOpen) {
+      showToast("O caixa está fechado.", "warning");
+      return;
+    }
+    if (!cartDetails.length) {
+      showToast("Adicione pelo menos um produto ao pedido.", "warning");
+      return;
+    }
+    const unavailableItem = cartDetails.find(
+      (item) => item.quantity > item.product.stock,
+    );
+    if (unavailableItem) {
+      showToast(
+        `Revise ${unavailableItem.product.name}: o estoque disponível mudou.`,
+        "warning",
+      );
+      return;
+    }
+    if (cashPaymentInvalid) {
+      showToast(
+        Number.isFinite(cashReceivedAmount)
+          ? "O valor recebido é menor que o total da venda."
+          : "Informe um valor recebido válido.",
+        "warning",
+      );
+      return;
+    }
+    const items: SaleItem[] = cartDetails.map((item) => ({
+      productId: item.product.id,
+      name: item.product.name,
+      price: item.product.price,
+      quantity: item.quantity,
+    }));
+    const timestamp = Date.now();
+    const sale: Sale = {
+      id: createRecordId("PV"),
+      timestamp,
+      total: cartTotal,
+      payment: paymentMethod,
+      items,
+    };
+    setProducts((current) =>
+      current.map((product) => {
+        const sold = cart.find((item) => item.productId === product.id);
+        return sold
+          ? { ...product, stock: Math.max(0, product.stock - sold.quantity) }
+          : product;
+      }),
+    );
+    setSales((current) => [sale, ...current]);
+    setCart([]);
+    setCashReceived("");
+    showToast(`Venda ${sale.id} finalizada e estoque atualizado.`);
+  }
+
+  function openStockModal(productId?: string) {
+    setStockForm({
+      productId: productId ?? products[0]?.id ?? "",
+      quantity: "10",
+      cost: "",
+      payment: "Dinheiro",
+    });
+    setModal("stock");
+  }
+
+  function submitStock(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const quantity = Number(stockForm.quantity);
+    const cost = parseAmount(stockForm.cost);
+    const hasCost = stockForm.cost.trim().length > 0;
+    if (!Number.isInteger(quantity) || quantity <= 0) {
+      showToast("Informe uma quantidade inteira válida.", "warning");
+      return;
+    }
+    const product = products.find((item) => item.id === stockForm.productId);
+    if (!product) {
+      showToast("Selecione um produto válido.", "warning");
+      return;
+    }
+    if (hasCost && (!Number.isFinite(cost) || cost < 0)) {
+      showToast("Informe um custo válido ou deixe o campo vazio.", "warning");
+      return;
+    }
+    if (cost > 0 && stockForm.payment === "Dinheiro") {
+      if (!cashOpen) {
+        showToast(
+          "Abra o caixa ou escolha outra forma para registrar este pagamento.",
+          "warning",
+        );
+        return;
+      }
+      if (cost > cashBalance) {
+        showToast(
+          "O custo em dinheiro não pode ser maior que o saldo do caixa.",
+          "warning",
+        );
+        return;
+      }
+    }
+    setProducts((current) =>
+      current.map((item) =>
+        item.id === stockForm.productId
+          ? { ...item, stock: item.stock + quantity }
+          : item,
+      ),
+    );
+    if (cost > 0) {
+      setExpenses((current) => [
+        {
+          id: createRecordId("DS"),
+          timestamp: Date.now(),
+          description: `Reposição: ${product.name}`,
+          category: "Compra de estoque",
+          amount: cost,
+          payment: stockForm.payment,
+        },
+        ...current,
+      ]);
+    }
+    setModal(null);
+    showToast(
+      cost > 0
+        ? "Estoque e saída financeira registrados."
+        : "Entrada de estoque registrada.",
+    );
+  }
+
+  function submitExpense(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const amount = parseAmount(expenseForm.amount);
+    if (
+      !expenseForm.description.trim() ||
+      !Number.isFinite(amount) ||
+      amount <= 0
+    ) {
+      showToast("Preencha a descrição e um valor válido.", "warning");
+      return;
+    }
+    if (expenseForm.payment === "Dinheiro") {
+      if (!cashOpen) {
+        showToast(
+          "Abra o caixa ou escolha Pix/Cartão para registrar esta saída.",
+          "warning",
+        );
+        return;
+      }
+      if (amount > cashBalance) {
+        showToast(
+          "A saída em dinheiro não pode ser maior que o saldo do caixa.",
+          "warning",
+        );
+        return;
+      }
+    }
+    setExpenses((current) => [
+      {
+        id: createRecordId("DS"),
+        timestamp: Date.now(),
+        description: expenseForm.description.trim(),
+        category: expenseForm.category,
+        amount,
+        payment: expenseForm.payment,
+      },
+      ...current,
+    ]);
+    setExpenseForm({
+      description: "",
+      category: "Matéria-prima",
+      amount: "",
+      payment: "Dinheiro",
+    });
+    setModal(null);
+    showToast("Saída registrada no financeiro.");
+  }
+
+  function requestCashToggle() {
+    if (cashOpen) {
+      if (
+        cart.length > 0 &&
+        !window.confirm(
+          "Há uma comanda em andamento. Fechar o caixa descartará esse pedido. Continuar?",
+        )
+      ) {
+        return;
+      }
+      setCashCloseForm("");
+      setModal("cash-close");
+      return;
+    }
+    setCashOpenForm(String(openingBalance));
+    setModal("cash-open");
+  }
+
+  function submitCashOpen(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const amount = parseAmount(cashOpenForm);
+    if (!Number.isFinite(amount) || amount < 0) {
+      showToast("Informe um valor de abertura válido.", "warning");
+      return;
+    }
+    setOpeningBalance(amount);
+    setCashOpenedAt(Date.now());
+    setCashOpen(true);
+    setCart([]);
+    setCashReceived("");
+    setPaymentMethod("Pix");
+    setModal(null);
+    showToast(`Caixa aberto com ${currency.format(amount)}.`, "info");
+  }
+
+  function submitCashClose(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const countedBalance = parseAmount(cashCloseForm);
+    if (!Number.isFinite(countedBalance) || countedBalance < 0) {
+      showToast("Informe o valor contado no caixa.", "warning");
+      return;
+    }
+    const closedAt = Date.now();
+    const difference = roundMoney(countedBalance - cashBalance);
+    setCashClosures((current) => [
+      {
+        id: createRecordId("FC"),
+        openedAt: cashOpenedAt,
+        closedAt,
+        openingBalance,
+        expectedBalance: cashBalance,
+        countedBalance,
+        difference,
+      },
+      ...current,
+    ]);
+    setCashOpen(false);
+    setCart([]);
+    setCashReceived("");
+    setPaymentMethod("Pix");
+    setModal(null);
+    showToast(
+      Math.abs(difference) < 0.005
+        ? "Caixa fechado sem diferença."
+        : `Caixa fechado com diferença de ${currency.format(difference)}.`,
+      Math.abs(difference) < 0.005 ? "success" : "warning",
+    );
+  }
+
+  function submitCashMovement(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const amount = parseAmount(cashMovementForm.amount);
+    if (!cashOpen) {
+      showToast("Abra o caixa antes de movimentar dinheiro.", "warning");
+      return;
+    }
+    if (
+      !cashMovementForm.description.trim() ||
+      !Number.isFinite(amount) ||
+      amount <= 0
+    ) {
+      showToast("Preencha a descrição e um valor válido.", "warning");
+      return;
+    }
+    if (cashMovementForm.kind === "sangria" && amount > cashBalance) {
+      showToast("A sangria não pode ser maior que o saldo esperado.", "warning");
+      return;
+    }
+    setCashMovements((current) => [
+      {
+        id: createRecordId("MC"),
+        timestamp: Date.now(),
+        description: cashMovementForm.description.trim(),
+        amount,
+        kind: cashMovementForm.kind,
+      },
+      ...current,
+    ]);
+    setCashMovementForm({
+      kind: "sangria",
+      description: "",
+      amount: "",
+    });
+    setModal(null);
+    showToast(
+      cashMovementForm.kind === "sangria"
+        ? "Sangria registrada."
+        : "Suprimento registrado.",
+    );
+  }
+
+  function exportBackup() {
+    const backup = createBackup(currentPoolState());
+    downloadBackupFile(
+      backup,
+      `pool-backup-${formatDateKey(Date.now())}.json`,
+    );
+    showToast("Backup exportado. Guarde o arquivo no Google Drive.", "info");
+  }
+
+  function currentPoolState(): PersistedPoolState {
+    return {
+      products,
+      sales,
+      expenses,
+      cashOpen,
+      openingBalance,
+      cashOpenedAt,
+      cashMovements,
+      cashClosures,
+    };
+  }
+
+  function downloadBackupFile(
+    backup: ReturnType<typeof createBackup>,
+    filename: string,
+  ) {
+    const blob = new Blob([JSON.stringify(backup, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function importBackup(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const restoredState = parseBackup(String(reader.result));
+      if (!restoredState) {
+        showToast("Este arquivo não é um backup válido da Pool.", "warning");
+        return;
+      }
+      if (
+        !window.confirm(
+          "Restaurar este backup? Os dados atuais serão baixados em uma cópia de segurança antes da substituição.",
+        )
+      ) {
+        return;
+      }
+      downloadBackupFile(
+        createBackup(currentPoolState()),
+        `pool-backup-antes-restauracao-${formatDateKey(Date.now())}.json`,
+      );
+      restorePoolState(restoredState);
+      showToast("Backup validado e restaurado com sucesso.");
+    };
+    reader.onerror = () =>
+      showToast("Não foi possível ler o arquivo selecionado.", "warning");
+    reader.readAsText(file);
+  }
+
+  function resetDemo() {
+    if (
+      !window.confirm(
+        "Restaurar os dados da demonstração? As vendas adicionadas neste navegador serão apagadas.",
+      )
+    ) {
+      return;
+    }
+    setProducts(DEMO_PRODUCTS);
+    setSales(createDemoSales());
+    setExpenses(createDemoExpenses());
+    setCashOpen(true);
+    setOpeningBalance(100);
+    setCashOpenForm("100");
+    setCashOpenedAt(Date.now() - 2 * 60 * 60_000);
+    setCashMovements([]);
+    setCashClosures([]);
+    setCart([]);
+    setCashReceived("");
+    setCashCloseForm("");
+    setPaymentMethod("Pix");
+    setModal(null);
+    showToast("Dados de demonstração restaurados.", "info");
+  }
+
+  function handleAudioFiles(event: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files ?? []);
+    if (!files.length) return;
+    const imported = files.map((file, index) => ({
+      id: `${file.name}-${Date.now()}-${index}`,
+      name: file.name.replace(/\.[^.]+$/, ""),
+      url: URL.createObjectURL(file),
+      size:
+        file.size > 1024 * 1024
+          ? `${(file.size / 1024 / 1024).toFixed(1)} MB`
+          : `${Math.round(file.size / 1024)} KB`,
+    }));
+    const startIndex = tracks.length;
+    setTracks((current) => [...current, ...imported]);
+    if (currentTrackIndex === -1) setCurrentTrackIndex(startIndex);
+    showToast(`${imported.length} áudio(s) importado(s) do computador.`);
+    event.target.value = "";
+  }
+
+  async function togglePlay() {
+    const audio = audioRef.current;
+    if (!audio || !currentTrack) {
+      showToast("Importe uma música do computador primeiro.", "info");
+      return;
+    }
+    if (isPlaying) {
+      audio.pause();
+      setIsPlaying(false);
+    } else {
+      try {
+        await audio.play();
+        setIsPlaying(true);
+      } catch {
+        showToast("Não foi possível reproduzir este arquivo.", "warning");
+      }
+    }
+  }
+
+  function selectTrack(index: number) {
+    setCurrentTrackIndex(index);
+    setIsPlaying(false);
+    window.setTimeout(async () => {
+      if (!audioRef.current) return;
+      try {
+        await audioRef.current.play();
+        setIsPlaying(true);
+      } catch {
+        setIsPlaying(false);
+      }
+    }, 0);
+  }
+
+  function moveTrack(direction: number) {
+    if (!tracks.length) return;
+    const next =
+      currentTrackIndex < 0
+        ? 0
+        : (currentTrackIndex + direction + tracks.length) % tracks.length;
+    selectTrack(next);
+  }
+
+  if (!hydrated) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-[#f7f5f2] p-6">
+        <div role="status" className="text-center">
+          <Image
+            src="/pool-logo-round.jpg"
+            alt=""
+            width={80}
+            height={80}
+            unoptimized
+            className="mx-auto size-20 rounded-full object-cover shadow-lg"
+          />
+          <strong className="mt-4 block text-sm">
+            Preparando o caixa da Pool…
+          </strong>
+          <span className="mt-1 block text-xs text-[#6d6561]">
+            Conferindo os dados salvos neste navegador.
+          </span>
+        </div>
+      </main>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-[#f7f5f2] text-[#24201f]">
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-[252px] flex-col overflow-y-auto bg-[#211e1d] px-4 py-5 text-white shadow-2xl lg:flex">
+        <div className="rounded-xl bg-white/5 p-2">
+          <Image
+            src="/pool-logo-banner.jpg"
+            alt="Pool Petiscos & Lanches"
+            width={220}
+            height={37}
+            unoptimized
+            className="aspect-[6/1] w-full rounded-lg object-cover shadow-lg"
+          />
+          <p className="mt-2 px-1 text-[10px] tracking-wide text-white/45">
+            Gestão simples do seu negócio
+          </p>
+        </div>
+
+        <nav className="mt-5 flex flex-col gap-1" aria-label="Navegação principal">
+          <span className="mb-2 px-3 text-[9px] font-bold uppercase tracking-[0.18em] text-white/35">
+            Menu principal
+          </span>
+          {navigation.map((item) => {
+            const Icon = item.icon;
+            const active = activeView === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => navigateTo(item.id)}
+                aria-current={active ? "page" : undefined}
+                data-testid={`nav-${item.id}`}
+                className={`flex min-h-12 items-center gap-3 rounded-xl px-3 text-left text-sm font-semibold transition ${
+                  active
+                    ? "bg-[#d9202c] text-white shadow-[0_10px_24px_rgba(217,32,44,.25)]"
+                    : "text-white/60 hover:bg-white/7 hover:text-white"
+                }`}
+              >
+                <Icon size={19} strokeWidth={2.1} />
+                <span className="flex-1">{item.label}</span>
+                {item.badge && (
+                  <span className="rounded-full bg-[#f5b617]/15 px-2 py-1 text-[8px] font-extrabold text-[#ffd467]">
+                    {item.badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
+
+        <div className="flex-1" />
+        <div className="mt-5 rounded-xl border border-[#f5b617]/15 bg-[#f5b617]/8 p-3">
+          <div className="flex gap-2 text-[#f6c746]">
+            <Sparkles size={17} className="shrink-0" />
+            <div>
+              <strong className="block text-[10px] text-[#ffe39a]">
+                Modo demonstração
+              </strong>
+              <span className="mt-1 block text-[9px] leading-4 text-white/45">
+                Os dados ficam salvos somente neste navegador.
+              </span>
+            </div>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={resetDemo}
+          className="mt-2 flex items-center gap-2 px-3 py-2 text-left text-[9px] text-white/40 transition hover:text-white/75"
+        >
+          <RotateCcw size={15} />
+          Restaurar dados de exemplo
+        </button>
+        <div className="mt-2 flex items-center gap-3 border-t border-white/8 px-2 pt-4">
+          <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-white font-extrabold text-[#d9202c]">
+            E
+          </span>
+          <div className="min-w-0 flex-1">
+            <strong className="block text-[11px]">Elaine</strong>
+            <span className="block text-[9px] text-white/40">
+              Administradora
+            </span>
+          </div>
+        </div>
+      </aside>
+
+      <main
+        ref={mainRef}
+        className="min-h-screen pb-24 lg:ml-[252px] lg:pb-0"
+      >
+        <header className="sticky top-0 z-30 flex min-h-[70px] items-center justify-between gap-4 border-b border-[#ebe5e1] bg-[#f7f5f2]/92 px-4 backdrop-blur-xl sm:px-6 lg:px-9">
+          <Image
+            src="/pool-logo-banner.jpg"
+            alt="Pool Petiscos & Lanches"
+            width={126}
+            height={21}
+            unoptimized
+            className="w-[126px] rounded-lg object-cover shadow-sm lg:hidden"
+          />
+          <div className="hidden items-center gap-4 sm:flex">
+            <span className="flex items-center gap-2 text-[11px] capitalize text-[#776f6b]">
+              <CalendarDays size={16} />
+              {dateLabel}
+            </span>
+            <span className="flex items-center gap-2 border-l border-[#ded7d2] pl-4 text-xs font-bold tabular-nums">
+              <Clock3 size={16} className="text-[#776f6b]" />
+              {timeLabel}
+            </span>
+          </div>
+          <div className="ml-auto flex items-center gap-2 sm:ml-0">
+            <button
+              type="button"
+              onClick={requestCashToggle}
+              className={`flex items-center gap-2 rounded-full border px-3 py-2 text-[9px] font-extrabold sm:text-[10px] ${
+                cashOpen
+                  ? "border-[#cdebdc] bg-[#eaf8f1] text-[#23734f]"
+                  : "border-[#f1d0d3] bg-[#fff0f1] text-[#b41622]"
+              }`}
+            >
+              <i
+                className={`size-1.5 rounded-full ${
+                  cashOpen ? "bg-[#31a36f]" : "bg-[#d9202c]"
+                }`}
+              />
+              {cashOpen ? "Caixa aberto" : "Caixa fechado"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setStockFilter("Baixo");
+                navigateTo("estoque");
+              }}
+              aria-label={`${lowStock.length} alerta(s) de estoque baixo`}
+              className="relative hidden size-11 place-items-center rounded-xl border border-[#ebe5e1] bg-white text-[#6d6561] sm:grid"
+            >
+              <Bell size={18} />
+              {lowStock.length > 0 && (
+                <span className="absolute right-2 top-2 size-1.5 rounded-full border border-white bg-[#d9202c]" />
+              )}
+            </button>
+            <div className="hidden items-center gap-2 pl-1 md:flex">
+              <span className="grid size-9 place-items-center rounded-xl bg-[#302b29] text-white">
+                <UserRound size={17} />
+              </span>
+              <div>
+                <strong className="block text-[10px]">Elaine</strong>
+                <span className="block text-[8px] text-[#8d8581]">
+                  Proprietária
+                </span>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        {activeView === "inicio" && (
+          <div className="mx-auto w-full max-w-[1480px] space-y-4 p-4 sm:p-6 lg:p-9">
+            <section className="relative flex min-h-[220px] items-center overflow-hidden rounded-[24px] bg-gradient-to-br from-[#d9202c] to-[#a8101c] p-6 shadow-[0_16px_40px_rgba(66,45,37,.08)] sm:p-9">
+              <div className="absolute inset-y-0 left-0 w-[75%] bg-white [clip-path:polygon(0_0,82%_0,100%_100%,0_100%)] sm:w-[70%]" />
+              <div className="relative z-10 max-w-[600px]">
+                <span className="flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-[.12em] text-[#d9202c]">
+                  <Sparkles size={15} />
+                  Tudo pronto por aqui
+                </span>
+                <h1 className="mt-2 text-3xl font-extrabold tracking-[-.04em] sm:text-[40px]">
+                  {getGreeting(recifeHour)}, Elaine!
+                </h1>
+                <p className="mt-2 max-w-[480px] text-xs leading-6 text-[#776f6b] sm:text-sm">
+                  Acompanhe as vendas, o caixa e o estoque da Pool sem
+                  complicação.
+                </p>
+                <div className="mt-5 flex flex-col gap-2 min-[450px]:flex-row">
+                  <button
+                    type="button"
+                    onClick={() => navigateTo("venda")}
+                    data-testid="start-sale"
+                    className="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#d9202c] px-4 text-xs font-extrabold text-white shadow-[0_9px_20px_rgba(217,32,44,.2)] transition hover:bg-[#b41622]"
+                  >
+                    <Plus size={18} />
+                    Registrar nova venda
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => navigateTo("estoque")}
+                    className="min-h-11 rounded-xl border border-[#ebe5e1] bg-white px-4 text-xs font-bold transition hover:border-[#d9cfca]"
+                  >
+                    Conferir estoque
+                  </button>
+                </div>
+              </div>
+              <div className="absolute bottom-3 right-3 z-10 rounded-full border border-white/30 bg-white/10 p-2 shadow-2xl sm:bottom-auto sm:right-[6%]">
+                <Image
+                  src="/pool-logo-round.jpg"
+                  alt=""
+                  width={160}
+                  height={160}
+                  unoptimized
+                  className="size-20 rounded-full object-cover sm:size-40"
+                />
+              </div>
+            </section>
+
+            <section className="flex flex-col gap-3 rounded-2xl border border-[#ebe5e1] bg-white p-4 shadow-[0_7px_22px_rgba(66,45,37,.035)] sm:flex-row sm:items-center">
+              <span
+                className={`grid size-11 shrink-0 place-items-center rounded-xl ${
+                  businessStatus.open
+                    ? "bg-[#eaf8f1] text-[#27865d]"
+                    : "bg-[#fff8de] text-[#a97300]"
+                }`}
+              >
+                <Store size={21} />
+              </span>
+              <div className="min-w-0 flex-1">
+                <span className="text-[9px] font-extrabold uppercase tracking-[.13em] text-[#9c928d]">
+                  Funcionamento confirmado
+                </span>
+                <div className="mt-0.5 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                  <strong className="text-sm">{businessStatus.label}</strong>
+                  <span className="text-[10px] text-[#776f6b]">
+                    {businessStatus.helper}
+                  </span>
+                </div>
+              </div>
+              <div className="rounded-xl bg-[#f7f5f2] px-3 py-2 text-[9px] font-bold text-[#6d6561]">
+                Cardápio revisado • {products.length} opções cadastradas
+              </div>
+            </section>
+
+            <section
+              className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4"
+              aria-label="Resumo de hoje"
+            >
+              {[
+                {
+                  label: "Vendas de hoje",
+                  value: currency.format(revenue),
+                  helper: `${todaySales.length} pedidos registrados`,
+                  icon: ReceiptText,
+                  colors: "bg-[#fff0f1] text-[#d9202c]",
+                },
+                {
+                  label: "Ticket médio",
+                  value: currency.format(ticketAverage),
+                  helper: "Por pedido finalizado",
+                  icon: ShoppingCart,
+                  colors: "bg-[#fff8de] text-[#a97300]",
+                },
+                {
+                  label: "Saldo do caixa",
+                  value: currency.format(cashBalance),
+                  helper: "Entradas menos saídas",
+                  icon: WalletCards,
+                  colors: "bg-[#eaf8f1] text-[#27865d]",
+                },
+                {
+                  label: "Estoque baixo",
+                  value: `${lowStock.length} ${lowStock.length === 1 ? "item" : "itens"}`,
+                  helper: "Precisam de reposição",
+                  icon: AlertTriangle,
+                  colors: "bg-[#fff2e8] text-[#d76822]",
+                },
+              ].map((metric) => {
+                const Icon = metric.icon;
+                return (
+                  <article
+                    key={metric.label}
+                    className="grid grid-cols-[42px_1fr] gap-x-3 rounded-2xl border border-[#ebe5e1] bg-white p-4 shadow-[0_7px_22px_rgba(66,45,37,.035)]"
+                  >
+                    <span
+                      className={`row-span-3 grid size-10 place-items-center rounded-xl ${metric.colors}`}
+                    >
+                      <Icon size={20} />
+                    </span>
+                    <span className="text-[10px] font-semibold text-[#776f6b]">
+                      {metric.label}
+                    </span>
+                    <strong className="mt-1 text-xl tracking-[-.03em]">
+                      {metric.value}
+                    </strong>
+                    <small className="text-[9px] text-[#a19995]">
+                      {metric.helper}
+                    </small>
+                  </article>
+                );
+              })}
+            </section>
+
+            <div className="grid gap-4 xl:grid-cols-[1.2fr_.8fr]">
+              <section className="rounded-[20px] border border-[#ebe5e1] bg-white p-5 shadow-[0_7px_22px_rgba(66,45,37,.035)]">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <span className="text-[9px] font-extrabold uppercase tracking-[.13em] text-[#9c928d]">
+                      Movimento recente
+                    </span>
+                    <h2 className="text-base font-extrabold tracking-tight">
+                      Vendas dos últimos dias
+                    </h2>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => navigateTo("financeiro")}
+                    className="flex items-center text-[10px] font-extrabold text-[#d9202c]"
+                  >
+                    Ver financeiro <ChevronRight size={15} />
+                  </button>
+                </div>
+                <div className="mt-5 flex items-end justify-between gap-3">
+                  <div>
+                    <strong className="block text-xl tracking-[-.03em]">
+                      {currency.format(recentRevenue)}
+                    </strong>
+                    <span className="text-[9px] text-[#776f6b]">
+                      Total real dos últimos 5 dias
+                    </span>
+                  </div>
+                  <span className="rounded-full bg-[#eaf8f1] px-2 py-1 text-[9px] font-extrabold text-[#27865d]">
+                    {recentSalesCount} venda(s) no período
+                  </span>
+                </div>
+                <div className="mt-3 flex h-40 items-end justify-around gap-3 border-b border-[#ebe5e1] px-2">
+                  {dailyRevenue.map((day) => (
+                    <div
+                      key={day.key}
+                      aria-label={`${day.label}: ${currency.format(day.total)}`}
+                      className="group flex h-full flex-1 flex-col items-center justify-end"
+                    >
+                      <span className="mb-1 text-[8px] text-[#9c928d] opacity-0 transition group-hover:opacity-100">
+                        {shortCurrency.format(day.total)}
+                      </span>
+                      <div className="flex h-[120px] w-full max-w-9 items-end overflow-hidden rounded-t-lg bg-[#f5f1ee]">
+                        <i
+                          className={`block w-full rounded-t-lg ${
+                            day.label === "Hoje"
+                              ? "bg-gradient-to-t from-[#e5a70c] to-[#f8c738]"
+                              : "bg-gradient-to-t from-[#c91824] to-[#e83a45]"
+                          }`}
+                          style={{
+                            height: `${(day.total / maxDailyRevenue) * 100}%`,
+                          }}
+                        />
+                      </div>
+                      <strong className="py-2 text-[9px] text-[#776f6b]">
+                        {day.label}
+                      </strong>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section className="rounded-[20px] border border-[#ebe5e1] bg-white p-5 shadow-[0_7px_22px_rgba(66,45,37,.035)]">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <span className="text-[9px] font-extrabold uppercase tracking-[.13em] text-[#9c928d]">
+                      Atenção necessária
+                    </span>
+                    <h2 className="text-base font-extrabold tracking-tight">
+                      Estoque baixo
+                    </h2>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => navigateTo("estoque")}
+                    className="flex items-center text-[10px] font-extrabold text-[#d9202c]"
+                  >
+                    Ver todos <ChevronRight size={15} />
+                  </button>
+                </div>
+                <div className="mt-4 flex flex-col gap-2">
+                  {lowStock.slice(0, 4).map((product) => (
+                    <article
+                      key={product.id}
+                      className="flex items-center gap-3 rounded-xl border border-[#f0e9e5] bg-[#fdfcfb] p-2.5"
+                    >
+                      <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#fff2e8] text-lg">
+                        {product.emoji}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex justify-between gap-2">
+                          <strong className="truncate text-[10px]">
+                            {product.name}
+                          </strong>
+                          <span className="shrink-0 text-[8px] font-bold text-[#d76822]">
+                            {product.stock} un.
+                          </span>
+                        </div>
+                        <div className="mt-2 h-1 overflow-hidden rounded-full bg-[#f1e8e2]">
+                          <i
+                            className="block h-full rounded-full bg-[#d76822]"
+                            style={{
+                              width: `${Math.min(
+                                100,
+                                (product.stock / product.minimum) * 100,
+                              )}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => openStockModal(product.id)}
+                        aria-label={`Repor ${product.name}`}
+                        className="grid size-8 shrink-0 place-items-center rounded-lg border border-[#ebe5e1] bg-white text-[#d9202c]"
+                      >
+                        <Plus size={16} />
+                      </button>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            </div>
+
+            <section className="rounded-[20px] border border-[#ebe5e1] bg-white p-5 shadow-[0_7px_22px_rgba(66,45,37,.035)]">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <span className="text-[9px] font-extrabold uppercase tracking-[.13em] text-[#9c928d]">
+                    Economize nas compras
+                  </span>
+                  <h2 className="text-base font-extrabold tracking-tight">
+                    Radar de preços da região
+                  </h2>
+                </div>
+                <span className="hidden text-[9px] text-[#aaa19d] sm:block">
+                  Abre fontes atualizadas na internet
+                </span>
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                {[
+                  {
+                    tag: "Cotação diária",
+                    color: "bg-[#eaf8f1] text-[#27865d]",
+                    title:
+                      "Compare carnes, laticínios e hortaliças na CEASA-PE",
+                    action: "Consultar preços",
+                    href: "https://www.ceasape.org.br/cotacao",
+                  },
+                  {
+                    tag: "Encarte regional",
+                    color: "bg-[#fff8de] text-[#9a6700]",
+                    title:
+                      "Veja promoções do Novo Atacarejo perto da Pool",
+                    action: "Abrir ofertas",
+                    href: "https://ofertas.novoatacarejo.com/",
+                  },
+                  {
+                    tag: "Para o negócio",
+                    color: "bg-[#fff0f1] text-[#d9202c]",
+                    title:
+                      "Acompanhe as ofertas semanais do Assaí em Pernambuco",
+                    action: "Ver encarte",
+                    href: "https://www.assai.com.br/ofertas/pernambuco",
+                  },
+                ].map((item) => (
+                  <a
+                    key={item.href}
+                    href={item.href}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex min-h-[130px] flex-col items-start rounded-2xl border border-[#ebe5e1] bg-gradient-to-br from-white to-[#fcfaf8] p-4 no-underline transition hover:-translate-y-0.5 hover:shadow-lg"
+                  >
+                    <span
+                      className={`rounded-full px-2 py-1 text-[8px] font-extrabold ${item.color}`}
+                    >
+                      {item.tag}
+                    </span>
+                    <strong className="my-3 text-[11px] leading-5">
+                      {item.title}
+                    </strong>
+                    <span className="mt-auto flex items-center gap-1 text-[9px] font-extrabold text-[#d9202c]">
+                      {item.action} <ExternalLink size={13} />
+                    </span>
+                  </a>
+                ))}
+              </div>
+            </section>
+          </div>
+        )}
+
+        {activeView === "venda" && (
+          <div className="mx-auto w-full max-w-[1480px] p-4 sm:p-6 lg:p-9">
+            <div className="mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
+              <div>
+                <span className="text-[9px] font-extrabold uppercase tracking-[.13em] text-[#d9202c]">
+                  Ponto de venda
+                </span>
+                <h1 className="text-2xl font-extrabold tracking-[-.04em] sm:text-3xl">
+                  Nova venda
+                </h1>
+                <p className="mt-1 text-xs text-[#776f6b]">
+                  Toque nos produtos para montar o pedido.
+                </p>
+              </div>
+              <span className="flex items-center gap-2 self-start rounded-full bg-white px-3 py-2 text-[10px] font-bold text-[#776f6b] shadow-sm sm:self-auto">
+                <CheckCircle2 size={16} className="text-[#27865d]" />
+                Baixa automática por item
+              </span>
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_380px]">
+              <section className="min-w-0 rounded-[20px] border border-[#ebe5e1] bg-white p-4 shadow-[0_7px_22px_rgba(66,45,37,.035)] sm:p-5">
+                <div className="relative">
+                  <Search
+                    size={18}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9c928d]"
+                  />
+                  <input
+                    value={saleSearch}
+                    onChange={(event) => setSaleSearch(event.target.value)}
+                    placeholder="Buscar pastel, hambúrguer, bebida..."
+                    aria-label="Buscar produtos"
+                    className="h-11 w-full rounded-xl border border-[#ebe5e1] bg-[#faf8f6] pl-10 pr-4 text-xs outline-none transition focus:border-[#d9202c] focus:bg-white"
+                  />
+                </div>
+                <div className="no-scrollbar mt-3 flex gap-2 overflow-x-auto pb-1">
+                  {categories.map((item) => (
+                    <button
+                      key={item}
+                      type="button"
+                      onClick={() => setCategory(item)}
+                      aria-pressed={category === item}
+                      className={`shrink-0 rounded-full border px-3 py-2 text-[10px] font-extrabold transition ${
+                        category === item
+                          ? "border-[#d9202c] bg-[#d9202c] text-white"
+                          : "border-[#ebe5e1] bg-white text-[#776f6b] hover:border-[#d9cfca]"
+                      }`}
+                    >
+                      {item}
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-3 min-[1180px]:grid-cols-3 2xl:grid-cols-4">
+                  {filteredProducts.map((product) => {
+                    const soldOut = product.stock === 0;
+                    const low = product.stock <= product.minimum;
+                    return (
+                      <button
+                        key={product.id}
+                        type="button"
+                        data-testid={`product-${product.id}`}
+                        disabled={soldOut}
+                        onClick={() => addToCart(product)}
+                        className="group relative min-h-[154px] rounded-2xl border border-[#ebe5e1] bg-white p-3 text-left transition hover:-translate-y-0.5 hover:border-[#d9202c]/35 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-45"
+                      >
+                        <span className="grid size-12 place-items-center rounded-2xl bg-[#fff7ec] text-2xl transition group-hover:scale-105">
+                          {product.emoji}
+                        </span>
+                        <strong className="mt-3 block min-h-8 text-[11px] leading-4">
+                          {product.name}
+                        </strong>
+                        <div className="mt-2 flex items-end justify-between gap-2">
+                          <span className="text-sm font-extrabold text-[#d9202c]">
+                            {currency.format(product.price)}
+                          </span>
+                          <span
+                            className={`text-[8px] font-bold ${
+                              low ? "text-[#d76822]" : "text-[#8d8581]"
+                            }`}
+                          >
+                            {product.stock} un.
+                          </span>
+                        </div>
+                        <span className="absolute right-3 top-3 grid size-7 place-items-center rounded-lg bg-[#fff0f1] text-[#d9202c] opacity-0 transition group-hover:opacity-100">
+                          <Plus size={15} />
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {!filteredProducts.length && (
+                  <div className="grid min-h-56 place-items-center text-center">
+                    <div>
+                      <Search size={30} className="mx-auto text-[#c7beba]" />
+                      <strong className="mt-3 block text-sm">
+                        Nenhum produto encontrado
+                      </strong>
+                      <span className="text-[10px] text-[#8d8581]">
+                        Tente buscar por outro nome.
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </section>
+
+              <aside className="h-fit rounded-[20px] border border-[#ebe5e1] bg-white p-4 shadow-[0_10px_30px_rgba(66,45,37,.06)] lg:sticky lg:top-[88px]">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-[9px] font-extrabold uppercase tracking-[.13em] text-[#9c928d]">
+                      Pedido atual
+                    </span>
+                    <h2 className="text-lg font-extrabold">Comanda</h2>
+                  </div>
+                  <span className="grid size-9 place-items-center rounded-xl bg-[#fff0f1] text-[#d9202c]">
+                    <ShoppingCart size={18} />
+                  </span>
+                </div>
+
+                <div className="mt-4 min-h-[170px] space-y-2">
+                  {!cartDetails.length ? (
+                    <div className="grid min-h-[170px] place-items-center rounded-2xl border border-dashed border-[#ded7d2] bg-[#fcfaf8] text-center">
+                      <div>
+                        <ShoppingCart
+                          size={28}
+                          className="mx-auto text-[#c7beba]"
+                        />
+                        <strong className="mt-2 block text-[11px]">
+                          Comanda vazia
+                        </strong>
+                        <span className="text-[9px] text-[#8d8581]">
+                          Escolha um produto ao lado.
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    cartDetails.map((item) => (
+                      <article
+                        key={item.productId}
+                        className="flex items-center gap-2 rounded-xl border border-[#eee8e4] p-2"
+                      >
+                        <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#fff7ec] text-lg">
+                          {item.product.emoji}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <strong className="block truncate text-[10px]">
+                            {item.product.name}
+                          </strong>
+                          <span className="text-[9px] font-bold text-[#d9202c]">
+                            {currency.format(
+                              item.product.price * item.quantity,
+                            )}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              changeCartQuantity(item.productId, -1)
+                            }
+                            aria-label={`Diminuir ${item.product.name}`}
+                            className="grid size-11 place-items-center rounded-lg border border-[#ebe5e1] text-[#776f6b]"
+                          >
+                            <Minus size={13} />
+                          </button>
+                          <span className="min-w-5 text-center text-[10px] font-extrabold">
+                            {item.quantity}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              changeCartQuantity(item.productId, 1)
+                            }
+                            aria-label={`Aumentar ${item.product.name}`}
+                            className="grid size-11 place-items-center rounded-lg border border-[#ebe5e1] text-[#d9202c]"
+                          >
+                            <Plus size={13} />
+                          </button>
+                        </div>
+                      </article>
+                    ))
+                  )}
+                </div>
+
+                <div className="mt-4 border-t border-[#ebe5e1] pt-4">
+                  <span className="text-[9px] font-extrabold uppercase tracking-[.13em] text-[#9c928d]">
+                    Forma de pagamento
+                  </span>
+                  <div className="mt-2 grid grid-cols-3 gap-2">
+                    {[
+                      { id: "Pix" as const, icon: QrCode },
+                      { id: "Dinheiro" as const, icon: Banknote },
+                      { id: "Cartão" as const, icon: CreditCard },
+                    ].map((method) => {
+                      const Icon = method.icon;
+                      return (
+                        <button
+                          key={method.id}
+                          type="button"
+                          onClick={() => setPaymentMethod(method.id)}
+                          aria-pressed={paymentMethod === method.id}
+                          className={`flex min-h-16 flex-col items-center justify-center gap-1 rounded-xl border text-[9px] font-extrabold transition ${
+                            paymentMethod === method.id
+                              ? "border-[#d9202c] bg-[#fff0f1] text-[#d9202c]"
+                              : "border-[#ebe5e1] text-[#776f6b]"
+                          }`}
+                        >
+                          <Icon size={18} />
+                          {method.id}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {paymentMethod === "Dinheiro" && (
+                    <label className="mt-3 block">
+                      <span className="mb-1 block text-[9px] font-bold text-[#776f6b]">
+                        Valor recebido
+                      </span>
+                      <input
+                        value={cashReceived}
+                        onChange={(event) => setCashReceived(event.target.value)}
+                        inputMode="decimal"
+                        placeholder="R$ 0,00"
+                        className="h-10 w-full rounded-xl border border-[#ebe5e1] px-3 text-xs outline-none focus:border-[#d9202c]"
+                      />
+                      {Number.isFinite(cashReceivedAmount) &&
+                        cashReceivedAmount >= cartTotal &&
+                        cartTotal > 0 && (
+                          <span className="mt-1 block text-[9px] font-bold text-[#27865d]">
+                            Troco:{" "}
+                            {currency.format(
+                              roundMoney(cashReceivedAmount - cartTotal),
+                            )}
+                          </span>
+                        )}
+                      {cashReceived.trim() && cashPaymentInvalid && (
+                        <span className="mt-1 block text-[10px] font-bold text-[#b41622]">
+                          {Number.isFinite(cashReceivedAmount)
+                            ? "O valor ainda não cobre o pedido."
+                            : "Use um valor como 50,00."}
+                        </span>
+                      )}
+                    </label>
+                  )}
+                  <div className="mt-4 flex items-end justify-between">
+                    <div>
+                      <span className="block text-[9px] text-[#776f6b]">
+                        Total do pedido
+                      </span>
+                      <strong className="text-2xl tracking-[-.04em]">
+                        {currency.format(cartTotal)}
+                      </strong>
+                    </div>
+                    <span className="text-[9px] text-[#8d8581]">
+                      {cart.reduce((sum, item) => sum + item.quantity, 0)} item(ns)
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={finishSale}
+                    data-testid="finish-sale"
+                    disabled={!cartDetails.length || !cashOpen}
+                    className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#d9202c] px-4 text-xs font-extrabold text-white shadow-[0_10px_22px_rgba(217,32,44,.22)] transition hover:bg-[#b41622] disabled:cursor-not-allowed disabled:bg-[#d8cfcb] disabled:shadow-none"
+                  >
+                    <Check size={18} />
+                    Finalizar venda
+                  </button>
+                </div>
+              </aside>
+            </div>
+          </div>
+        )}
+
+        {activeView === "estoque" && (
+          <div className="mx-auto w-full max-w-[1480px] p-4 sm:p-6 lg:p-9">
+            <div className="mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
+              <div>
+                <span className="text-[9px] font-extrabold uppercase tracking-[.13em] text-[#d9202c]">
+                  Controle de produtos
+                </span>
+                <h1 className="text-2xl font-extrabold tracking-[-.04em] sm:text-3xl">
+                  Estoque
+                </h1>
+                <p className="mt-1 text-xs text-[#776f6b]">
+                  Veja o que tem disponível e planeje a próxima compra.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => openStockModal()}
+                data-testid="open-stock-modal"
+                className="flex min-h-11 items-center justify-center gap-2 self-start rounded-xl bg-[#d9202c] px-4 text-xs font-extrabold text-white shadow-lg sm:self-auto"
+              >
+                <Plus size={18} />
+                Registrar entrada
+              </button>
+            </div>
+
+            <section className="grid gap-3 sm:grid-cols-3">
+              {[
+                {
+                  label: "Itens cadastrados",
+                  value: products.length,
+                  helper: "Produtos no cardápio",
+                  icon: Boxes,
+                  colors: "bg-[#f1eefc] text-[#7458b4]",
+                },
+                {
+                  label: "Estoque saudável",
+                  value: products.length - lowStock.length,
+                  helper: "Acima do mínimo",
+                  icon: CheckCircle2,
+                  colors: "bg-[#eaf8f1] text-[#27865d]",
+                },
+                {
+                  label: "Precisam de reposição",
+                  value: lowStock.length,
+                  helper: "No mínimo ou abaixo",
+                  icon: AlertTriangle,
+                  colors: "bg-[#fff2e8] text-[#d76822]",
+                },
+              ].map((item) => {
+                const Icon = item.icon;
+                return (
+                  <article
+                    key={item.label}
+                    className="flex items-center gap-3 rounded-2xl border border-[#ebe5e1] bg-white p-4 shadow-sm"
+                  >
+                    <span
+                      className={`grid size-11 place-items-center rounded-xl ${item.colors}`}
+                    >
+                      <Icon size={21} />
+                    </span>
+                    <div>
+                      <span className="block text-[9px] font-semibold text-[#776f6b]">
+                        {item.label}
+                      </span>
+                      <strong className="text-xl">{item.value}</strong>
+                      <small className="ml-2 text-[8px] text-[#9c928d]">
+                        {item.helper}
+                      </small>
+                    </div>
+                  </article>
+                );
+              })}
+            </section>
+
+            <section className="mt-4 overflow-hidden rounded-[20px] border border-[#ebe5e1] bg-white shadow-[0_7px_22px_rgba(66,45,37,.035)]">
+              <div className="flex flex-col gap-3 border-b border-[#ebe5e1] p-4 sm:flex-row sm:items-center">
+                <div className="relative flex-1">
+                  <Search
+                    size={17}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9c928d]"
+                  />
+                  <input
+                    value={stockSearch}
+                    onChange={(event) => setStockSearch(event.target.value)}
+                    placeholder="Buscar produto no estoque..."
+                    aria-label="Buscar no estoque"
+                    className="h-10 w-full rounded-xl border border-[#ebe5e1] bg-[#faf8f6] pl-10 pr-3 text-xs outline-none focus:border-[#d9202c]"
+                  />
+                </div>
+                <select
+                  value={stockFilter}
+                  onChange={(event) =>
+                    setStockFilter(
+                      event.target.value as "Todos" | "Baixo" | "Normal",
+                    )
+                  }
+                  aria-label="Filtrar situação do estoque"
+                  className="h-10 rounded-xl border border-[#ebe5e1] bg-white px-3 text-[10px] font-bold outline-none"
+                >
+                  <option>Todos</option>
+                  <option>Baixo</option>
+                  <option>Normal</option>
+                </select>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[760px] border-collapse text-left">
+                  <thead className="bg-[#faf8f6] text-[8px] font-extrabold uppercase tracking-[.12em] text-[#8d8581]">
+                    <tr>
+                      <th className="px-5 py-3">Produto</th>
+                      <th className="px-4 py-3">Categoria</th>
+                      <th className="px-4 py-3">Quantidade</th>
+                      <th className="px-4 py-3">Estoque mínimo</th>
+                      <th className="px-4 py-3">Situação</th>
+                      <th className="px-5 py-3 text-right">Ação</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#eee9e5]">
+                    {filteredStock.map((product) => {
+                      const low = product.stock <= product.minimum;
+                      return (
+                        <tr key={product.id} className="hover:bg-[#fdfbf9]">
+                          <td className="px-5 py-3">
+                            <div className="flex items-center gap-3">
+                              <span className="grid size-9 place-items-center rounded-xl bg-[#fff7ec] text-lg">
+                                {product.emoji}
+                              </span>
+                              <div>
+                                <strong className="block text-[10px]">
+                                  {product.name}
+                                </strong>
+                                <span className="text-[8px] text-[#9c928d]">
+                                  {currency.format(product.price)}
+                                </span>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-[9px] text-[#776f6b]">
+                            {product.category}
+                          </td>
+                          <td className="px-4 py-3">
+                            <strong
+                              className={`text-sm ${
+                                low ? "text-[#d76822]" : ""
+                              }`}
+                            >
+                              {product.stock}
+                            </strong>
+                            <span className="ml-1 text-[8px] text-[#9c928d]">
+                              un.
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-[9px] text-[#776f6b]">
+                            {product.minimum} un.
+                          </td>
+                          <td className="px-4 py-3">
+                            <span
+                              className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[8px] font-extrabold ${
+                                low
+                                  ? "bg-[#fff2e8] text-[#d76822]"
+                                  : "bg-[#eaf8f1] text-[#27865d]"
+                              }`}
+                            >
+                              <i
+                                className={`size-1.5 rounded-full ${
+                                  low ? "bg-[#d76822]" : "bg-[#27865d]"
+                                }`}
+                              />
+                              {low ? "Estoque baixo" : "Normal"}
+                            </span>
+                          </td>
+                          <td className="px-5 py-3 text-right">
+                            <button
+                              type="button"
+                              onClick={() => openStockModal(product.id)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-[#ebe5e1] px-2 py-1.5 text-[8px] font-extrabold text-[#d9202c] transition hover:bg-[#fff0f1]"
+                            >
+                              <Plus size={13} />
+                              Repor
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <div className="mt-4 flex items-start gap-3 rounded-2xl border border-[#f1dfaf] bg-[#fff9e9] p-4">
+              <Sparkles size={18} className="shrink-0 text-[#b27a00]" />
+              <div>
+                <strong className="block text-[10px] text-[#8d6100]">
+                  Modelo recomendado para a versão real
+                </strong>
+                <p className="mt-1 text-[9px] leading-4 text-[#8d6e2e]">
+                  Bebidas, pastel, coxinha e embalagens podem ser controlados
+                  por unidade. Já os hambúrgueres devem usar ficha técnica:
+                  vender um X-Bacon diminui pão, carne, queijo, ovo e bacon.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeView === "financeiro" && (
+          <div className="mx-auto w-full max-w-[1480px] p-4 sm:p-6 lg:p-9">
+            <div className="mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
+              <div>
+                <span className="text-[9px] font-extrabold uppercase tracking-[.13em] text-[#d9202c]">
+                  Entradas e saídas
+                </span>
+                <h1 className="text-2xl font-extrabold tracking-[-.04em] sm:text-3xl">
+                  Financeiro
+                </h1>
+                <p className="mt-1 text-xs text-[#776f6b]">
+                  Um resumo simples para saber como foi o dia.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={requestCashToggle}
+                  className="min-h-11 rounded-xl border border-[#ebe5e1] bg-white px-4 text-[10px] font-extrabold"
+                >
+                  {cashOpen ? "Fechar caixa" : "Abrir caixa"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCashMovementForm({
+                      kind: "sangria",
+                      description: "",
+                      amount: "",
+                    });
+                    setModal("cash-movement");
+                  }}
+                  disabled={!cashOpen}
+                  className="min-h-11 rounded-xl border border-[#ebe5e1] bg-white px-4 text-[10px] font-extrabold disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  Sangria / suprimento
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setModal("expense")}
+                  data-testid="open-expense-modal"
+                  className="flex min-h-11 items-center gap-2 rounded-xl bg-[#302b29] px-4 text-[10px] font-extrabold text-white"
+                >
+                  <Minus size={17} />
+                  Registrar saída
+                </button>
+              </div>
+            </div>
+
+            <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {[
+                {
+                  label: "Entradas de hoje",
+                  value: revenue,
+                  helper: `${todaySales.length} vendas`,
+                  icon: ArrowUpRight,
+                  colors: "bg-[#eaf8f1] text-[#27865d]",
+                },
+                {
+                  label: "Saídas de hoje",
+                  value: expenseTotal,
+                  helper: `${todayExpenses.length} lançamentos`,
+                  icon: ArrowDownRight,
+                  colors: "bg-[#fff0f1] text-[#d9202c]",
+                },
+                {
+                  label: "Resultado do dia",
+                  value: revenue - expenseTotal,
+                  helper: "Antes de outros custos",
+                  icon: CircleDollarSign,
+                  colors: "bg-[#fff8de] text-[#a97300]",
+                },
+                {
+                  label: "Saldo em caixa",
+                  value: cashBalance,
+                  helper: cashOpen
+                    ? `Abertura: ${currency.format(openingBalance)} • só dinheiro`
+                    : "Caixa fechado",
+                  icon: WalletCards,
+                  colors: "bg-[#f1eefc] text-[#7458b4]",
+                },
+              ].map((item) => {
+                const Icon = item.icon;
+                return (
+                  <article
+                    key={item.label}
+                    className="rounded-2xl border border-[#ebe5e1] bg-white p-4 shadow-sm"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] font-bold text-[#776f6b]">
+                        {item.label}
+                      </span>
+                      <span
+                        className={`grid size-9 place-items-center rounded-xl ${item.colors}`}
+                      >
+                        <Icon size={18} />
+                      </span>
+                    </div>
+                    <strong className="mt-3 block text-2xl tracking-[-.04em]">
+                      {currency.format(item.value)}
+                    </strong>
+                    <small className="text-[8px] text-[#9c928d]">
+                      {item.helper}
+                    </small>
+                  </article>
+                );
+              })}
+            </section>
+
+            <section className="mt-4 flex flex-col gap-4 rounded-[20px] border border-[#ebe5e1] bg-white p-5 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex items-start gap-3">
+                <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#f1eefc] text-[#7458b4]">
+                  <Download size={19} />
+                </span>
+                <div>
+                  <h2 className="text-sm font-extrabold">Proteção dos dados</h2>
+                  <p className="mt-1 max-w-2xl text-[9px] leading-4 text-[#776f6b]">
+                    Exporte uma cópia das vendas, estoque e caixa. O arquivo pode
+                    ser guardado no Google Drive e restaurado neste navegador.
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={exportBackup}
+                  className="flex min-h-10 items-center gap-2 rounded-xl bg-[#302b29] px-4 text-[9px] font-extrabold text-white"
+                >
+                  <Download size={15} />
+                  Exportar backup
+                </button>
+                <label className="flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-[#ebe5e1] px-4 text-[9px] font-extrabold text-[#5f5753] focus-within:ring-2 focus-within:ring-[#d9202c] focus-within:ring-offset-2">
+                  <Upload size={15} />
+                  Restaurar backup
+                  <input
+                    type="file"
+                    accept="application/json,.json"
+                    onChange={importBackup}
+                    className="sr-only"
+                  />
+                </label>
+              </div>
+            </section>
+
+            <div className="mt-4 grid gap-4 xl:grid-cols-[1.15fr_.85fr]">
+              <section className="overflow-hidden rounded-[20px] border border-[#ebe5e1] bg-white shadow-sm">
+                <div className="flex items-start justify-between border-b border-[#ebe5e1] p-5">
+                  <div>
+                    <span className="text-[9px] font-extrabold uppercase tracking-[.13em] text-[#9c928d]">
+                      Fluxo do dia
+                    </span>
+                    <h2 className="text-base font-extrabold">
+                      Últimos lançamentos
+                    </h2>
+                  </div>
+                  <span className="rounded-full bg-[#f7f5f2] px-2 py-1 text-[8px] font-bold text-[#776f6b]">
+                    Hoje
+                  </span>
+                </div>
+                <div className="divide-y divide-[#eee9e5]">
+                  {transactions.map((transaction) => (
+                    <article
+                      key={transaction.id}
+                      className="flex items-center gap-3 px-5 py-3"
+                    >
+                      <span
+                        className={`grid size-9 shrink-0 place-items-center rounded-xl ${
+                          transaction.kind === "entrada"
+                            ? "bg-[#eaf8f1] text-[#27865d]"
+                            : "bg-[#fff0f1] text-[#d9202c]"
+                        }`}
+                      >
+                        {transaction.kind === "entrada" ? (
+                          <ArrowUpRight size={17} />
+                        ) : (
+                          <ArrowDownRight size={17} />
+                        )}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <strong className="block truncate text-[10px]">
+                          {transaction.description}
+                        </strong>
+                        <span className="text-[8px] text-[#9c928d]">
+                          {formatTime(transaction.timestamp)} •{" "}
+                          {transaction.detail}
+                        </span>
+                      </div>
+                      <strong
+                        className={`text-[11px] ${
+                          transaction.kind === "entrada"
+                            ? "text-[#27865d]"
+                            : "text-[#d9202c]"
+                        }`}
+                      >
+                        {transaction.kind === "entrada" ? "+" : "-"}{" "}
+                        {currency.format(transaction.amount)}
+                      </strong>
+                    </article>
+                  ))}
+                  {!transactions.length && (
+                    <div className="grid min-h-56 place-items-center text-center">
+                      <div>
+                        <ReceiptText
+                          size={30}
+                          className="mx-auto text-[#c7beba]"
+                        />
+                        <strong className="mt-2 block text-[11px]">
+                          Nenhum lançamento hoje
+                        </strong>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </section>
+
+              <section className="rounded-[20px] border border-[#ebe5e1] bg-white p-5 shadow-sm">
+                <span className="text-[9px] font-extrabold uppercase tracking-[.13em] text-[#9c928d]">
+                  Recebimentos
+                </span>
+                <h2 className="text-base font-extrabold">Por forma de pagamento</h2>
+                <div className="mt-5 space-y-5">
+                  {[
+                    { id: "Pix" as const, icon: QrCode, color: "#27865d" },
+                    {
+                      id: "Dinheiro" as const,
+                      icon: Banknote,
+                      color: "#d9202c",
+                    },
+                    {
+                      id: "Cartão" as const,
+                      icon: CreditCard,
+                      color: "#7458b4",
+                    },
+                  ].map((method) => {
+                    const Icon = method.icon;
+                    const percentage = revenue
+                      ? (paymentTotals[method.id] / revenue) * 100
+                      : 0;
+                    return (
+                      <div key={method.id}>
+                        <div className="mb-2 flex items-center gap-2">
+                          <Icon size={16} style={{ color: method.color }} />
+                          <span className="flex-1 text-[10px] font-bold">
+                            {method.id}
+                          </span>
+                          <strong className="text-[10px]">
+                            {currency.format(paymentTotals[method.id])}
+                          </strong>
+                          <span className="w-9 text-right text-[8px] text-[#9c928d]">
+                            {percentage.toFixed(0)}%
+                          </span>
+                        </div>
+                        <div className="h-2 overflow-hidden rounded-full bg-[#f1eeeb]">
+                          <i
+                            className="block h-full rounded-full"
+                            style={{
+                              width: `${percentage}%`,
+                              background: method.color,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="mt-6 rounded-2xl bg-[#f7f5f2] p-4">
+                  <strong className="block text-[10px]">
+                    Controle gerencial simples
+                  </strong>
+                  <p className="mt-1 text-[8px] leading-4 text-[#776f6b]">
+                    Este painel ajuda a organizar caixa, compras e vendas. A
+                    escrituração contábil e fiscal oficial deverá ser validada
+                    com contador.
+                  </p>
+                </div>
+              </section>
+            </div>
+          </div>
+        )}
+
+        {activeView === "musica" && (
+          <div className="mx-auto w-full max-w-[1240px] p-4 sm:p-6 lg:p-9">
+            <div className="mb-5">
+              <span className="text-[9px] font-extrabold uppercase tracking-[.13em] text-[#d9202c]">
+                Um cantinho para o MC Poolblay
+              </span>
+              <h1 className="text-2xl font-extrabold tracking-[-.04em] sm:text-3xl">
+                Música ambiente
+              </h1>
+              <p className="mt-1 max-w-2xl text-xs leading-5 text-[#776f6b]">
+                Importe músicas que já estejam salvas legalmente no computador,
+                organize a fila e toque sem misturar esta função com o caixa.
+              </p>
+            </div>
+
+            <section className="relative overflow-hidden rounded-[24px] bg-gradient-to-br from-[#272220] to-[#161312] p-5 text-white shadow-2xl sm:p-8">
+              <div className="absolute -right-20 -top-20 size-72 rounded-full border-[50px] border-[#d9202c]/10" />
+              <div className="relative z-10 grid gap-7 lg:grid-cols-[1fr_320px] lg:items-center">
+                <div>
+                  <span className="inline-flex items-center gap-2 rounded-full bg-[#d9202c]/15 px-3 py-2 text-[9px] font-extrabold text-[#ff8790]">
+                    <Music2 size={14} />
+                    Gerenciador local • Beta
+                  </span>
+                  <h2 className="mt-5 max-w-lg text-2xl font-extrabold tracking-[-.04em] sm:text-4xl">
+                    O clima da Pool, do jeito de vocês.
+                  </h2>
+                  <p className="mt-3 max-w-xl text-[10px] leading-5 text-white/50 sm:text-xs">
+                    O navegador usa a saída de som escolhida no Windows. Basta
+                    conectar a caixa Bluetooth no computador e selecioná-la nas
+                    configurações de áudio.
+                  </p>
+                  <div className="mt-5 flex flex-wrap gap-2">
+                    <label className="flex min-h-11 cursor-pointer items-center gap-2 rounded-xl bg-[#d9202c] px-4 text-[10px] font-extrabold shadow-lg focus-within:ring-2 focus-within:ring-white focus-within:ring-offset-2 focus-within:ring-offset-[#211e1d]">
+                      <Upload size={17} />
+                      Importar músicas
+                      <input
+                        type="file"
+                        accept="audio/*"
+                        multiple
+                        onChange={handleAudioFiles}
+                        className="sr-only"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        showToast(
+                          "Conecte a caixa nas configurações de Bluetooth do Windows; o sistema usará essa saída.",
+                          "info",
+                        )
+                      }
+                      className="flex min-h-11 items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 text-[10px] font-extrabold text-white/75"
+                    >
+                      <Bluetooth size={17} />
+                      Como conectar
+                    </button>
+                  </div>
+                </div>
+
+                <div className="rounded-[22px] border border-white/10 bg-white/7 p-5 backdrop-blur">
+                  <div className="flex items-center gap-3">
+                    <span className="grid size-14 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-[#d9202c] to-[#8f0d16]">
+                      <Music2 size={25} />
+                    </span>
+                    <div className="min-w-0">
+                      <span className="text-[8px] uppercase tracking-[.14em] text-white/35">
+                        Tocando agora
+                      </span>
+                      <strong className="block truncate text-sm">
+                        {currentTrack?.name ?? "Nenhuma música selecionada"}
+                      </strong>
+                      <span className="text-[8px] text-white/35">
+                        {currentTrack?.size ?? "Importe um arquivo de áudio"}
+                      </span>
+                    </div>
+                  </div>
+                  <audio
+                    ref={audioRef}
+                    src={currentTrack?.url}
+                    onEnded={() => moveTrack(1)}
+                    onPause={() => setIsPlaying(false)}
+                  />
+                  <div className="mt-5 flex items-center justify-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => moveTrack(-1)}
+                      aria-label="Música anterior"
+                      className="grid size-9 place-items-center text-white/55"
+                    >
+                      <SkipBack size={19} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={togglePlay}
+                      aria-label={isPlaying ? "Pausar" : "Reproduzir"}
+                      className="grid size-12 place-items-center rounded-full bg-white text-[#211e1d] shadow-xl"
+                    >
+                      {isPlaying ? <Pause size={21} /> : <Play size={21} />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => moveTrack(1)}
+                      aria-label="Próxima música"
+                      className="grid size-9 place-items-center text-white/55"
+                    >
+                      <SkipForward size={19} />
+                    </button>
+                  </div>
+                  <div className="mt-5 flex items-center gap-3">
+                    <Volume2 size={16} className="text-white/45" />
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={volume}
+                      onChange={(event) => setVolume(Number(event.target.value))}
+                      aria-label="Volume"
+                      className="audio-range w-full"
+                    />
+                    <span className="w-7 text-right text-[8px] text-white/35">
+                      {volume}%
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_310px]">
+              <section className="overflow-hidden rounded-[20px] border border-[#ebe5e1] bg-white shadow-sm">
+                <div className="flex items-center justify-between border-b border-[#ebe5e1] p-5">
+                  <div>
+                    <span className="text-[9px] font-extrabold uppercase tracking-[.13em] text-[#9c928d]">
+                      Nesta sessão
+                    </span>
+                    <h2 className="text-base font-extrabold">Fila de reprodução</h2>
+                  </div>
+                  <span className="rounded-full bg-[#f7f5f2] px-2 py-1 text-[8px] font-bold text-[#776f6b]">
+                    {tracks.length} faixa(s)
+                  </span>
+                </div>
+                {!tracks.length ? (
+                  <div className="grid min-h-64 place-items-center p-6 text-center">
+                    <div>
+                      <FileAudio
+                        size={34}
+                        className="mx-auto text-[#c7beba]"
+                      />
+                      <strong className="mt-3 block text-xs">
+                        A fila está vazia
+                      </strong>
+                      <span className="mt-1 block text-[9px] text-[#8d8581]">
+                        Importe MP3, WAV, OGG ou outro áudio compatível.
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-[#eee9e5]">
+                    {tracks.map((track, index) => (
+                      <button
+                        key={track.id}
+                        type="button"
+                        onClick={() => selectTrack(index)}
+                        aria-pressed={currentTrackIndex === index}
+                        className={`flex w-full items-center gap-3 px-5 py-3 text-left transition hover:bg-[#faf8f6] ${
+                          currentTrackIndex === index ? "bg-[#fff7f7]" : ""
+                        }`}
+                      >
+                        <span
+                          className={`grid size-9 place-items-center rounded-xl ${
+                            currentTrackIndex === index
+                              ? "bg-[#d9202c] text-white"
+                              : "bg-[#f7f5f2] text-[#776f6b]"
+                          }`}
+                        >
+                          {currentTrackIndex === index && isPlaying ? (
+                            <Volume2 size={16} />
+                          ) : (
+                            <Music2 size={16} />
+                          )}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <strong className="block truncate text-[10px]">
+                            {track.name}
+                          </strong>
+                          <span className="text-[8px] text-[#9c928d]">
+                            Arquivo local • {track.size}
+                          </span>
+                        </div>
+                        <Play size={15} className="text-[#d9202c]" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              <aside className="rounded-[20px] border border-[#ebe5e1] bg-white p-5 shadow-sm">
+                <span className="grid size-10 place-items-center rounded-xl bg-[#fff8de] text-[#a97300]">
+                  <ListMusic size={20} />
+                </span>
+                <h2 className="mt-4 text-base font-extrabold">
+                  O que entra depois
+                </h2>
+                <ul className="mt-3 space-y-3">
+                  {[
+                    "Criar e renomear playlists",
+                    "Continuar a música após trocar de tela",
+                    "Salvar a biblioteca no computador",
+                    "Modo festa com fila automática",
+                  ].map((item) => (
+                    <li
+                      key={item}
+                      className="flex items-start gap-2 text-[9px] leading-4 text-[#776f6b]"
+                    >
+                      <CheckCircle2
+                        size={14}
+                        className="mt-0.5 shrink-0 text-[#27865d]"
+                      />
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+                <div className="mt-5 rounded-xl bg-[#fff0f1] p-3">
+                  <strong className="block text-[9px] text-[#b41622]">
+                    Sobre downloads
+                  </strong>
+                  <p className="mt-1 text-[8px] leading-4 text-[#9b555b]">
+                    O sistema deverá trabalhar apenas com arquivos próprios,
+                    licenciados ou obtidos por fontes que autorizem o download.
+                  </p>
+                </div>
+              </aside>
+            </div>
+          </div>
+        )}
+      </main>
+
+      <nav
+        className="fixed bottom-[max(.75rem,env(safe-area-inset-bottom))] left-3 right-3 z-40 grid grid-cols-5 rounded-2xl border border-white/10 bg-[#211e1d]/96 p-1.5 text-white shadow-2xl backdrop-blur-xl lg:hidden"
+        aria-label="Navegação móvel"
+      >
+        {navigation.map((item) => {
+          const Icon = item.icon;
+          const active = activeView === item.id;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => navigateTo(item.id)}
+              aria-current={active ? "page" : undefined}
+              className={`flex min-h-[50px] flex-col items-center justify-center gap-1 rounded-xl text-[7px] font-bold ${
+                active ? "bg-[#d9202c] text-white" : "text-white/45"
+              }`}
+            >
+              <Icon size={18} />
+              {item.id === "venda" ? "Venda" : item.label}
+            </button>
+          );
+        })}
+      </nav>
+
+      {modal && (
+        <div
+          role="presentation"
+          onClick={() => setModal(null)}
+          className="fixed inset-0 z-50 grid place-items-center bg-[#211e1d]/55 p-4 backdrop-blur-sm"
+        >
+          <div
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label={modalContent?.aria}
+            tabIndex={-1}
+            onClick={(event) => event.stopPropagation()}
+            className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-[22px] bg-white p-5 shadow-2xl outline-none sm:p-6"
+          >
+            <div className="flex items-start justify-between">
+              <div>
+                <span className="text-[9px] font-extrabold uppercase tracking-[.13em] text-[#d9202c]">
+                  {modalContent?.eyebrow}
+                </span>
+                <h2 className="text-xl font-extrabold tracking-tight">
+                  {modalContent?.title}
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModal(null)}
+                aria-label="Fechar"
+                className="grid size-9 place-items-center rounded-xl bg-[#f7f5f2] text-[#776f6b]"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {modal === "stock" ? (
+              <form onSubmit={submitStock} className="mt-5 space-y-4">
+                <label className="block">
+                  <span className="mb-1.5 block text-[9px] font-extrabold text-[#776f6b]">
+                    Produto
+                  </span>
+                  <select
+                    value={stockForm.productId}
+                    onChange={(event) =>
+                      setStockForm((current) => ({
+                        ...current,
+                        productId: event.target.value,
+                      }))
+                    }
+                    className="h-11 w-full rounded-xl border border-[#ebe5e1] bg-white px-3 text-xs outline-none focus:border-[#d9202c]"
+                  >
+                    {products.map((product) => (
+                      <option value={product.id} key={product.id}>
+                        {product.name} — atual: {product.stock}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="block">
+                    <span className="mb-1.5 block text-[9px] font-extrabold text-[#776f6b]">
+                      Quantidade
+                    </span>
+                    <input
+                      required
+                       type="number"
+                       min="1"
+                       step="1"
+                      value={stockForm.quantity}
+                      onChange={(event) =>
+                        setStockForm((current) => ({
+                          ...current,
+                          quantity: event.target.value,
+                        }))
+                      }
+                      className="h-11 w-full rounded-xl border border-[#ebe5e1] px-3 text-xs outline-none focus:border-[#d9202c]"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1.5 block text-[9px] font-extrabold text-[#776f6b]">
+                      Custo total (opcional)
+                    </span>
+                    <input
+                      inputMode="decimal"
+                      value={stockForm.cost}
+                      onChange={(event) =>
+                        setStockForm((current) => ({
+                          ...current,
+                          cost: event.target.value,
+                        }))
+                      }
+                      placeholder="R$ 0,00"
+                      className="h-11 w-full rounded-xl border border-[#ebe5e1] px-3 text-xs outline-none focus:border-[#d9202c]"
+                    />
+                  </label>
+                </div>
+                <label className="block">
+                  <span className="mb-1.5 block text-[9px] font-extrabold text-[#776f6b]">
+                    Se houver custo, pago com
+                  </span>
+                  <select
+                    value={stockForm.payment}
+                    onChange={(event) =>
+                      setStockForm((current) => ({
+                        ...current,
+                        payment: event.target.value as PaymentMethod,
+                      }))
+                    }
+                    className="h-11 w-full rounded-xl border border-[#ebe5e1] bg-white px-3 text-xs outline-none"
+                  >
+                    <option value="Dinheiro">Dinheiro do caixa</option>
+                    <option>Pix</option>
+                    <option>Cartão</option>
+                  </select>
+                </label>
+                <div className="rounded-xl bg-[#fff9e9] p-3 text-[8px] leading-4 text-[#8d6e2e]">
+                  Se informar o custo, o sistema também criará uma saída no
+                  financeiro.
+                </div>
+                <button
+                  type="submit"
+                  className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#d9202c] text-xs font-extrabold text-white"
+                >
+                  <Check size={18} />
+                  Salvar entrada
+                </button>
+              </form>
+            ) : modal === "expense" ? (
+              <form onSubmit={submitExpense} className="mt-5 space-y-4">
+                <label className="block">
+                  <span className="mb-1.5 block text-[9px] font-extrabold text-[#776f6b]">
+                    Descrição
+                  </span>
+                  <input
+                    required
+                    value={expenseForm.description}
+                    onChange={(event) =>
+                      setExpenseForm((current) => ({
+                        ...current,
+                        description: event.target.value,
+                      }))
+                    }
+                    placeholder="Ex.: compra de carne e pão"
+                    className="h-11 w-full rounded-xl border border-[#ebe5e1] px-3 text-xs outline-none focus:border-[#d9202c]"
+                  />
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="block">
+                    <span className="mb-1.5 block text-[9px] font-extrabold text-[#776f6b]">
+                      Categoria
+                    </span>
+                    <select
+                      value={expenseForm.category}
+                      onChange={(event) =>
+                        setExpenseForm((current) => ({
+                          ...current,
+                          category: event.target.value,
+                        }))
+                      }
+                      className="h-11 w-full rounded-xl border border-[#ebe5e1] bg-white px-3 text-xs outline-none"
+                    >
+                      <option>Matéria-prima</option>
+                      <option>Bebidas</option>
+                      <option>Embalagens</option>
+                      <option>Gás</option>
+                      <option>Manutenção</option>
+                      <option>Outros</option>
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="mb-1.5 block text-[9px] font-extrabold text-[#776f6b]">
+                      Valor
+                    </span>
+                    <input
+                      required
+                      inputMode="decimal"
+                      value={expenseForm.amount}
+                      onChange={(event) =>
+                        setExpenseForm((current) => ({
+                          ...current,
+                          amount: event.target.value,
+                        }))
+                      }
+                      placeholder="R$ 0,00"
+                      className="h-11 w-full rounded-xl border border-[#ebe5e1] px-3 text-xs outline-none focus:border-[#d9202c]"
+                    />
+                  </label>
+                </div>
+                <label className="block">
+                  <span className="mb-1.5 block text-[9px] font-extrabold text-[#776f6b]">
+                    Forma usada para pagar
+                  </span>
+                  <select
+                    value={expenseForm.payment}
+                    onChange={(event) =>
+                      setExpenseForm((current) => ({
+                        ...current,
+                        payment: event.target.value as PaymentMethod,
+                      }))
+                    }
+                    className="h-11 w-full rounded-xl border border-[#ebe5e1] bg-white px-3 text-xs outline-none"
+                  >
+                    <option value="Dinheiro">Dinheiro do caixa</option>
+                    <option>Pix</option>
+                    <option>Cartão</option>
+                  </select>
+                </label>
+                <button
+                  type="submit"
+                  className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#302b29] text-xs font-extrabold text-white"
+                >
+                  <Check size={18} />
+                  Salvar saída
+                </button>
+              </form>
+            ) : modal === "cash-open" ? (
+              <form onSubmit={submitCashOpen} className="mt-5 space-y-4">
+                <label className="block">
+                  <span className="mb-1.5 block text-[9px] font-extrabold text-[#776f6b]">
+                    Dinheiro inicial para troco
+                  </span>
+                  <input
+                    required
+                    autoFocus
+                    inputMode="decimal"
+                    value={cashOpenForm}
+                    onChange={(event) => setCashOpenForm(event.target.value)}
+                    placeholder="R$ 0,00"
+                    className="h-11 w-full rounded-xl border border-[#ebe5e1] px-3 text-xs outline-none focus:border-[#d9202c]"
+                  />
+                </label>
+                <div className="rounded-xl bg-[#f1eefc] p-3 text-[8px] leading-4 text-[#5e4893]">
+                  Este valor inicia uma nova sessão. Pix e cartão aparecem no
+                  financeiro, mas não entram no dinheiro físico do caixa.
+                </div>
+                <button
+                  type="submit"
+                  className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#27865d] text-xs font-extrabold text-white"
+                >
+                  <Check size={18} />
+                  Confirmar abertura
+                </button>
+              </form>
+            ) : modal === "cash-close" ? (
+              <form onSubmit={submitCashClose} className="mt-5 space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-xl bg-[#f7f5f2] p-3">
+                    <span className="block text-[8px] text-[#776f6b]">
+                      Saldo esperado
+                    </span>
+                    <strong className="mt-1 block text-lg">
+                      {currency.format(cashBalance)}
+                    </strong>
+                  </div>
+                  <div className="rounded-xl bg-[#f7f5f2] p-3">
+                    <span className="block text-[8px] text-[#776f6b]">
+                      Vendas em dinheiro
+                    </span>
+                    <strong className="mt-1 block text-lg">
+                      {currency.format(cashSalesTotal)}
+                    </strong>
+                  </div>
+                </div>
+                <label className="block">
+                  <span className="mb-1.5 block text-[9px] font-extrabold text-[#776f6b]">
+                    Valor contado na gaveta
+                  </span>
+                  <input
+                    required
+                    autoFocus
+                    inputMode="decimal"
+                    value={cashCloseForm}
+                    onChange={(event) => setCashCloseForm(event.target.value)}
+                    placeholder="R$ 0,00"
+                    className="h-11 w-full rounded-xl border border-[#ebe5e1] px-3 text-xs outline-none focus:border-[#d9202c]"
+                  />
+                </label>
+                {cashCloseForm.trim() &&
+                  Number.isFinite(parseAmount(cashCloseForm)) && (
+                  <div
+                    className={`rounded-xl p-3 text-[9px] font-bold ${
+                      Math.abs(
+                        roundMoney(parseAmount(cashCloseForm) - cashBalance),
+                      ) < 0.005
+                        ? "bg-[#eaf8f1] text-[#23734f]"
+                        : "bg-[#fff9e9] text-[#8d6100]"
+                    }`}
+                  >
+                    Diferença:{" "}
+                    {currency.format(
+                      roundMoney(parseAmount(cashCloseForm) - cashBalance),
+                    )}
+                  </div>
+                )}
+                <button
+                  type="submit"
+                  className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#302b29] text-xs font-extrabold text-white"
+                >
+                  <Check size={18} />
+                  Confirmar fechamento
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={submitCashMovement} className="mt-5 space-y-4">
+                <div className="grid grid-cols-2 gap-2">
+                  {(["sangria", "suprimento"] as const).map((kind) => (
+                    <button
+                      key={kind}
+                      type="button"
+                      onClick={() =>
+                        setCashMovementForm((current) => ({ ...current, kind }))
+                      }
+                      aria-pressed={cashMovementForm.kind === kind}
+                      className={`min-h-11 rounded-xl border text-[10px] font-extrabold ${
+                        cashMovementForm.kind === kind
+                          ? "border-[#d9202c] bg-[#fff0f1] text-[#d9202c]"
+                          : "border-[#ebe5e1] text-[#776f6b]"
+                      }`}
+                    >
+                      {kind === "sangria"
+                        ? "Retirar dinheiro"
+                        : "Adicionar dinheiro"}
+                    </button>
+                  ))}
+                </div>
+                <label className="block">
+                  <span className="mb-1.5 block text-[9px] font-extrabold text-[#776f6b]">
+                    Motivo
+                  </span>
+                  <input
+                    required
+                    value={cashMovementForm.description}
+                    onChange={(event) =>
+                      setCashMovementForm((current) => ({
+                        ...current,
+                        description: event.target.value,
+                      }))
+                    }
+                    placeholder={
+                      cashMovementForm.kind === "sangria"
+                        ? "Ex.: guardar dinheiro no cofre"
+                        : "Ex.: reforço para troco"
+                    }
+                    className="h-11 w-full rounded-xl border border-[#ebe5e1] px-3 text-xs outline-none focus:border-[#d9202c]"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1.5 block text-[9px] font-extrabold text-[#776f6b]">
+                    Valor
+                  </span>
+                  <input
+                    required
+                    inputMode="decimal"
+                    value={cashMovementForm.amount}
+                    onChange={(event) =>
+                      setCashMovementForm((current) => ({
+                        ...current,
+                        amount: event.target.value,
+                      }))
+                    }
+                    placeholder="R$ 0,00"
+                    className="h-11 w-full rounded-xl border border-[#ebe5e1] px-3 text-xs outline-none focus:border-[#d9202c]"
+                  />
+                </label>
+                <button
+                  type="submit"
+                  className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#302b29] text-xs font-extrabold text-white"
+                >
+                  <Check size={18} />
+                  Salvar movimentação
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {toast && (
+        <div
+          role="status"
+          className={`fixed bottom-[82px] right-4 z-[60] flex max-w-sm items-center gap-3 rounded-2xl border bg-white p-3 pr-5 text-[10px] font-bold shadow-2xl lg:bottom-5 ${
+            toast.tone === "success"
+              ? "border-[#cdebdc] text-[#23734f]"
+              : toast.tone === "warning"
+                ? "border-[#f1dfaf] text-[#8d6100]"
+                : "border-[#ddd5f2] text-[#5e4893]"
+          }`}
+        >
+          {toast.tone === "success" ? (
+            <CheckCircle2 size={19} />
+          ) : toast.tone === "warning" ? (
+            <AlertTriangle size={19} />
+          ) : (
+            <Sparkles size={19} />
+          )}
+          {toast.message}
+        </div>
+      )}
+    </div>
+  );
+}

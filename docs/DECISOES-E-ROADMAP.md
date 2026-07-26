@@ -29,6 +29,19 @@ vendas, estoque e controle gerencial da Pool Petiscos & Lanches.
 - reprodução de áudios locais;
 - layout responsivo.
 
+### Revisão técnica de 25/07/2026
+
+- regras de dinheiro e troco isoladas e testadas;
+- bloqueio de saída em espécie sem caixa ou sem saldo;
+- virada automática dos totais diários;
+- gráfico alimentado somente por vendas registradas;
+- validação integral do armazenamento e dos backups;
+- cópia de segurança automática antes de restaurar;
+- sincronização básica entre abas com aviso ao operador;
+- navegação, modal e foco por teclado revisados;
+- scripts de desenvolvimento compatíveis com Windows;
+- código organizado por domínio, persistência, dados de demonstração e interface.
+
 ## Itens bloqueados pela visita presencial
 
 Não implementar com dados inventados:
@@ -71,6 +84,10 @@ Não implementar com dados inventados:
 - criar migrações e cópias automáticas;
 - configurar pasta sincronizada com Google Drive;
 - testar instalação e restauração no computador da lanchonete.
+
+Antes da operação oficial, substituir o armazenamento do navegador por sessões
+de caixa explícitas no SQLite. Cada venda, despesa e movimento deverá guardar o
+identificador da sessão, sem depender apenas do relógio do computador.
 
 ### 4. Operação assistida
 
