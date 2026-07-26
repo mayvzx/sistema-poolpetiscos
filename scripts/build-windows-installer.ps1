@@ -599,7 +599,15 @@ if (@($nodeRoot).Count -ne 1) {
     throw 'Estrutura inesperada no arquivo portátil do Node.js.'
 }
 $stagedNodeDirectory = Join-Path $stageDirectory 'runtime\node'
-Copy-DirectoryContents -Source $nodeRoot.FullName -Destination $stagedNodeDirectory
+New-Item -ItemType Directory -Path $stagedNodeDirectory -Force | Out-Null
+$nodeExecutable = Join-Path $nodeRoot.FullName 'node.exe'
+$nodeLicense = Join-Path $nodeRoot.FullName 'LICENSE'
+foreach ($requiredNodeFile in @($nodeExecutable, $nodeLicense)) {
+    if (-not (Test-Path -LiteralPath $requiredNodeFile -PathType Leaf)) {
+        throw "O pacote oficial do Node.js não contém '$requiredNodeFile'."
+    }
+    Copy-Item -LiteralPath $requiredNodeFile -Destination $stagedNodeDirectory
+}
 
 $ffmpegArchivePath = Join-Path $cacheDirectory $dependencyLock.ffmpeg.archive
 Get-VerifiedDownload `
@@ -622,19 +630,40 @@ if (-not (Test-Path -LiteralPath (Join-Path $ffmpegExecutables[0].Directory.Full
     throw 'O pacote do FFmpeg não contém ffprobe.exe.'
 }
 $stagedFfmpegDirectory = Join-Path $stageDirectory 'runtime\ffmpeg'
-Copy-DirectoryContents -Source $ffmpegRoot.FullName -Destination $stagedFfmpegDirectory
+$stagedFfmpegBinDirectory = Join-Path $stagedFfmpegDirectory 'bin'
+New-Item -ItemType Directory -Path $stagedFfmpegBinDirectory -Force | Out-Null
+foreach ($requiredFfmpegFile in @('ffmpeg.exe', 'ffprobe.exe')) {
+    Copy-Item `
+        -LiteralPath (Join-Path $ffmpegExecutables[0].Directory.FullName $requiredFfmpegFile) `
+        -Destination $stagedFfmpegBinDirectory
+}
+$ffmpegLibraries = @(Get-ChildItem `
+    -LiteralPath $ffmpegExecutables[0].Directory.FullName `
+    -Filter '*.dll' `
+    -File)
+if ($ffmpegLibraries.Count -eq 0) {
+    throw 'O pacote compartilhado do FFmpeg não contém as DLLs necessárias.'
+}
+foreach ($ffmpegLibrary in $ffmpegLibraries) {
+    Copy-Item -LiteralPath $ffmpegLibrary.FullName -Destination $stagedFfmpegBinDirectory
+}
+$ffmpegRootLicense = Join-Path $ffmpegRoot.FullName 'LICENSE.txt'
+if (-not (Test-Path -LiteralPath $ffmpegRootLicense -PathType Leaf)) {
+    throw 'A licença do FFmpeg não foi encontrada no pacote oficial.'
+}
+Copy-Item -LiteralPath $ffmpegRootLicense -Destination $stagedFfmpegDirectory
 
 $licensesDirectory = Join-Path $stageDirectory 'licenses'
 New-Item -ItemType Directory -Path $licensesDirectory -Force | Out-Null
 Copy-Item `
     -LiteralPath (Join-Path $projectRoot 'installer\THIRD_PARTY_NOTICES.txt') `
     -Destination $licensesDirectory
-$nodeLicense = Join-Path $stagedNodeDirectory 'LICENSE'
-if (-not (Test-Path -LiteralPath $nodeLicense -PathType Leaf)) {
+$stagedNodeLicense = Join-Path $stagedNodeDirectory 'LICENSE'
+if (-not (Test-Path -LiteralPath $stagedNodeLicense -PathType Leaf)) {
     throw 'A licença do Node.js não foi encontrada no pacote oficial.'
 }
 Copy-Item `
-    -LiteralPath $nodeLicense `
+    -LiteralPath $stagedNodeLicense `
     -Destination (Join-Path $licensesDirectory 'NODE-LICENSE.txt')
 $ytDlpLicense = Get-ChildItem `
     -LiteralPath (Join-Path $buildVenv 'Lib\site-packages') `

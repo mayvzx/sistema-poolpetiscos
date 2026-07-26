@@ -162,7 +162,8 @@ normais não existe atualização silenciosa de binários.
    desenvolvimento;
 5. cria um ambiente Python isolado e empacota launcher e `yt-dlp`;
 6. baixa e verifica Node e FFmpeg;
-7. monta o stage com aplicativo, runtimes, licenças e `BUILD-MANIFEST.json`;
+7. monta o stage com aplicativo, apenas os arquivos de runtime necessários,
+   licenças e `BUILD-MANIFEST.json`;
 8. testa o servidor standalone em uma porta loopback temporária;
 9. executa o self-test e um smoke test completo do launcher, com banco e portas
    temporários isolados;
