@@ -23,6 +23,7 @@ import {
   CircleDollarSign,
   Clock3,
   CreditCard,
+  Download,
   ExternalLink,
   FileAudio,
   LayoutDashboard,
@@ -94,6 +95,25 @@ type Expense = {
   description: string;
   category: string;
   amount: number;
+  payment: PaymentMethod;
+};
+
+type CashMovement = {
+  id: string;
+  timestamp: number;
+  description: string;
+  amount: number;
+  kind: "suprimento" | "sangria";
+};
+
+type CashClosure = {
+  id: string;
+  openedAt: number;
+  closedAt: number;
+  openingBalance: number;
+  expectedBalance: number;
+  countedBalance: number;
+  difference: number;
 };
 
 type Track = {
@@ -118,6 +138,7 @@ type Transaction = {
 };
 
 const STORAGE_KEY = "pool-caixa-prototype-v3-requisitos-confirmados";
+const BACKUP_VERSION = 1;
 const categories = [
   "Todos",
   "Hambúrgueres",
@@ -545,6 +566,20 @@ function normalizeText(value: string) {
     .toLowerCase();
 }
 
+function parseAmount(value: string) {
+  const normalized = value
+    .trim()
+    .replace(/\s/g, "")
+    .replace(/^R\$/i, "")
+    .replace(/\./g, "")
+    .replace(",", ".");
+  return Number(normalized);
+}
+
+function roundMoney(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
 function createDemoSales(): Sale[] {
   const now = Date.now();
   return [
@@ -639,6 +674,7 @@ function createDemoExpenses(): Expense[] {
       description: "Compra de pão e verduras",
       category: "Matéria-prima",
       amount: 38,
+      payment: "Dinheiro",
     },
   ];
 }
@@ -650,7 +686,10 @@ export default function Home() {
   const [sales, setSales] = useState<Sale[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [cashOpen, setCashOpen] = useState(true);
-  const [openingBalance] = useState(100);
+  const [openingBalance, setOpeningBalance] = useState(100);
+  const [cashOpenedAt, setCashOpenedAt] = useState(() => Date.now() - 2 * 60 * 60_000);
+  const [cashMovements, setCashMovements] = useState<CashMovement[]>([]);
+  const [cashClosures, setCashClosures] = useState<CashClosure[]>([]);
   const [hydrated, setHydrated] = useState(false);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [saleSearch, setSaleSearch] = useState("");
@@ -661,15 +700,26 @@ export default function Home() {
   const [stockFilter, setStockFilter] = useState<"Todos" | "Baixo" | "Normal">(
     "Todos",
   );
-  const [modal, setModal] = useState<"stock" | "expense" | null>(null);
+  const [modal, setModal] = useState<
+    "stock" | "expense" | "cash-open" | "cash-close" | "cash-movement" | null
+  >(null);
   const [stockForm, setStockForm] = useState({
     productId: DEMO_PRODUCTS[0].id,
     quantity: "10",
     cost: "",
+    payment: "Dinheiro" as PaymentMethod,
   });
   const [expenseForm, setExpenseForm] = useState({
     description: "",
     category: "Matéria-prima",
+    amount: "",
+    payment: "Dinheiro" as PaymentMethod,
+  });
+  const [cashOpenForm, setCashOpenForm] = useState("100");
+  const [cashCloseForm, setCashCloseForm] = useState("");
+  const [cashMovementForm, setCashMovementForm] = useState({
+    kind: "sangria" as CashMovement["kind"],
+    description: "",
     amount: "",
   });
   const [toast, setToast] = useState<Toast | null>(null);
@@ -698,11 +748,29 @@ export default function Home() {
             sales?: Sale[];
             expenses?: Expense[];
             cashOpen?: boolean;
+            openingBalance?: number;
+            cashOpenedAt?: number;
+            cashMovements?: CashMovement[];
+            cashClosures?: CashClosure[];
           };
           if (parsed.products?.length) setProducts(parsed.products);
           setSales(parsed.sales ?? createDemoSales());
-          setExpenses(parsed.expenses ?? createDemoExpenses());
+          setExpenses(
+            (parsed.expenses ?? createDemoExpenses()).map((expense) => ({
+              ...expense,
+              payment: expense.payment ?? "Dinheiro",
+            })),
+          );
           if (typeof parsed.cashOpen === "boolean") setCashOpen(parsed.cashOpen);
+          if (typeof parsed.openingBalance === "number") {
+            setOpeningBalance(parsed.openingBalance);
+            setCashOpenForm(String(parsed.openingBalance));
+          }
+          if (typeof parsed.cashOpenedAt === "number") {
+            setCashOpenedAt(parsed.cashOpenedAt);
+          }
+          setCashMovements(parsed.cashMovements ?? []);
+          setCashClosures(parsed.cashClosures ?? []);
         } else {
           setSales(createDemoSales());
           setExpenses(createDemoExpenses());
@@ -722,9 +790,28 @@ export default function Home() {
     if (!hydrated) return;
     window.localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ products, sales, expenses, cashOpen }),
+      JSON.stringify({
+        products,
+        sales,
+        expenses,
+        cashOpen,
+        openingBalance,
+        cashOpenedAt,
+        cashMovements,
+        cashClosures,
+      }),
     );
-  }, [cashOpen, expenses, hydrated, products, sales]);
+  }, [
+    cashClosures,
+    cashMovements,
+    cashOpen,
+    cashOpenedAt,
+    expenses,
+    hydrated,
+    openingBalance,
+    products,
+    sales,
+  ]);
 
   useEffect(() => {
     if (audioRef.current) audioRef.current.volume = volume / 100;
@@ -744,7 +831,46 @@ export default function Home() {
     [todayExpenses],
   );
   const ticketAverage = todaySales.length ? revenue / todaySales.length : 0;
-  const cashBalance = openingBalance + revenue - expenseTotal;
+  const sessionSales = useMemo(
+    () => sales.filter((sale) => sale.timestamp >= cashOpenedAt),
+    [cashOpenedAt, sales],
+  );
+  const sessionExpenses = useMemo(
+    () => expenses.filter((expense) => expense.timestamp >= cashOpenedAt),
+    [cashOpenedAt, expenses],
+  );
+  const sessionMovements = useMemo(
+    () =>
+      cashMovements.filter((movement) => movement.timestamp >= cashOpenedAt),
+    [cashMovements, cashOpenedAt],
+  );
+  const cashSalesTotal = useMemo(
+    () =>
+      sessionSales
+        .filter((sale) => sale.payment === "Dinheiro")
+        .reduce((total, sale) => total + sale.total, 0),
+    [sessionSales],
+  );
+  const cashExpenseTotal = useMemo(
+    () =>
+      sessionExpenses
+        .filter((expense) => expense.payment === "Dinheiro")
+        .reduce((total, expense) => total + expense.amount, 0),
+    [sessionExpenses],
+  );
+  const cashMovementTotal = useMemo(
+    () =>
+      sessionMovements.reduce(
+        (total, movement) =>
+          total +
+          (movement.kind === "suprimento" ? movement.amount : -movement.amount),
+        0,
+      ),
+    [sessionMovements],
+  );
+  const cashBalance = roundMoney(
+    openingBalance + cashSalesTotal - cashExpenseTotal + cashMovementTotal,
+  );
   const lowStock = useMemo(
     () => products.filter((product) => product.stock <= product.minimum),
     [products],
@@ -816,12 +942,28 @@ export default function Home() {
           id: expense.id,
           timestamp: expense.timestamp,
           description: expense.description,
-          detail: expense.category,
+          detail: `${expense.category} • ${expense.payment}`,
           amount: expense.amount,
           kind: "saida" as const,
         })),
+        ...cashMovements
+          .filter((movement) => isToday(movement.timestamp))
+          .map((movement) => ({
+            id: movement.id,
+            timestamp: movement.timestamp,
+            description: movement.description,
+            detail:
+              movement.kind === "suprimento"
+                ? "Suprimento de caixa"
+                : "Sangria de caixa",
+            amount: movement.amount,
+            kind:
+              movement.kind === "suprimento"
+                ? ("entrada" as const)
+                : ("saida" as const),
+          })),
       ].sort((a, b) => b.timestamp - a.timestamp),
-    [todayExpenses, todaySales],
+    [cashMovements, todayExpenses, todaySales],
   );
 
   const paymentTotals = useMemo(() => {
@@ -860,6 +1002,35 @@ export default function Home() {
 
   const currentTrack =
     currentTrackIndex >= 0 ? tracks[currentTrackIndex] : undefined;
+  const modalContent = modal
+    ? {
+        stock: {
+          eyebrow: "Reposição",
+          title: "Registrar entrada",
+          aria: "Registrar entrada de estoque",
+        },
+        expense: {
+          eyebrow: "Financeiro",
+          title: "Registrar saída",
+          aria: "Registrar saída financeira",
+        },
+        "cash-open": {
+          eyebrow: "Caixa",
+          title: "Abrir caixa",
+          aria: "Abrir caixa",
+        },
+        "cash-close": {
+          eyebrow: "Caixa",
+          title: "Fechar caixa",
+          aria: "Fechar caixa",
+        },
+        "cash-movement": {
+          eyebrow: "Dinheiro físico",
+          title: "Movimentar caixa",
+          aria: "Registrar sangria ou suprimento",
+        },
+      }[modal]
+    : null;
 
   function showToast(message: string, tone: Toast["tone"] = "success") {
     setToast({ message, tone });
@@ -917,7 +1088,7 @@ export default function Home() {
     }
     if (
       paymentMethod === "Dinheiro" &&
-      Number(cashReceived.replace(",", ".")) < cartTotal
+      parseAmount(cashReceived) < cartTotal
     ) {
       showToast("O valor recebido é menor que o total da venda.", "warning");
       return;
@@ -954,6 +1125,7 @@ export default function Home() {
       productId: productId ?? products[0]?.id ?? "",
       quantity: "10",
       cost: "",
+      payment: "Dinheiro",
     });
     setModal("stock");
   }
@@ -961,7 +1133,7 @@ export default function Home() {
   function submitStock(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const quantity = Number(stockForm.quantity);
-    const cost = Number(stockForm.cost.replace(",", "."));
+    const cost = parseAmount(stockForm.cost);
     if (!quantity || quantity <= 0) {
       showToast("Informe uma quantidade válida.", "warning");
       return;
@@ -982,6 +1154,7 @@ export default function Home() {
           description: `Reposição: ${product.name}`,
           category: "Compra de estoque",
           amount: cost,
+          payment: stockForm.payment,
         },
         ...current,
       ]);
@@ -996,7 +1169,7 @@ export default function Home() {
 
   function submitExpense(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const amount = Number(expenseForm.amount.replace(",", "."));
+    const amount = parseAmount(expenseForm.amount);
     if (!expenseForm.description.trim() || !amount || amount <= 0) {
       showToast("Preencha a descrição e um valor válido.", "warning");
       return;
@@ -1008,6 +1181,7 @@ export default function Home() {
         description: expenseForm.description.trim(),
         category: expenseForm.category,
         amount,
+        payment: expenseForm.payment,
       },
       ...current,
     ]);
@@ -1015,9 +1189,184 @@ export default function Home() {
       description: "",
       category: "Matéria-prima",
       amount: "",
+      payment: "Dinheiro",
     });
     setModal(null);
     showToast("Saída registrada no financeiro.");
+  }
+
+  function requestCashToggle() {
+    if (cashOpen) {
+      setCashCloseForm(currency.format(cashBalance));
+      setModal("cash-close");
+      return;
+    }
+    setCashOpenForm(String(openingBalance));
+    setModal("cash-open");
+  }
+
+  function submitCashOpen(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const amount = parseAmount(cashOpenForm);
+    if (!Number.isFinite(amount) || amount < 0) {
+      showToast("Informe um valor de abertura válido.", "warning");
+      return;
+    }
+    setOpeningBalance(amount);
+    setCashOpenedAt(Date.now());
+    setCashOpen(true);
+    setModal(null);
+    showToast(`Caixa aberto com ${currency.format(amount)}.`, "info");
+  }
+
+  function submitCashClose(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const countedBalance = parseAmount(cashCloseForm);
+    if (!Number.isFinite(countedBalance) || countedBalance < 0) {
+      showToast("Informe o valor contado no caixa.", "warning");
+      return;
+    }
+    const closedAt = Date.now();
+    const difference = roundMoney(countedBalance - cashBalance);
+    setCashClosures((current) => [
+      {
+        id: `FC-${String(closedAt).slice(-5)}`,
+        openedAt: cashOpenedAt,
+        closedAt,
+        openingBalance,
+        expectedBalance: cashBalance,
+        countedBalance,
+        difference,
+      },
+      ...current,
+    ]);
+    setCashOpen(false);
+    setCart([]);
+    setModal(null);
+    showToast(
+      Math.abs(difference) < 0.005
+        ? "Caixa fechado sem diferença."
+        : `Caixa fechado com diferença de ${currency.format(difference)}.`,
+      Math.abs(difference) < 0.005 ? "success" : "warning",
+    );
+  }
+
+  function submitCashMovement(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const amount = parseAmount(cashMovementForm.amount);
+    if (!cashOpen) {
+      showToast("Abra o caixa antes de movimentar dinheiro.", "warning");
+      return;
+    }
+    if (!cashMovementForm.description.trim() || !amount || amount <= 0) {
+      showToast("Preencha a descrição e um valor válido.", "warning");
+      return;
+    }
+    if (cashMovementForm.kind === "sangria" && amount > cashBalance) {
+      showToast("A sangria não pode ser maior que o saldo esperado.", "warning");
+      return;
+    }
+    setCashMovements((current) => [
+      {
+        id: `MC-${String(Date.now()).slice(-5)}`,
+        timestamp: Date.now(),
+        description: cashMovementForm.description.trim(),
+        amount,
+        kind: cashMovementForm.kind,
+      },
+      ...current,
+    ]);
+    setCashMovementForm({
+      kind: "sangria",
+      description: "",
+      amount: "",
+    });
+    setModal(null);
+    showToast(
+      cashMovementForm.kind === "sangria"
+        ? "Sangria registrada."
+        : "Suprimento registrado.",
+    );
+  }
+
+  function exportBackup() {
+    const backup = {
+      app: "Pool Petiscos & Lanches",
+      version: BACKUP_VERSION,
+      exportedAt: new Date().toISOString(),
+      data: {
+        products,
+        sales,
+        expenses,
+        cashOpen,
+        openingBalance,
+        cashOpenedAt,
+        cashMovements,
+        cashClosures,
+      },
+    };
+    const blob = new Blob([JSON.stringify(backup, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `pool-backup-${formatDateKey(Date.now())}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    showToast("Backup exportado. Guarde o arquivo no Google Drive.", "info");
+  }
+
+  function importBackup(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const backup = JSON.parse(String(reader.result)) as {
+          version?: number;
+          data?: {
+            products?: Product[];
+            sales?: Sale[];
+            expenses?: Expense[];
+            cashOpen?: boolean;
+            openingBalance?: number;
+            cashOpenedAt?: number;
+            cashMovements?: CashMovement[];
+            cashClosures?: CashClosure[];
+          };
+        };
+        if (backup.version !== BACKUP_VERSION || !backup.data?.products?.length) {
+          throw new Error("invalid-backup");
+        }
+        if (
+          !window.confirm(
+            "Restaurar este backup? Os dados atuais deste navegador serão substituídos.",
+          )
+        ) {
+          return;
+        }
+        setProducts(backup.data.products);
+        setSales(backup.data.sales ?? []);
+        setExpenses(
+          (backup.data.expenses ?? []).map((expense) => ({
+            ...expense,
+            payment: expense.payment ?? "Dinheiro",
+          })),
+        );
+        setCashOpen(backup.data.cashOpen ?? false);
+        setOpeningBalance(backup.data.openingBalance ?? 0);
+        setCashOpenedAt(backup.data.cashOpenedAt ?? Date.now());
+        setCashMovements(backup.data.cashMovements ?? []);
+        setCashClosures(backup.data.cashClosures ?? []);
+        setCart([]);
+        showToast("Backup restaurado com sucesso.");
+      } catch {
+        showToast("Este arquivo não é um backup válido da Pool.", "warning");
+      }
+    };
+    reader.readAsText(file);
   }
 
   function resetDemo() {
@@ -1032,6 +1381,11 @@ export default function Home() {
     setSales(createDemoSales());
     setExpenses(createDemoExpenses());
     setCashOpen(true);
+    setOpeningBalance(100);
+    setCashOpenForm("100");
+    setCashOpenedAt(Date.now() - 2 * 60 * 60_000);
+    setCashMovements([]);
+    setCashClosures([]);
     setCart([]);
     showToast("Dados de demonstração restaurados.", "info");
   }
@@ -1198,13 +1552,7 @@ export default function Home() {
           <div className="ml-auto flex items-center gap-2 sm:ml-0">
             <button
               type="button"
-              onClick={() => {
-                setCashOpen((current) => !current);
-                showToast(
-                  cashOpen ? "Caixa fechado." : "Caixa aberto para vendas.",
-                  "info",
-                );
-              }}
+              onClick={requestCashToggle}
               className={`flex items-center gap-2 rounded-full border px-3 py-2 text-[9px] font-extrabold sm:text-[10px] ${
                 cashOpen
                   ? "border-[#cdebdc] bg-[#eaf8f1] text-[#23734f]"
@@ -1786,13 +2134,12 @@ export default function Home() {
                         placeholder="R$ 0,00"
                         className="h-10 w-full rounded-xl border border-[#ebe5e1] px-3 text-xs outline-none focus:border-[#d9202c]"
                       />
-                      {Number(cashReceived.replace(",", ".")) >= cartTotal &&
+                      {parseAmount(cashReceived) >= cartTotal &&
                         cartTotal > 0 && (
                           <span className="mt-1 block text-[9px] font-bold text-[#27865d]">
                             Troco:{" "}
                             {currency.format(
-                              Number(cashReceived.replace(",", ".")) -
-                                cartTotal,
+                              parseAmount(cashReceived) - cartTotal,
                             )}
                           </span>
                         )}
@@ -2049,16 +2396,25 @@ export default function Home() {
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
-                  onClick={() => {
-                    setCashOpen((current) => !current);
-                    showToast(
-                      cashOpen ? "Caixa fechado." : "Caixa aberto para vendas.",
-                      "info",
-                    );
-                  }}
+                  onClick={requestCashToggle}
                   className="min-h-11 rounded-xl border border-[#ebe5e1] bg-white px-4 text-[10px] font-extrabold"
                 >
                   {cashOpen ? "Fechar caixa" : "Abrir caixa"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCashMovementForm({
+                      kind: "sangria",
+                      description: "",
+                      amount: "",
+                    });
+                    setModal("cash-movement");
+                  }}
+                  disabled={!cashOpen}
+                  className="min-h-11 rounded-xl border border-[#ebe5e1] bg-white px-4 text-[10px] font-extrabold disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  Sangria / suprimento
                 </button>
                 <button
                   type="button"
@@ -2098,7 +2454,9 @@ export default function Home() {
                 {
                   label: "Saldo em caixa",
                   value: cashBalance,
-                  helper: `Abertura ilustrativa: ${currency.format(openingBalance)}`,
+                  helper: cashOpen
+                    ? `Abertura: ${currency.format(openingBalance)} • só dinheiro`
+                    : "Caixa fechado",
                   icon: WalletCards,
                   colors: "bg-[#f1eefc] text-[#7458b4]",
                 },
@@ -2128,6 +2486,41 @@ export default function Home() {
                   </article>
                 );
               })}
+            </section>
+
+            <section className="mt-4 flex flex-col gap-4 rounded-[20px] border border-[#ebe5e1] bg-white p-5 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex items-start gap-3">
+                <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#f1eefc] text-[#7458b4]">
+                  <Download size={19} />
+                </span>
+                <div>
+                  <h2 className="text-sm font-extrabold">Proteção dos dados</h2>
+                  <p className="mt-1 max-w-2xl text-[9px] leading-4 text-[#776f6b]">
+                    Exporte uma cópia das vendas, estoque e caixa. O arquivo pode
+                    ser guardado no Google Drive e restaurado neste navegador.
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={exportBackup}
+                  className="flex min-h-10 items-center gap-2 rounded-xl bg-[#302b29] px-4 text-[9px] font-extrabold text-white"
+                >
+                  <Download size={15} />
+                  Exportar backup
+                </button>
+                <label className="flex min-h-10 cursor-pointer items-center gap-2 rounded-xl border border-[#ebe5e1] px-4 text-[9px] font-extrabold text-[#5f5753]">
+                  <Upload size={15} />
+                  Restaurar backup
+                  <input
+                    type="file"
+                    accept="application/json,.json"
+                    onChange={importBackup}
+                    className="sr-only"
+                  />
+                </label>
+              </div>
             </section>
 
             <div className="mt-4 grid gap-4 xl:grid-cols-[1.15fr_.85fr]">
@@ -2533,23 +2926,17 @@ export default function Home() {
           <div
             role="dialog"
             aria-modal="true"
-            aria-label={
-              modal === "stock"
-                ? "Registrar entrada de estoque"
-                : "Registrar saída financeira"
-            }
+            aria-label={modalContent?.aria}
             onClick={(event) => event.stopPropagation()}
             className="w-full max-w-md rounded-[22px] bg-white p-5 shadow-2xl sm:p-6"
           >
             <div className="flex items-start justify-between">
               <div>
                 <span className="text-[9px] font-extrabold uppercase tracking-[.13em] text-[#d9202c]">
-                  {modal === "stock" ? "Reposição" : "Financeiro"}
+                  {modalContent?.eyebrow}
                 </span>
                 <h2 className="text-xl font-extrabold tracking-tight">
-                  {modal === "stock"
-                    ? "Registrar entrada"
-                    : "Registrar saída"}
+                  {modalContent?.title}
                 </h2>
               </div>
               <button
@@ -2622,6 +3009,25 @@ export default function Home() {
                     />
                   </label>
                 </div>
+                <label className="block">
+                  <span className="mb-1.5 block text-[9px] font-extrabold text-[#776f6b]">
+                    Se houver custo, pago com
+                  </span>
+                  <select
+                    value={stockForm.payment}
+                    onChange={(event) =>
+                      setStockForm((current) => ({
+                        ...current,
+                        payment: event.target.value as PaymentMethod,
+                      }))
+                    }
+                    className="h-11 w-full rounded-xl border border-[#ebe5e1] bg-white px-3 text-xs outline-none"
+                  >
+                    <option>Dinheiro</option>
+                    <option>Pix</option>
+                    <option>Cartão</option>
+                  </select>
+                </label>
                 <div className="rounded-xl bg-[#fff9e9] p-3 text-[8px] leading-4 text-[#8d6e2e]">
                   Se informar o custo, o sistema também criará uma saída no
                   financeiro.
@@ -2634,7 +3040,7 @@ export default function Home() {
                   Salvar entrada
                 </button>
               </form>
-            ) : (
+            ) : modal === "expense" ? (
               <form onSubmit={submitExpense} className="mt-5 space-y-4">
                 <label className="block">
                   <span className="mb-1.5 block text-[9px] font-extrabold text-[#776f6b]">
@@ -2695,12 +3101,187 @@ export default function Home() {
                     />
                   </label>
                 </div>
+                <label className="block">
+                  <span className="mb-1.5 block text-[9px] font-extrabold text-[#776f6b]">
+                    Forma usada para pagar
+                  </span>
+                  <select
+                    value={expenseForm.payment}
+                    onChange={(event) =>
+                      setExpenseForm((current) => ({
+                        ...current,
+                        payment: event.target.value as PaymentMethod,
+                      }))
+                    }
+                    className="h-11 w-full rounded-xl border border-[#ebe5e1] bg-white px-3 text-xs outline-none"
+                  >
+                    <option>Dinheiro</option>
+                    <option>Pix</option>
+                    <option>Cartão</option>
+                  </select>
+                </label>
                 <button
                   type="submit"
                   className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#302b29] text-xs font-extrabold text-white"
                 >
                   <Check size={18} />
                   Salvar saída
+                </button>
+              </form>
+            ) : modal === "cash-open" ? (
+              <form onSubmit={submitCashOpen} className="mt-5 space-y-4">
+                <label className="block">
+                  <span className="mb-1.5 block text-[9px] font-extrabold text-[#776f6b]">
+                    Dinheiro inicial para troco
+                  </span>
+                  <input
+                    required
+                    autoFocus
+                    inputMode="decimal"
+                    value={cashOpenForm}
+                    onChange={(event) => setCashOpenForm(event.target.value)}
+                    placeholder="R$ 0,00"
+                    className="h-11 w-full rounded-xl border border-[#ebe5e1] px-3 text-xs outline-none focus:border-[#d9202c]"
+                  />
+                </label>
+                <div className="rounded-xl bg-[#f1eefc] p-3 text-[8px] leading-4 text-[#5e4893]">
+                  Este valor inicia uma nova sessão. Pix e cartão aparecem no
+                  financeiro, mas não entram no dinheiro físico do caixa.
+                </div>
+                <button
+                  type="submit"
+                  className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#27865d] text-xs font-extrabold text-white"
+                >
+                  <Check size={18} />
+                  Confirmar abertura
+                </button>
+              </form>
+            ) : modal === "cash-close" ? (
+              <form onSubmit={submitCashClose} className="mt-5 space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-xl bg-[#f7f5f2] p-3">
+                    <span className="block text-[8px] text-[#776f6b]">
+                      Saldo esperado
+                    </span>
+                    <strong className="mt-1 block text-lg">
+                      {currency.format(cashBalance)}
+                    </strong>
+                  </div>
+                  <div className="rounded-xl bg-[#f7f5f2] p-3">
+                    <span className="block text-[8px] text-[#776f6b]">
+                      Vendas em dinheiro
+                    </span>
+                    <strong className="mt-1 block text-lg">
+                      {currency.format(cashSalesTotal)}
+                    </strong>
+                  </div>
+                </div>
+                <label className="block">
+                  <span className="mb-1.5 block text-[9px] font-extrabold text-[#776f6b]">
+                    Valor contado na gaveta
+                  </span>
+                  <input
+                    required
+                    autoFocus
+                    inputMode="decimal"
+                    value={cashCloseForm}
+                    onChange={(event) => setCashCloseForm(event.target.value)}
+                    placeholder="R$ 0,00"
+                    className="h-11 w-full rounded-xl border border-[#ebe5e1] px-3 text-xs outline-none focus:border-[#d9202c]"
+                  />
+                </label>
+                {cashCloseForm.trim() &&
+                  Number.isFinite(parseAmount(cashCloseForm)) && (
+                  <div
+                    className={`rounded-xl p-3 text-[9px] font-bold ${
+                      Math.abs(
+                        roundMoney(parseAmount(cashCloseForm) - cashBalance),
+                      ) < 0.005
+                        ? "bg-[#eaf8f1] text-[#23734f]"
+                        : "bg-[#fff9e9] text-[#8d6100]"
+                    }`}
+                  >
+                    Diferença:{" "}
+                    {currency.format(
+                      roundMoney(parseAmount(cashCloseForm) - cashBalance),
+                    )}
+                  </div>
+                )}
+                <button
+                  type="submit"
+                  className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#302b29] text-xs font-extrabold text-white"
+                >
+                  <Check size={18} />
+                  Confirmar fechamento
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={submitCashMovement} className="mt-5 space-y-4">
+                <div className="grid grid-cols-2 gap-2">
+                  {(["sangria", "suprimento"] as const).map((kind) => (
+                    <button
+                      key={kind}
+                      type="button"
+                      onClick={() =>
+                        setCashMovementForm((current) => ({ ...current, kind }))
+                      }
+                      className={`min-h-11 rounded-xl border text-[10px] font-extrabold ${
+                        cashMovementForm.kind === kind
+                          ? "border-[#d9202c] bg-[#fff0f1] text-[#d9202c]"
+                          : "border-[#ebe5e1] text-[#776f6b]"
+                      }`}
+                    >
+                      {kind === "sangria"
+                        ? "Retirar dinheiro"
+                        : "Adicionar dinheiro"}
+                    </button>
+                  ))}
+                </div>
+                <label className="block">
+                  <span className="mb-1.5 block text-[9px] font-extrabold text-[#776f6b]">
+                    Motivo
+                  </span>
+                  <input
+                    required
+                    value={cashMovementForm.description}
+                    onChange={(event) =>
+                      setCashMovementForm((current) => ({
+                        ...current,
+                        description: event.target.value,
+                      }))
+                    }
+                    placeholder={
+                      cashMovementForm.kind === "sangria"
+                        ? "Ex.: guardar dinheiro no cofre"
+                        : "Ex.: reforço para troco"
+                    }
+                    className="h-11 w-full rounded-xl border border-[#ebe5e1] px-3 text-xs outline-none focus:border-[#d9202c]"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1.5 block text-[9px] font-extrabold text-[#776f6b]">
+                    Valor
+                  </span>
+                  <input
+                    required
+                    inputMode="decimal"
+                    value={cashMovementForm.amount}
+                    onChange={(event) =>
+                      setCashMovementForm((current) => ({
+                        ...current,
+                        amount: event.target.value,
+                      }))
+                    }
+                    placeholder="R$ 0,00"
+                    className="h-11 w-full rounded-xl border border-[#ebe5e1] px-3 text-xs outline-none focus:border-[#d9202c]"
+                  />
+                </label>
+                <button
+                  type="submit"
+                  className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#302b29] text-xs font-extrabold text-white"
+                >
+                  <Check size={18} />
+                  Salvar movimentação
                 </button>
               </form>
             )}
