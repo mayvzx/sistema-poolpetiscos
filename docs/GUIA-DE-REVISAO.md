@@ -15,7 +15,14 @@ inteiro.
    - reúne somente os dados fictícios da demonstração;
 5. `features/pool-petiscos/pool-petiscos-app.tsx`
    - conecta as regras aos botões, formulários e telas;
-6. `tests/`
+6. `features/pool-petiscos/music-companion.ts`
+   - faz somente a comunicação da tela com o serviço local de músicas;
+7. `local_service/server.py`
+   - limita a API ao próprio computador, gerencia a biblioteca e chama o
+     `yt-dlp`;
+8. `scripts/`
+   - prepara, inicia e encerra a instalação piloto no Windows;
+9. `tests/` e `local_service/test_server.py`
    - registra os comportamentos que não podem voltar a quebrar.
 
 ## Correções desta revisão
@@ -34,6 +41,9 @@ inteiro.
 - backups passam por validação completa e geram cópia de segurança antes da
   restauração;
 - URLs temporárias de áudio são liberadas ao fechar a página;
+- o sino abre uma central de alertas antes de oferecer o atalho para Estoque;
+- downloads assistidos ficam limitados a uma faixa e exigem confirmação de uso;
+- falha ao iniciar o site local encerra os processos já abertos;
 - modal fecha com Escape, prende o foco e volta ao controle anterior;
 - atalhos de navegação ficam preservados no endereço (`#venda`, `#estoque` etc.);
 - os comandos de desenvolvimento funcionam no Windows.
@@ -59,7 +69,7 @@ Antes de publicar:
 npm run check
 ```
 
-O comando precisa concluir o typecheck, lint, testes de domínio, build e teste
-do HTML gerado. Depois disso, os fluxos essenciais devem ser conferidos no
-navegador: venda em Pix, venda em dinheiro, limite de estoque, saída financeira,
-fechamento de caixa e restauração de backup inválido.
+O comando precisa concluir o typecheck, lint, testes do companion, testes de
+domínio, build e teste do HTML gerado. Depois disso, os fluxos essenciais devem
+ser conferidos no navegador: venda em Pix, venda em dinheiro, limite de estoque,
+saída financeira, fechamento de caixa e restauração de backup inválido.

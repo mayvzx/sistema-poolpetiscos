@@ -14,7 +14,8 @@
     "typecheck": "tsc --noEmit",
     "validate:artifact": "node scripts/validate-artifact.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
-    "check": "npm run typecheck && npm run lint && npm test"
+    "test:companion": "python -m unittest local_service.test_server",
+    "check": "npm run typecheck && npm run lint && npm run test:companion && npm test"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",

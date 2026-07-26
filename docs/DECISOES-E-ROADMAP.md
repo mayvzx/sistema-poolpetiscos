@@ -59,6 +59,24 @@ Não implementar com dados inventados:
 - especificações do computador;
 - rotina real de sangria, despesas e fechamento.
 
+## Operação local em desenvolvimento
+
+- [x] Companion local restrito a `127.0.0.1`.
+- [x] Integração inicial de biblioteca com `yt-dlp`.
+- [x] Scripts de instalação, início e encerramento no Windows.
+- [ ] Empacotar a interface e o companion em um instalador Windows assinado.
+- [ ] Substituir `localStorage` por SQLite antes do uso financeiro real.
+- [ ] Automatizar backup diário e testar restauração completa.
+
+## Pagamentos integrados
+
+- [ ] Confirmar a marca e o modelo da maquininha da lanchonete.
+- [ ] Escolher um primeiro provedor: Mercado Pago Point, PagBank PlugPag ou API
+      Pix da instituição recebedora.
+- [ ] Implementar estados pendente, aprovado, recusado e cancelado.
+- [ ] Baixar estoque apenas depois da confirmação do provedor.
+- [ ] Homologar estorno, queda de internet e retorno ao modo independente.
+
 ## Próximos marcos
 
 ### 1. Validação presencial

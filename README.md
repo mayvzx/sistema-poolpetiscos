@@ -17,7 +17,9 @@ validar o uso antes da futura versão instalada no Windows.
 - resumo financeiro calculado apenas com registros reais;
 - backup JSON validado antes da restauração;
 - sincronização básica quando outra aba altera os dados;
+- central de notificações com detalhes de estoque baixo;
 - importação temporária de áudios locais;
+- biblioteca persistente por companion local com `yt-dlp` e FFmpeg;
 - navegação responsiva, por teclado e com histórico no endereço.
 
 ## Estrutura do código
@@ -33,13 +35,21 @@ features/pool-petiscos/
   pool-petiscos-app.tsx      Interface e coordenação das telas
   demo-data.ts               Catálogo e registros da demonstração
   domain.ts                  Dinheiro, horário, caixa e gráficos
+  music-companion.ts         Cliente do serviço local de músicas
   persistence.ts             Validação do estado e dos backups
   types.ts                   Tipos do negócio
+local_service/
+  server.py                  API local, biblioteca e integração yt-dlp
+  test_server.py             Regras de segurança do companion
+  requirements.txt           Versão validada do yt-dlp
 public/
   pool-logo-banner.jpg       Marca horizontal
   pool-logo-round.jpg        Marca redonda e ícone
 scripts/
   build.mjs                  Build multiplataforma
+  install-local.ps1          Prepara o computador do caixa
+  start-local.ps1            Inicia site e companion local
+  stop-local.ps1             Encerra os serviços locais
   validate-artifact.mjs      Validação do pacote publicado
 tests/
   domain.test.ts             Regras de negócio e backup
@@ -47,6 +57,7 @@ tests/
 docs/
   DECISOES-E-ROADMAP.md      Decisões e próximos marcos
   GUIA-DE-REVISAO.md         Roteiro para revisar o código
+  INSTALACAO-E-PAGAMENTOS.md Instalação, Pix e maquininhas
 ```
 
 ## Rodar no Windows
@@ -89,7 +100,23 @@ Para testes que imitam a operação da lanchonete, mantenha apenas uma aba abert
 A sincronização entre abas reduz sobrescritas acidentais, mas o armazenamento do
 navegador não oferece as garantias transacionais da futura versão com SQLite.
 
-Os áudios importados não entram no backup e são removidos ao fechar a página.
+Os áudios importados manualmente não entram no backup e são removidos ao fechar
+a página. As faixas obtidas pelo companion ficam na biblioteca do perfil do
+Windows.
+
+## Instalação no computador do caixa
+
+Para preparar a versão piloto local:
+
+```powershell
+.\scripts\install-local.ps1
+.\scripts\start-local.ps1
+```
+
+O serviço de músicas depende de FFmpeg instalado no Windows. A arquitetura
+recomendada para a versão definitiva, incluindo SQLite, backups e integração
+com maquininha/Pix, está em
+[docs/INSTALACAO-E-PAGAMENTOS.md](docs/INSTALACAO-E-PAGAMENTOS.md).
 
 ## Publicação e acesso
 

@@ -29,6 +29,7 @@ import {
   FileAudio,
   LayoutDashboard,
   ListMusic,
+  LoaderCircle,
   Minus,
   Music2,
   Package,
@@ -39,6 +40,7 @@ import {
   ReceiptText,
   RotateCcw,
   Search,
+  ShieldCheck,
   ShoppingCart,
   SkipBack,
   SkipForward,
@@ -48,6 +50,8 @@ import {
   UserRound,
   Volume2,
   WalletCards,
+  Wifi,
+  WifiOff,
   X,
 } from "lucide-react";
 import Image from "next/image";
@@ -78,6 +82,14 @@ import {
   parseStoredState,
   STORAGE_KEY,
 } from "./persistence";
+import {
+  checkMusicCompanion,
+  getTrackDownloadJob,
+  listCompanionTracks,
+  queueTrackDownload,
+  type MusicCompanionHealth,
+  type MusicDownloadJob,
+} from "./music-companion";
 import type {
   CartItem,
   CashClosure,
@@ -163,12 +175,23 @@ export default function PoolPetiscosApp() {
     amount: "",
   });
   const [toast, setToast] = useState<Toast | null>(null);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [tracks, setTracks] = useState<Track[]>([]);
   const [currentTrackIndex, setCurrentTrackIndex] = useState(-1);
   const [isPlaying, setIsPlaying] = useState(false);
   const [volume, setVolume] = useState(70);
+  const [musicCompanionStatus, setMusicCompanionStatus] = useState<
+    "checking" | "ready" | "setup" | "offline"
+  >("checking");
+  const [musicCompanionHealth, setMusicCompanionHealth] =
+    useState<MusicCompanionHealth | null>(null);
+  const [downloadSourceUrl, setDownloadSourceUrl] = useState("");
+  const [downloadAuthorized, setDownloadAuthorized] = useState(false);
+  const [downloadJob, setDownloadJob] = useState<MusicDownloadJob | null>(null);
+  const [musicDownloadBusy, setMusicDownloadBusy] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const notificationsRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLElement>(null);
   const previousViewRef = useRef<View>("inicio");
   const toastTimerRef = useRef<number | null>(null);
@@ -194,6 +217,45 @@ export default function PoolPetiscosApp() {
       }, 3200);
     },
     [],
+  );
+
+  const syncMusicCompanion = useCallback(
+    async (showFeedback = false) => {
+      setMusicCompanionStatus("checking");
+      try {
+        const [health, localTracks] = await Promise.all([
+          checkMusicCompanion(),
+          listCompanionTracks(),
+        ]);
+        const uploadedTracks = tracksRef.current.filter(
+          (track) => track.source === "upload",
+        );
+        const nextTracks = [...uploadedTracks, ...localTracks];
+        setMusicCompanionHealth(health);
+        setMusicCompanionStatus(
+          health.yt_dlp && health.ffmpeg ? "ready" : "setup",
+        );
+        setTracks(nextTracks);
+        setCurrentTrackIndex(nextTracks.length ? 0 : -1);
+        setIsPlaying(false);
+        if (showFeedback) {
+          showToast(
+            `${localTracks.length} faixa(s) carregada(s) da biblioteca local.`,
+            "info",
+          );
+        }
+      } catch {
+        setMusicCompanionHealth(null);
+        setMusicCompanionStatus("offline");
+        if (showFeedback) {
+          showToast(
+            "O companion local não respondeu. Confira a instalação no Windows.",
+            "warning",
+          );
+        }
+      }
+    },
+    [showToast],
   );
 
   const restorePoolState = useCallback((state: PersistedPoolState) => {
@@ -311,15 +373,51 @@ export default function PoolPetiscosApp() {
     tracksRef.current = tracks;
   }, [tracks]);
 
+  useEffect(() => {
+    if (!hydrated || activeView !== "musica") return;
+    let cancelled = false;
+    window.queueMicrotask(() => {
+      if (!cancelled) void syncMusicCompanion();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeView, hydrated, syncMusicCompanion]);
+
   useEffect(
     () => () => {
       if (toastTimerRef.current !== null) {
         window.clearTimeout(toastTimerRef.current);
       }
-      tracksRef.current.forEach((track) => URL.revokeObjectURL(track.url));
+      tracksRef.current
+        .filter((track) => track.source === "upload")
+        .forEach((track) => URL.revokeObjectURL(track.url));
     },
     [],
   );
+
+  useEffect(() => {
+    if (!notificationsOpen) return;
+    const closeNotifications = (event: PointerEvent) => {
+      const target = event.target;
+      if (
+        target instanceof Node &&
+        notificationsRef.current &&
+        !notificationsRef.current.contains(target)
+      ) {
+        setNotificationsOpen(false);
+      }
+    };
+    const closeNotificationsWithKeyboard = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setNotificationsOpen(false);
+    };
+    window.addEventListener("pointerdown", closeNotifications);
+    window.addEventListener("keydown", closeNotificationsWithKeyboard);
+    return () => {
+      window.removeEventListener("pointerdown", closeNotifications);
+      window.removeEventListener("keydown", closeNotificationsWithKeyboard);
+    };
+  }, [notificationsOpen]);
 
   useEffect(() => {
     if (!modal) return;
@@ -1071,12 +1169,70 @@ export default function PoolPetiscosApp() {
         file.size > 1024 * 1024
           ? `${(file.size / 1024 / 1024).toFixed(1)} MB`
           : `${Math.round(file.size / 1024)} KB`,
+      source: "upload" as const,
     }));
     const startIndex = tracks.length;
     setTracks((current) => [...current, ...imported]);
     if (currentTrackIndex === -1) setCurrentTrackIndex(startIndex);
     showToast(`${imported.length} áudio(s) importado(s) do computador.`);
     event.target.value = "";
+  }
+
+  async function handleCompanionDownload(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const sourceUrl = downloadSourceUrl.trim();
+    if (!sourceUrl) {
+      showToast("Cole o link de uma faixa para baixar.", "warning");
+      return;
+    }
+    if (!downloadAuthorized) {
+      showToast(
+        "Confirme que a faixa pode ser baixada e usada pela lanchonete.",
+        "warning",
+      );
+      return;
+    }
+    if (musicCompanionStatus !== "ready") {
+      showToast(
+        "O companion precisa estar instalado com yt-dlp e FFmpeg.",
+        "warning",
+      );
+      return;
+    }
+
+    setMusicDownloadBusy(true);
+    try {
+      let job = await queueTrackDownload(sourceUrl);
+      setDownloadJob(job);
+      for (let attempt = 0; attempt < 240; attempt += 1) {
+        if (job.status === "finished" || job.status === "failed") break;
+        await new Promise((resolve) => window.setTimeout(resolve, 1_000));
+        job = await getTrackDownloadJob(job.id);
+        setDownloadJob(job);
+      }
+      if (job.status === "finished") {
+        setDownloadSourceUrl("");
+        setDownloadAuthorized(false);
+        await syncMusicCompanion();
+        showToast("Faixa baixada e adicionada à biblioteca local.");
+      } else if (job.status === "failed") {
+        showToast(job.message, "warning");
+      } else {
+        showToast(
+          "O download continua no companion. Atualize a biblioteca em instantes.",
+          "info",
+        );
+      }
+    } catch (error) {
+      showToast(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível iniciar o download.",
+        "warning",
+      );
+    } finally {
+      setMusicDownloadBusy(false);
+    }
   }
 
   async function togglePlay() {
@@ -1268,20 +1424,91 @@ export default function PoolPetiscosApp() {
               />
               {cashOpen ? "Caixa aberto" : "Caixa fechado"}
             </button>
-            <button
-              type="button"
-              onClick={() => {
-                setStockFilter("Baixo");
-                navigateTo("estoque");
-              }}
-              aria-label={`${lowStock.length} alerta(s) de estoque baixo`}
-              className="relative hidden size-11 place-items-center rounded-xl border border-[#ebe5e1] bg-white text-[#6d6561] sm:grid"
-            >
-              <Bell size={18} />
-              {lowStock.length > 0 && (
-                <span className="absolute right-2 top-2 size-1.5 rounded-full border border-white bg-[#d9202c]" />
+            <div ref={notificationsRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setNotificationsOpen((current) => !current)}
+                aria-label={`${lowStock.length} notificação(ões)`}
+                aria-expanded={notificationsOpen}
+                aria-controls="pool-notifications"
+                className="relative grid size-11 place-items-center rounded-xl border border-[#ebe5e1] bg-white text-[#5f5753] shadow-sm transition hover:border-[#d9cfca] hover:text-[#d9202c]"
+              >
+                <Bell size={19} />
+                {lowStock.length > 0 && (
+                  <span className="absolute -right-1 -top-1 grid min-h-5 min-w-5 place-items-center rounded-full border-2 border-[#f7f5f2] bg-[#d9202c] px-1 text-[10px] font-extrabold leading-none text-white">
+                    {lowStock.length}
+                  </span>
+                )}
+              </button>
+              {notificationsOpen && (
+                <section
+                  id="pool-notifications"
+                  aria-labelledby="pool-notifications-title"
+                  className="absolute right-0 top-[calc(100%+.75rem)] z-50 w-[min(340px,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-[#e5deda] bg-white shadow-[0_22px_55px_rgba(44,35,31,.2)]"
+                >
+                  <div className="border-b border-[#eee8e4] bg-[#faf8f6] px-4 py-3">
+                    <span className="text-[11px] font-extrabold uppercase tracking-[.12em] text-[#d9202c]">
+                      Central de alertas
+                    </span>
+                    <h2
+                      id="pool-notifications-title"
+                      className="mt-0.5 text-base font-extrabold"
+                    >
+                      Notificações
+                    </h2>
+                  </div>
+                  {lowStock.length ? (
+                    <>
+                      <div className="max-h-72 divide-y divide-[#eee8e4] overflow-y-auto">
+                        {lowStock.slice(0, 5).map((product) => (
+                          <div
+                            key={product.id}
+                            className="flex items-center gap-3 px-4 py-3"
+                          >
+                            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#fff0f1] text-lg">
+                              {product.emoji}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <strong className="block truncate text-[13px]">
+                                {product.name}
+                              </strong>
+                              <span className="text-[11px] font-semibold text-[#b41622]">
+                                {product.stock} un. • mínimo {product.minimum}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setStockFilter("Baixo");
+                          setNotificationsOpen(false);
+                          navigateTo("estoque");
+                        }}
+                        className="flex min-h-12 w-full items-center justify-between px-4 text-[12px] font-extrabold text-[#d9202c] transition hover:bg-[#fff7f7]"
+                      >
+                        Ver estoque que precisa de reposição
+                        <ChevronRight size={17} />
+                      </button>
+                    </>
+                  ) : (
+                    <div className="p-5 text-center">
+                      <CheckCircle2
+                        size={28}
+                        className="mx-auto text-[#31a36f]"
+                      />
+                      <strong className="mt-2 block text-sm">
+                        Nenhum alerta agora
+                      </strong>
+                      <span className="mt-1 block text-[12px] text-[#776f6b]">
+                        O estoque está acima dos mínimos cadastrados.
+                      </span>
+                    </div>
+                  )}
+                </section>
               )}
-            </button>
+            </div>
             <div className="hidden items-center gap-2 pl-1 md:flex">
               <span className="grid size-9 place-items-center rounded-xl bg-[#302b29] text-white">
                 <UserRound size={17} />
@@ -2385,8 +2612,8 @@ export default function PoolPetiscosApp() {
                 Música ambiente
               </h1>
               <p className="mt-1 max-w-2xl text-xs leading-5 text-[#776f6b]">
-                Importe músicas que já estejam salvas legalmente no computador,
-                organize a fila e toque sem misturar esta função com o caixa.
+                Importe arquivos ou use o companion local com yt-dlp para montar
+                uma biblioteca persistente, sem misturar esta função com o caixa.
               </p>
             </div>
 
@@ -2396,7 +2623,7 @@ export default function PoolPetiscosApp() {
                 <div>
                   <span className="inline-flex items-center gap-2 rounded-full bg-[#d9202c]/15 px-3 py-2 text-[9px] font-extrabold text-[#ff8790]">
                     <Music2 size={14} />
-                    Gerenciador local • Beta
+                    Biblioteca local • Beta
                   </span>
                   <h2 className="mt-5 max-w-lg text-2xl font-extrabold tracking-[-.04em] sm:text-4xl">
                     O clima da Pool, do jeito de vocês.
@@ -2404,12 +2631,13 @@ export default function PoolPetiscosApp() {
                   <p className="mt-3 max-w-xl text-[10px] leading-5 text-white/50 sm:text-xs">
                     O navegador usa a saída de som escolhida no Windows. Basta
                     conectar a caixa Bluetooth no computador e selecioná-la nas
-                    configurações de áudio.
+                    configurações de áudio. As faixas baixadas ficam somente
+                    neste caixa.
                   </p>
                   <div className="mt-5 flex flex-wrap gap-2">
                     <label className="flex min-h-11 cursor-pointer items-center gap-2 rounded-xl bg-[#d9202c] px-4 text-[10px] font-extrabold shadow-lg focus-within:ring-2 focus-within:ring-white focus-within:ring-offset-2 focus-within:ring-offset-[#211e1d]">
                       <Upload size={17} />
-                      Importar músicas
+                      Importar arquivos
                       <input
                         type="file"
                         accept="audio/*"
@@ -2502,6 +2730,153 @@ export default function PoolPetiscosApp() {
               </div>
             </section>
 
+            <section className="mt-4 overflow-hidden rounded-[20px] border border-[#ebe5e1] bg-white shadow-sm">
+              <div className="grid gap-5 p-5 lg:grid-cols-[1fr_auto] lg:items-start lg:p-6">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[11px] font-extrabold uppercase tracking-[.13em] text-[#d9202c]">
+                      Download assistido
+                    </span>
+                    <span
+                      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-extrabold ${
+                        musicCompanionStatus === "ready"
+                          ? "bg-[#eaf8f1] text-[#23734f]"
+                          : musicCompanionStatus === "checking"
+                            ? "bg-[#f1eefc] text-[#5e4893]"
+                            : "bg-[#fff0f1] text-[#b41622]"
+                      }`}
+                    >
+                      {musicCompanionStatus === "checking" ? (
+                        <LoaderCircle size={13} className="animate-spin" />
+                      ) : musicCompanionStatus === "ready" ? (
+                        <Wifi size={13} />
+                      ) : (
+                        <WifiOff size={13} />
+                      )}
+                      {musicCompanionStatus === "ready"
+                        ? "Companion pronto"
+                        : musicCompanionStatus === "setup"
+                          ? "Instalação incompleta"
+                          : musicCompanionStatus === "checking"
+                            ? "Verificando"
+                            : "Companion desligado"}
+                    </span>
+                  </div>
+                  <h2 className="mt-2 text-xl font-extrabold tracking-[-.025em]">
+                    Adicionar uma faixa por link
+                  </h2>
+                  <p className="mt-1 max-w-2xl text-[13px] leading-5 text-[#776f6b]">
+                    O yt-dlp roda no próprio computador e entrega um MP3 para a
+                    biblioteca local. Playlists inteiras não são importadas
+                    automaticamente.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void syncMusicCompanion(true)}
+                  disabled={musicCompanionStatus === "checking"}
+                  className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[#e5deda] px-4 text-[12px] font-extrabold text-[#5f5753] transition hover:border-[#d9202c] hover:text-[#d9202c] disabled:opacity-50"
+                >
+                  <RotateCcw size={16} />
+                  Atualizar biblioteca
+                </button>
+              </div>
+
+              <form
+                onSubmit={handleCompanionDownload}
+                className="border-t border-[#eee8e4] bg-[#faf8f6] p-5 lg:p-6"
+              >
+                <div className="grid gap-3 lg:grid-cols-[1fr_auto]">
+                  <label>
+                    <span className="mb-1.5 block text-[12px] font-extrabold text-[#5f5753]">
+                      Link da faixa
+                    </span>
+                    <input
+                      type="url"
+                      value={downloadSourceUrl}
+                      onChange={(event) =>
+                        setDownloadSourceUrl(event.target.value)
+                      }
+                      placeholder="https://..."
+                      autoComplete="url"
+                      className="h-12 w-full rounded-xl border border-[#ded7d2] bg-white px-4 text-sm outline-none transition focus:border-[#d9202c]"
+                    />
+                  </label>
+                  <button
+                    type="submit"
+                    disabled={
+                      musicDownloadBusy || musicCompanionStatus !== "ready"
+                    }
+                    className="flex min-h-12 items-center justify-center gap-2 self-end rounded-xl bg-[#302b29] px-5 text-[13px] font-extrabold text-white shadow-lg transition hover:bg-[#211e1d] disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    {musicDownloadBusy ? (
+                      <LoaderCircle size={18} className="animate-spin" />
+                    ) : (
+                      <Download size={18} />
+                    )}
+                    {musicDownloadBusy ? "Preparando faixa…" : "Baixar faixa"}
+                  </button>
+                </div>
+                <label className="mt-3 flex cursor-pointer items-start gap-3 text-[12px] leading-5 text-[#6d6561]">
+                  <input
+                    type="checkbox"
+                    checked={downloadAuthorized}
+                    onChange={(event) =>
+                      setDownloadAuthorized(event.target.checked)
+                    }
+                    className="mt-1 size-4 accent-[#d9202c]"
+                  />
+                  <span>
+                    Confirmo que a lanchonete possui autorização para baixar e
+                    reproduzir esta faixa.
+                  </span>
+                </label>
+
+                {downloadJob && (
+                  <div
+                    className={`mt-4 rounded-xl border p-4 ${
+                      downloadJob.status === "failed"
+                        ? "border-[#f1d0d3] bg-[#fff0f1]"
+                        : "border-[#dfe9e4] bg-white"
+                    }`}
+                    role="status"
+                  >
+                    <div className="flex items-center justify-between gap-3 text-[12px]">
+                      <strong>{downloadJob.message}</strong>
+                      <span className="font-extrabold tabular-nums">
+                        {downloadJob.progress}%
+                      </span>
+                    </div>
+                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#eee8e4]">
+                      <div
+                        className={`h-full rounded-full transition-[width] ${
+                          downloadJob.status === "failed"
+                            ? "bg-[#d9202c]"
+                            : "bg-[#31a36f]"
+                        }`}
+                        style={{ width: `${downloadJob.progress}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {musicCompanionStatus !== "ready" && (
+                  <div className="mt-4 flex items-start gap-3 rounded-xl border border-[#f0dfad] bg-[#fff9e9] p-4 text-[12px] leading-5 text-[#7b6129]">
+                    <ShieldCheck size={18} className="mt-0.5 shrink-0" />
+                    <span>
+                      Execute <strong>scripts\install-local.ps1</strong> e depois
+                      <strong> scripts\start-local.ps1</strong> no computador do
+                      caixa.
+                      {musicCompanionHealth &&
+                        (!musicCompanionHealth.yt_dlp ||
+                          !musicCompanionHealth.ffmpeg) &&
+                        " O serviço respondeu, mas ainda falta instalar yt-dlp ou FFmpeg."}
+                    </span>
+                  </div>
+                )}
+              </form>
+            </section>
+
             <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_310px]">
               <section className="overflow-hidden rounded-[20px] border border-[#ebe5e1] bg-white shadow-sm">
                 <div className="flex items-center justify-between border-b border-[#ebe5e1] p-5">
@@ -2560,7 +2935,10 @@ export default function PoolPetiscosApp() {
                             {track.name}
                           </strong>
                           <span className="text-[8px] text-[#9c928d]">
-                            Arquivo local • {track.size}
+                            {track.source === "yt-dlp"
+                              ? "Biblioteca yt-dlp"
+                              : "Arquivo importado"}{" "}
+                            • {track.size}
                           </span>
                         </div>
                         <Play size={15} className="text-[#d9202c]" />
@@ -2575,14 +2953,14 @@ export default function PoolPetiscosApp() {
                   <ListMusic size={20} />
                 </span>
                 <h2 className="mt-4 text-base font-extrabold">
-                  O que entra depois
+                  Como a biblioteca funciona
                 </h2>
                 <ul className="mt-3 space-y-3">
                   {[
-                    "Criar e renomear playlists",
-                    "Continuar a música após trocar de tela",
-                    "Salvar a biblioteca no computador",
-                    "Modo festa com fila automática",
+                    "Uma faixa por download para evitar lotes acidentais",
+                    "Conversão para MP3 com FFmpeg",
+                    "Arquivos salvos no perfil do Windows",
+                    "Recarregamento automático ao abrir esta tela",
                   ].map((item) => (
                     <li
                       key={item}

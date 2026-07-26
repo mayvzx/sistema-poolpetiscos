@@ -18,8 +18,43 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family:
-    "Segoe UI", Inter, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    Aptos, "Trebuchet MS", "Segoe UI", system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
+}
+
+/*
+ * O caixa é operado à distância de um braço, muitas vezes com movimento ao
+ * redor. Estes limites substituem os microtextos do protótipo sem aumentar
+ * títulos e valores que já possuem hierarquia própria.
+ */
+.text-\[8px\] {
+  font-size: 0.625rem;
+  line-height: 0.9rem;
+}
+
+.text-\[9px\] {
+  font-size: 0.6875rem;
+  line-height: 1rem;
+}
+
+.text-\[10px\] {
+  font-size: 0.75rem;
+  line-height: 1.05rem;
+}
+
+.text-\[11px\] {
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+}
+
+.text-xs {
+  font-size: 0.8125rem;
+  line-height: 1.2rem;
+}
+
+.text-sm {
+  font-size: 0.9375rem;
+  line-height: 1.35rem;
 }
 
 button,
