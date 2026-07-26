@@ -4,7 +4,7 @@ import "./globals.css";
 
 const title = "Pool Petiscos & Lanches | Caixa, estoque e financeiro";
 const description =
-  "Sistema demonstrativo de vendas, estoque, caixa e controle financeiro da Pool Petiscos & Lanches.";
+  "Gestão de vendas, estoque, caixa, finanças e música ambiente da Pool Petiscos & Lanches.";
 const productionOrigin = "https://pool-petiscos-caixa.mayrom.chatgpt.site";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -18,8 +18,11 @@ export async function generateMetadata(): Promise<Metadata> {
     .get("x-forwarded-proto")
     ?.split(",")[0]
     .trim();
+  const isLoopbackHost =
+    host !== null &&
+    /^(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i.test(host);
   const protocol =
-    forwardedProtocol || (host?.startsWith("localhost") ? "http" : "https");
+    forwardedProtocol || (isLoopbackHost ? "http" : "https");
   let origin = productionOrigin;
   if (host) {
     try {

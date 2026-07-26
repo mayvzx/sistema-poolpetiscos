@@ -9,6 +9,7 @@ import mimetypes
 import os
 import re
 import shutil
+import sqlite3
 import threading
 import uuid
 from http import HTTPStatus
@@ -17,9 +18,16 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
 
-SERVICE_VERSION = "1.0.0"
+from local_service.storage import (
+    RevisionConflict,
+    StateStorage,
+    default_database_path,
+)
+
+SERVICE_VERSION = "1.1.0"
 DEFAULT_PORT = 8765
 MAX_BODY_BYTES = 32 * 1024
+MAX_STATE_BODY_BYTES = 10 * 1024 * 1024
 SUPPORTED_AUDIO_SUFFIXES = {
     ".aac",
     ".flac",
@@ -34,6 +42,7 @@ PRODUCTION_ORIGIN = "https://pool-petiscos-caixa.mayrom.chatgpt.site"
 
 _jobs: dict[str, dict[str, Any]] = {}
 _jobs_lock = threading.Lock()
+_download_lock = threading.Lock()
 
 
 def default_music_directory() -> Path:
@@ -110,6 +119,47 @@ def list_library(music_directory: Path) -> list[dict[str, Any]]:
     return [library_item(path) for path in files]
 
 
+def library_fingerprints(music_directory: Path) -> dict[Path, tuple[int, int]]:
+    return {
+        path.resolve(): (path.stat().st_mtime_ns, path.stat().st_size)
+        for path in music_directory.iterdir()
+        if path.is_file()
+    }
+
+
+def find_downloaded_audio(
+    music_directory: Path,
+    media_id: str,
+    existing_files: dict[Path, tuple[int, int]],
+) -> Path:
+    supported_files = [
+        path
+        for path in music_directory.iterdir()
+        if path.is_file() and path.suffix.lower() in SUPPORTED_AUDIO_SUFFIXES
+    ]
+    candidates = (
+        [
+            path
+            for path in supported_files
+            if path.stem.endswith(f"[{media_id}]")
+        ]
+        if media_id
+        else []
+    )
+    if not candidates:
+        candidates = [
+            path
+            for path in supported_files
+            if existing_files.get(path.resolve())
+            != (path.stat().st_mtime_ns, path.stat().st_size)
+        ]
+    if not candidates:
+        raise RuntimeError(
+            "A faixa foi processada, mas o arquivo final não foi encontrado."
+        )
+    return max(candidates, key=lambda path: path.stat().st_mtime_ns)
+
+
 def update_job(job_id: str, **changes: Any) -> None:
     with _jobs_lock:
         if job_id in _jobs:
@@ -126,11 +176,11 @@ def start_download(job_id: str, source_url: str, music_directory: Path) -> None:
     try:
         if importlib.util.find_spec("yt_dlp") is None:
             raise RuntimeError(
-                "O yt-dlp não está instalado. Execute scripts/install-local.ps1."
+                "O componente de download não está disponível."
             )
         if shutil.which("ffmpeg") is None:
             raise RuntimeError(
-                "O FFmpeg não foi encontrado. Instale-o e reinicie o companion."
+                "O componente de áudio não está disponível."
             )
 
         import yt_dlp
@@ -194,48 +244,30 @@ def start_download(job_id: str, source_url: str, music_directory: Path) -> None:
         }
 
         music_directory.mkdir(parents=True, exist_ok=True)
-        update_job(
-            job_id,
-            status="downloading",
-            progress=5,
-            message="Localizando a faixa…",
-        )
-        with yt_dlp.YoutubeDL(options) as downloader:
-            info = downloader.extract_info(source_url, download=True)
-
-        if info.get("_type") == "playlist":
-            entries = [entry for entry in info.get("entries", []) if entry]
-            if len(entries) != 1:
-                raise RuntimeError("Cole o link de uma única faixa, não de uma playlist.")
-            info = entries[0]
-
-        media_id = str(info.get("id") or "").strip()
-        candidates = (
-            sorted(
-                music_directory.glob(f"*[{media_id}].*"),
-                key=lambda path: path.stat().st_mtime,
-                reverse=True,
+        with _download_lock:
+            existing_files = library_fingerprints(music_directory)
+            update_job(
+                job_id,
+                status="downloading",
+                progress=5,
+                message="Localizando a faixa…",
             )
-            if media_id
-            else []
-        )
-        final_path = next(
-            (
-                path
-                for path in candidates
-                if path.suffix.lower() in SUPPORTED_AUDIO_SUFFIXES
-            ),
-            None,
-        )
-        if final_path is None:
-            final_path = max(
-                (
-                    path
-                    for path in music_directory.iterdir()
-                    if path.is_file()
-                    and path.suffix.lower() in SUPPORTED_AUDIO_SUFFIXES
-                ),
-                key=lambda path: path.stat().st_mtime,
+            with yt_dlp.YoutubeDL(options) as downloader:
+                info = downloader.extract_info(source_url, download=True)
+
+            if info.get("_type") == "playlist":
+                entries = [entry for entry in info.get("entries", []) if entry]
+                if len(entries) != 1:
+                    raise RuntimeError(
+                        "Cole o link de uma única faixa, não de uma playlist."
+                    )
+                info = entries[0]
+
+            media_id = str(info.get("id") or "").strip()
+            final_path = find_downloaded_audio(
+                music_directory,
+                media_id,
+                existing_files,
             )
 
         update_job(
@@ -263,9 +295,11 @@ class PoolCompanionServer(ThreadingHTTPServer):
         server_address: tuple[str, int],
         handler_class: type[BaseHTTPRequestHandler],
         music_directory: Path,
+        storage: StateStorage | None = None,
     ) -> None:
         super().__init__(server_address, handler_class)
         self.music_directory = music_directory
+        self.storage = storage or StateStorage()
 
 
 class PoolCompanionHandler(BaseHTTPRequestHandler):
@@ -314,7 +348,10 @@ class PoolCompanionHandler(BaseHTTPRequestHandler):
             return
         self.send_response(HTTPStatus.NO_CONTENT)
         self._set_cors_headers()
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header(
+            "Access-Control-Allow-Methods",
+            "GET, POST, PUT, OPTIONS",
+        )
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.send_header("Access-Control-Max-Age", "600")
         self.end_headers()
@@ -339,6 +376,27 @@ class PoolCompanionHandler(BaseHTTPRequestHandler):
                 {"tracks": list_library(self.pool_server.music_directory)}
             )
             return
+        if parsed.path == "/api/state":
+            try:
+                snapshot = self.pool_server.storage.read()
+                backup_info = self.pool_server.storage.backup_info()
+            except (OSError, sqlite3.Error, RuntimeError) as error:
+                self.log_error("falha ao ler estado local: %s", error)
+                self._send_json(
+                    {"error": "O armazenamento local não está disponível."},
+                    HTTPStatus.INTERNAL_SERVER_ERROR,
+                )
+                return
+            self._send_json(
+                {
+                    "state": snapshot.state,
+                    "revision": snapshot.revision,
+                    "saved_at": snapshot.saved_at,
+                    "storage": "sqlite",
+                    **backup_info,
+                }
+            )
+            return
         if parsed.path.startswith("/api/music/jobs/"):
             job_id = parsed.path.rsplit("/", 1)[-1]
             job = read_job(job_id)
@@ -359,6 +417,27 @@ class PoolCompanionHandler(BaseHTTPRequestHandler):
         if self._reject_origin():
             return
         parsed = urlparse(self.path)
+        if parsed.path == "/api/backups":
+            try:
+                backup_path = self.pool_server.storage.ensure_daily_backup(
+                    force=True
+                )
+            except (OSError, sqlite3.Error) as error:
+                self.log_error("falha ao criar backup manual: %s", error)
+                self._send_json(
+                    {"error": "Não foi possível criar o backup local."},
+                    HTTPStatus.INTERNAL_SERVER_ERROR,
+                )
+                return
+            self._send_json(
+                {
+                    "filename": backup_path.name,
+                    "storage": "sqlite",
+                    **self.pool_server.storage.backup_info(),
+                },
+                HTTPStatus.CREATED,
+            )
+            return
         if parsed.path != "/api/music/download":
             self._send_json({"error": "Rota não encontrada."}, HTTPStatus.NOT_FOUND)
             return
@@ -397,6 +476,99 @@ class PoolCompanionHandler(BaseHTTPRequestHandler):
         )
         worker.start()
         self._send_json(read_job(job_id), HTTPStatus.ACCEPTED)
+
+    def do_PUT(self) -> None:
+        if self._reject_origin():
+            return
+        parsed = urlparse(self.path)
+        if parsed.path != "/api/state":
+            self._send_json({"error": "Rota não encontrada."}, HTTPStatus.NOT_FOUND)
+            return
+
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            length = 0
+        if length <= 0 or length > MAX_STATE_BODY_BYTES:
+            self._send_json(
+                {"error": "Conteúdo inválido ou muito grande."},
+                HTTPStatus.BAD_REQUEST,
+            )
+            return
+
+        try:
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError, RecursionError):
+            self._send_json(
+                {"error": "O corpo deve conter JSON válido."},
+                HTTPStatus.BAD_REQUEST,
+            )
+            return
+
+        if not isinstance(payload, dict) or not isinstance(
+            payload.get("state"), dict
+        ):
+            self._send_json(
+                {"error": "O campo state deve ser um objeto."},
+                HTTPStatus.BAD_REQUEST,
+            )
+            return
+
+        expected_revision = payload.get("expected_revision")
+        if expected_revision is not None and (
+            isinstance(expected_revision, bool)
+            or not isinstance(expected_revision, int)
+            or expected_revision < 0
+        ):
+            self._send_json(
+                {
+                    "error": (
+                        "expected_revision deve ser um número inteiro "
+                        "maior ou igual a zero."
+                    )
+                },
+                HTTPStatus.BAD_REQUEST,
+            )
+            return
+
+        try:
+            snapshot = self.pool_server.storage.save(
+                payload["state"],
+                expected_revision=expected_revision,
+            )
+        except RevisionConflict as error:
+            current = error.snapshot
+            self._send_json(
+                {
+                    "error": str(error),
+                    "state": current.state,
+                    "revision": current.revision,
+                },
+                HTTPStatus.CONFLICT,
+            )
+            return
+        except (TypeError, ValueError, OverflowError, RecursionError) as error:
+            self._send_json(
+                {"error": f"O estado contém dados inválidos: {error}"},
+                HTTPStatus.BAD_REQUEST,
+            )
+            return
+        except (OSError, sqlite3.Error, RuntimeError) as error:
+            self.log_error("falha ao salvar estado local: %s", error)
+            self._send_json(
+                {"error": "Não foi possível salvar no armazenamento local."},
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+            )
+            return
+
+        self._send_json(
+            {
+                "revision": snapshot.revision,
+                "saved_at": snapshot.saved_at,
+                "storage": "sqlite",
+                **self.pool_server.storage.backup_info(),
+            }
+        )
 
     def _send_media(self, filename: str) -> None:
         if not filename or Path(filename).name != filename:
@@ -464,6 +636,16 @@ def parse_arguments() -> argparse.Namespace:
         type=Path,
         default=default_music_directory(),
     )
+    parser.add_argument(
+        "--database",
+        type=Path,
+        default=default_database_path(),
+    )
+    parser.add_argument(
+        "--backup-dir",
+        type=Path,
+        default=None,
+    )
     return parser.parse_args()
 
 
@@ -471,10 +653,20 @@ def main() -> None:
     arguments = parse_arguments()
     music_directory = arguments.music_dir.expanduser().resolve()
     music_directory.mkdir(parents=True, exist_ok=True)
+    storage = StateStorage(
+        database_path=arguments.database,
+        backup_directory=arguments.backup_dir,
+    )
+    if storage.read().state is not None:
+        try:
+            storage.ensure_daily_backup(force=True)
+        except (OSError, sqlite3.Error) as error:
+            print(f"[companion] aviso: backup automático indisponível: {error}")
     server = PoolCompanionServer(
         ("127.0.0.1", arguments.port),
         PoolCompanionHandler,
         music_directory,
+        storage,
     )
     print(
         f"Pool Companion em http://127.0.0.1:{arguments.port} "

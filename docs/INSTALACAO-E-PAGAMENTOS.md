@@ -1,65 +1,43 @@
 # Instalação local e integração de pagamentos
 
-## Recomendação para a lanchonete
+## Arquitetura escolhida para a lanchonete
 
 O computador do caixa pode executar todo o sistema sem um servidor separado.
-O desenho recomendado tem três camadas no mesmo Windows:
+A versão local tem três camadas no mesmo Windows:
 
 1. interface do caixa em `http://127.0.0.1:4173`;
-2. companion local em `http://127.0.0.1:8765`;
-3. armazenamento local durável.
+2. serviço local em `http://127.0.0.1:8765`;
+3. SQLite e biblioteca de músicas no perfil do usuário.
 
 Os serviços escutam apenas no próprio computador. Outros equipamentos da rede
 não conseguem acessar essas portas.
 
-### Piloto atual
-
-A versão atual já pode ser usada para treinamento e validação operacional:
-
-```powershell
-.\scripts\install-local.ps1
-.\scripts\start-local.ps1
-```
-
-Para encerrar:
-
-```powershell
-.\scripts\stop-local.ps1
-```
-
-O instalador prepara o site, cria um ambiente Python isolado e instala o
-`yt-dlp`. O FFmpeg também precisa estar instalado e disponível no `PATH` do
-Windows.
-
-O ambiente Python e as faixas ficam fora da pasta sincronizada pelo OneDrive:
+O instalador inclui a interface, Node.js, o serviço local, `yt-dlp` e FFmpeg.
+O computador da lanchonete não precisa ter ferramentas de desenvolvimento.
+Banco, faixas e logs permanecem fora da instalação:
 
 ```text
-%LOCALAPPDATA%\PoolPetiscos\venv
+%LOCALAPPDATA%\PoolPetiscos\data\pool-petiscos.db
 %LOCALAPPDATA%\PoolPetiscos\musicas
+%LOCALAPPDATA%\PoolPetiscos\logs
 ```
 
-O projeto usa uma faixa por solicitação e não importa playlists inteiras
-automaticamente. Só devem ser baixados materiais próprios, licenciados ou cuja
-fonte autorize expressamente o download e a reprodução comercial.
+Cada gravação no SQLite é transacional e as últimas 50 revisões são mantidas.
+Uma cópia íntegra do banco é criada todos os dias no OneDrive; sem OneDrive, o
+sistema usa uma pasta de backup local. Atualizações do programa não removem os
+dados.
 
-### Versão recomendada para operação real
+Para a instalação física, também é recomendado:
 
-Antes de depender do sistema para o caixa diário, o próximo marco deve trocar o
-`localStorage` por SQLite. A melhor entrega final é um instalador Windows
-assinado, com:
+- nobreak para computador, roteador e equipamento de pagamento;
+- OneDrive configurado e sincronizando antes do primeiro uso;
+- restauração de teste antes da operação oficial;
+- uso assistido em paralelo ao processo atual nos primeiros dias.
 
-- aplicativo desktop usando a interface React existente;
-- SQLite com transações e histórico de sessões de caixa;
-- companion de músicas e pagamentos executado em segundo plano;
-- backup diário automático para uma pasta sincronizada pelo OneDrive;
-- restauração testada e registro de auditoria;
-- atualização controlada, sem apagar a base local;
-- atalho no menu Iniciar e abertura automática com o Windows;
-- nobreak para computador, roteador e maquininha.
-
-Essa arquitetura não exige servidor físico. O próprio computador é o host
-local. Internet continua necessária para publicar atualizações, usar `yt-dlp`
-em fontes online e processar pagamentos integrados.
+A internet é necessária para baixar faixas, sincronizar o backup em nuvem e
+processar futuros pagamentos integrados. O registro local continua disponível
+sem conexão. Consulte `docs/INSTALADOR-WINDOWS.md` para build, assinatura,
+instalação e diagnóstico.
 
 ## É possível integrar uma maquininha?
 

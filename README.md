@@ -1,128 +1,141 @@
 # Pool Petiscos & Lanches — sistema de caixa
 
-Protótipo funcional e revisável do caixa da **Pool Petiscos & Lanches**. O site
-reúne vendas, estoque, fluxo de dinheiro, backup local e música ambiente para
-validar o uso antes da futura versão instalada no Windows.
+Aplicação local e revisável para vendas, estoque, caixa, financeiro e música
+ambiente da **Pool Petiscos & Lanches**.
 
-> O projeto continua em modo demonstração. Ele não substitui emissão fiscal,
-> contabilidade nem um banco de dados transacional.
+Esta versão é um protótipo operacional para validação com os proprietários.
+Ela já funciona sem um servidor separado, mas ainda não emite documento fiscal
+nem confirma pagamentos diretamente com banco ou maquininha.
 
-## O que já funciona
+## O que funciona
 
-- registro de vendas em Pix, dinheiro ou cartão;
-- cálculo de troco e baixa automática do estoque;
-- reposição de produtos com custo opcional;
+- vendas em Pix, dinheiro ou cartão, com cálculo de troco;
+- baixa e reposição de estoque;
 - despesas, sangria, suprimento, abertura e fechamento de caixa;
 - conferência entre saldo esperado e dinheiro contado;
-- resumo financeiro calculado apenas com registros reais;
-- backup JSON validado antes da restauração;
-- sincronização básica quando outra aba altera os dados;
-- central de notificações com detalhes de estoque baixo;
-- importação temporária de áudios locais;
-- biblioteca persistente por companion local com `yt-dlp` e FFmpeg;
-- navegação responsiva, por teclado e com histórico no endereço.
+- indicadores financeiros calculados a partir dos registros;
+- notificações de estoque baixo;
+- SQLite como armazenamento principal, com histórico de 50 revisões;
+- recuperação de uma alteração pendente após fechamento inesperado;
+- backup SQLite diário no OneDrive, com retenção de 30 dias;
+- exportação e restauração manual de backup JSON;
+- biblioteca de músicas local e download de uma faixa por link;
+- instalador Windows com Node.js, yt-dlp e FFmpeg incluídos;
+- atalho, inicialização automática com o Windows e atualização sem apagar os
+  dados.
+
+## Arquitetura local
+
+```text
+Navegador do caixa
+  └─ Interface React em http://127.0.0.1:4173
+       └─ Serviço local em http://127.0.0.1:8765
+            ├─ SQLite
+            ├─ backups diários
+            └─ biblioteca de músicas
+```
+
+As duas portas aceitam apenas conexões do próprio computador. A internet é
+necessária para baixar faixas, sincronizar o OneDrive e, futuramente, processar
+pagamentos integrados. Vendas manuais e dados locais continuam disponíveis
+sem internet.
 
 ## Estrutura do código
 
 ```text
 app/
-  layout.tsx                 Metadados e estrutura HTML
-  page.tsx                   Entrada enxuta da página
-  globals.css                Estilos globais e acessibilidade
-config/
-  sites-vite-plugin.ts       Empacotamento para o Sites
+  layout.tsx                      Metadados e estrutura HTML
+  page.tsx                        Entrada da aplicação
+  globals.css                     Tipografia e acessibilidade
 features/pool-petiscos/
-  pool-petiscos-app.tsx      Interface e coordenação das telas
-  demo-data.ts               Catálogo e registros da demonstração
-  domain.ts                  Dinheiro, horário, caixa e gráficos
-  music-companion.ts         Cliente do serviço local de músicas
-  persistence.ts             Validação do estado e dos backups
-  types.ts                   Tipos do negócio
+  pool-petiscos-app.tsx           Interface e coordenação das telas
+  demo-data.ts                    Dados usados na apresentação inicial
+  domain.ts                       Regras de dinheiro, caixa e relatórios
+  persistence.ts                  Validação do estado e backup JSON
+  local-storage-companion.ts      Cliente da persistência SQLite
+  music-companion.ts              Cliente da biblioteca de músicas
+  types.ts                        Tipos do negócio
 local_service/
-  server.py                  API local, biblioteca e integração yt-dlp
-  test_server.py             Regras de segurança do companion
-  requirements.txt           Versão validada do yt-dlp
-public/
-  pool-logo-banner.jpg       Marca horizontal
-  pool-logo-round.jpg        Marca redonda e ícone
+  server.py                       API restrita ao computador
+  storage.py                      SQLite, revisões e backups diários
+  launcher.py                     Inicializador e supervisor dos serviços
+  test_server.py                  Testes do serviço e do banco
+installer/
+  PoolPetiscos.iss                Definição do instalador Inno Setup
+  dependencies.lock.json          URLs e hashes das dependências incluídas
+  THIRD_PARTY_NOTICES.txt         Avisos de componentes redistribuídos
 scripts/
-  build.mjs                  Build multiplataforma
-  install-local.ps1          Prepara o computador do caixa
-  start-local.ps1            Inicia site e companion local
-  stop-local.ps1             Encerra os serviços locais
-  validate-artifact.mjs      Validação do pacote publicado
+  build-windows-installer.ps1     Geração reproduzível do instalador
+  build.mjs                       Build da interface e do Sites
+  validate-artifact.mjs           Validação do pacote publicado
 tests/
-  domain.test.ts             Regras de negócio e backup
-  rendered-html.test.mjs     Teste da página gerada
+  domain.test.ts                  Regras de negócio e backup
+  rendered-html.test.mjs          Verificação da página gerada
 docs/
-  DECISOES-E-ROADMAP.md      Decisões e próximos marcos
-  GUIA-DE-REVISAO.md         Roteiro para revisar o código
-  INSTALACAO-E-PAGAMENTOS.md Instalação, Pix e maquininhas
+  INSTALADOR-WINDOWS.md           Instalação, assinatura e suporte
+  INSTALACAO-E-PAGAMENTOS.md      Arquitetura e futura integração de pagamento
+  DECISOES-E-ROADMAP.md           Decisões e próximos marcos
+  GUIA-DE-REVISAO.md              Roteiro para revisar o código
 ```
 
-## Rodar no Windows
+## Desenvolvimento
 
-Requisitos:
+Requisitos para revisar a interface:
 
-- Node.js 22.13 ou superior;
-- npm.
-
-No PowerShell, dentro desta pasta:
+- Node.js 22;
+- npm;
+- Python 3.10 ou superior para os testes do serviço.
 
 ```powershell
 npm ci
 npm run dev
 ```
 
-O terminal mostrará o endereço local. Para validar tudo:
+O endereço padrão de desenvolvimento é exibido no terminal. Para executar toda
+a validação:
 
 ```powershell
 npm run check
 ```
 
-Também é possível executar separadamente:
-
-```powershell
-npm run typecheck
-npm run lint
-npm test
-npm run build
-```
-
-## Onde os dados ficam
-
-Nesta demonstração, os dados ficam no armazenamento local do navegador. O
-backup exportado contém vendas, produtos, despesas e sessões de caixa; antes de
-restaurá-lo, o sistema valida toda a estrutura e baixa uma cópia de segurança
-dos dados atuais.
-
-Para testes que imitam a operação da lanchonete, mantenha apenas uma aba aberta.
-A sincronização entre abas reduz sobrescritas acidentais, mas o armazenamento do
-navegador não oferece as garantias transacionais da futura versão com SQLite.
-
-Os áudios importados manualmente não entram no backup e são removidos ao fechar
-a página. As faixas obtidas pelo companion ficam na biblioteca do perfil do
-Windows.
-
 ## Instalação no computador do caixa
 
-Para preparar a versão piloto local:
+O usuário final deve executar somente `PoolPetiscos-Setup-1.0.0.exe`. O
+instalador prepara o aplicativo e oferece atalhos; Node.js, Python, yt-dlp e
+FFmpeg não precisam ser instalados separadamente.
 
-```powershell
-.\scripts\install-local.ps1
-.\scripts\start-local.ps1
+Os dados ficam fora da pasta do programa e são preservados em atualizações:
+
+```text
+%LOCALAPPDATA%\PoolPetiscos\data\pool-petiscos.db
+%LOCALAPPDATA%\PoolPetiscos\musicas
+%LOCALAPPDATA%\PoolPetiscos\logs
 ```
 
-O serviço de músicas depende de FFmpeg instalado no Windows. A arquitetura
-recomendada para a versão definitiva, incluindo SQLite, backups e integração
-com maquininha/Pix, está em
+Quando o OneDrive está configurado, o backup diário fica em:
+
+```text
+OneDrive\Pool Petiscos\Backups
+```
+
+Sem OneDrive, o sistema usa `%LOCALAPPDATA%\PoolPetiscos\backups`.
+
+As instruções de geração, assinatura, instalação silenciosa e diagnóstico estão
+em [docs/INSTALADOR-WINDOWS.md](docs/INSTALADOR-WINDOWS.md).
+
+## Pagamentos integrados
+
+As vendas atuais registram a forma escolhida pelo operador, sem controlar a
+maquininha. A integração real depende da marca/modelo do terminal, instituição
+do Pix, credenciais e processo de homologação. Nenhuma aprovação deve ser
+simulada: a venda só poderá ser concluída depois da confirmação do provedor.
+
+As decisões necessárias e os fluxos sugeridos estão em
 [docs/INSTALACAO-E-PAGAMENTOS.md](docs/INSTALACAO-E-PAGAMENTOS.md).
 
-## Publicação e acesso
+## Publicação
 
-O arquivo `.openai/hosting.json` mantém o vínculo com o projeto existente no
-Sites. O controle de acesso da versão publicada é gerenciado pelo próprio Sites;
-não há senhas ou tokens gravados neste repositório.
-
-As decisões confirmadas e as limitações que ainda precisam de validação
-presencial estão em [docs/DECISOES-E-ROADMAP.md](docs/DECISOES-E-ROADMAP.md).
+`.openai/hosting.json` vincula este código ao projeto existente no Sites. A
+versão hospedada serve para apresentação e revisão; sem o serviço instalado no
+computador, ela usa uma cópia local do navegador e não disponibiliza SQLite nem
+downloads.

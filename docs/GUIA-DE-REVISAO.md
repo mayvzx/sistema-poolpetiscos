@@ -17,12 +17,18 @@ inteiro.
    - conecta as regras aos botões, formulários e telas;
 6. `features/pool-petiscos/music-companion.ts`
    - faz somente a comunicação da tela com o serviço local de músicas;
-7. `local_service/server.py`
+7. `features/pool-petiscos/local-storage-companion.ts`
+   - faz a leitura e a gravação do estado principal pela API local;
+8. `local_service/storage.py`
+   - contém SQLite, histórico, conflitos de revisão e backups diários;
+9. `local_service/server.py`
    - limita a API ao próprio computador, gerencia a biblioteca e chama o
      `yt-dlp`;
-8. `scripts/`
-   - prepara, inicia e encerra a instalação piloto no Windows;
-9. `tests/` e `local_service/test_server.py`
+10. `local_service/launcher.py` e `installer/`
+    - iniciam os serviços e definem o pacote instalado no Windows;
+11. `scripts/build-windows-installer.ps1`
+    - baixa dependências verificadas, monta e compila o instalador;
+12. `tests/` e `local_service/test_server.py`
    - registra os comportamentos que não podem voltar a quebrar.
 
 ## Correções desta revisão
@@ -42,18 +48,25 @@ inteiro.
   restauração;
 - URLs temporárias de áudio são liberadas ao fechar a página;
 - o sino abre uma central de alertas antes de oferecer o atalho para Estoque;
-- downloads assistidos ficam limitados a uma faixa e exigem confirmação de uso;
+- downloads assistidos ficam limitados a uma faixa;
 - falha ao iniciar o site local encerra os processos já abertos;
 - modal fecha com Escape, prende o foco e volta ao controle anterior;
 - atalhos de navegação ficam preservados no endereço (`#venda`, `#estoque` etc.);
+- dados são gravados em SQLite e mantêm as últimas 50 revisões;
+- alterações pendentes são recuperadas depois de um fechamento inesperado;
+- backups SQLite diários passam por verificação de integridade;
+- o instalador inclui as dependências de execução e preserva os dados ao
+  atualizar;
 - os comandos de desenvolvimento funcionam no Windows.
 
 ## Limites conhecidos
 
-- é um protótipo com dados locais, não um caixa de produção;
+- é um protótipo operacional, ainda sem emissão fiscal ou homologação de
+  pagamento;
 - operações ainda são associadas à abertura do caixa pelo horário, não por uma
   entidade imutável de sessão;
-- duas abas não devem registrar vendas ao mesmo tempo;
+- comandas em andamento ainda não são persistidas; somente vendas concluídas
+  entram no banco;
 - não há cancelamento, desconto, comandas por mesa, impressão fiscal ou níveis
   de permissão;
 - o nome “Elaine” representa a operadora validada para o protótipo; a versão
@@ -69,7 +82,8 @@ Antes de publicar:
 npm run check
 ```
 
-O comando precisa concluir o typecheck, lint, testes do companion, testes de
-domínio, build e teste do HTML gerado. Depois disso, os fluxos essenciais devem
-ser conferidos no navegador: venda em Pix, venda em dinheiro, limite de estoque,
-saída financeira, fechamento de caixa e restauração de backup inválido.
+O comando precisa concluir o typecheck, lint, testes do serviço local, testes
+de domínio, build e teste do HTML gerado. Depois disso, os fluxos essenciais
+devem ser conferidos no navegador: venda em Pix, venda em dinheiro, limite de
+estoque, saída financeira, fechamento de caixa, restauração de backup inválido
+e recuperação dos dados depois de reiniciar os serviços.

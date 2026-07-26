@@ -25,7 +25,6 @@ import {
   Clock3,
   CreditCard,
   Download,
-  ExternalLink,
   FileAudio,
   LayoutDashboard,
   ListMusic,
@@ -40,7 +39,6 @@ import {
   ReceiptText,
   RotateCcw,
   Search,
-  ShieldCheck,
   ShoppingCart,
   SkipBack,
   SkipForward,
@@ -79,15 +77,20 @@ import {
 import {
   createBackup,
   parseBackup,
+  parsePoolState,
   parseStoredState,
   STORAGE_KEY,
 } from "./persistence";
+import {
+  loadLocalPoolState,
+  LocalStateConflictError,
+  saveLocalPoolState,
+} from "./local-storage-companion";
 import {
   checkMusicCompanion,
   getTrackDownloadJob,
   listCompanionTracks,
   queueTrackDownload,
-  type MusicCompanionHealth,
   type MusicDownloadJob,
 } from "./music-companion";
 import type {
@@ -121,14 +124,63 @@ const navigation = [
   { id: "venda" as const, label: "Nova venda", icon: ShoppingCart },
   { id: "estoque" as const, label: "Estoque", icon: Package },
   { id: "financeiro" as const, label: "Financeiro", icon: WalletCards },
-  { id: "musica" as const, label: "Músicas", icon: Music2, badge: "Beta" },
+  { id: "musica" as const, label: "Músicas", icon: Music2 },
 ];
 
 const views = new Set<View>(navigation.map((item) => item.id));
+const PENDING_SYNC_KEY = `${STORAGE_KEY}.pending-v1`;
+
+type PendingStateSync = {
+  state: PersistedPoolState;
+  expectedRevision: number | null;
+  savedAt: string;
+};
+
+function parsePendingStateSync(value: string | null): PendingStateSync | null {
+  if (!value) return null;
+  try {
+    const candidate = JSON.parse(value) as {
+      state?: unknown;
+      expectedRevision?: unknown;
+      savedAt?: unknown;
+    };
+    const state = parsePoolState(candidate.state);
+    const expectedRevision =
+      candidate.expectedRevision === null ||
+      (Number.isInteger(candidate.expectedRevision) &&
+        Number(candidate.expectedRevision) >= 0)
+        ? (candidate.expectedRevision as number | null)
+        : undefined;
+    if (
+      !state ||
+      expectedRevision === undefined ||
+      typeof candidate.savedAt !== "string" ||
+      !Number.isFinite(Date.parse(candidate.savedAt))
+    ) {
+      return null;
+    }
+    return { state, expectedRevision, savedAt: candidate.savedAt };
+  } catch {
+    return null;
+  }
+}
 
 function viewFromLocation(): View | null {
   const candidate = window.location.hash.replace(/^#/, "");
   return views.has(candidate as View) ? (candidate as View) : null;
+}
+
+function createInitialPoolState(): PersistedPoolState {
+  return {
+    products: DEMO_PRODUCTS,
+    sales: createDemoSales(),
+    expenses: createDemoExpenses(),
+    cashOpen: true,
+    openingBalance: 100,
+    cashOpenedAt: Date.now() - 2 * 60 * 60_000,
+    cashMovements: [],
+    cashClosures: [],
+  };
 }
 
 export default function PoolPetiscosApp() {
@@ -181,12 +233,9 @@ export default function PoolPetiscosApp() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [volume, setVolume] = useState(70);
   const [musicCompanionStatus, setMusicCompanionStatus] = useState<
-    "checking" | "ready" | "setup" | "offline"
+    "checking" | "ready" | "unavailable"
   >("checking");
-  const [musicCompanionHealth, setMusicCompanionHealth] =
-    useState<MusicCompanionHealth | null>(null);
   const [downloadSourceUrl, setDownloadSourceUrl] = useState("");
-  const [downloadAuthorized, setDownloadAuthorized] = useState(false);
   const [downloadJob, setDownloadJob] = useState<MusicDownloadJob | null>(null);
   const [musicDownloadBusy, setMusicDownloadBusy] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -197,6 +246,43 @@ export default function PoolPetiscosApp() {
   const toastTimerRef = useRef<number | null>(null);
   const persistenceWarningRef = useRef(false);
   const tracksRef = useRef<Track[]>([]);
+  const primaryStorageReadyRef = useRef(false);
+  const primaryStorageRevisionRef = useRef(0);
+  const primaryStorageSnapshotRef = useRef<string | null>(null);
+  const primaryStorageTimerRef = useRef<number | null>(null);
+  const primaryStorageWriteRef = useRef(false);
+  const pendingPrimaryStateRef = useRef<PersistedPoolState | null>(null);
+  const localFallbackWritableRef = useRef(true);
+
+  const rememberPendingSync = useCallback(
+    (state: PersistedPoolState, expectedRevision: number | null) => {
+      try {
+        const pending = {
+          state,
+          expectedRevision,
+          savedAt: new Date().toISOString(),
+        } satisfies PendingStateSync;
+        window.localStorage.setItem(PENDING_SYNC_KEY, JSON.stringify(pending));
+        localFallbackWritableRef.current = true;
+      } catch {
+        localFallbackWritableRef.current = false;
+      }
+    },
+    [],
+  );
+
+  const clearPendingSyncIfMatched = useCallback((serialized: string) => {
+    try {
+      const pending = parsePendingStateSync(
+        window.localStorage.getItem(PENDING_SYNC_KEY),
+      );
+      if (pending && JSON.stringify(pending.state) === serialized) {
+        window.localStorage.removeItem(PENDING_SYNC_KEY);
+      }
+    } catch {
+      localFallbackWritableRef.current = false;
+    }
+  }, []);
 
   const navigateTo = useCallback((view: View) => {
     setActiveView(view);
@@ -231,25 +317,23 @@ export default function PoolPetiscosApp() {
           (track) => track.source === "upload",
         );
         const nextTracks = [...uploadedTracks, ...localTracks];
-        setMusicCompanionHealth(health);
         setMusicCompanionStatus(
-          health.yt_dlp && health.ffmpeg ? "ready" : "setup",
+          health.yt_dlp && health.ffmpeg ? "ready" : "unavailable",
         );
         setTracks(nextTracks);
         setCurrentTrackIndex(nextTracks.length ? 0 : -1);
         setIsPlaying(false);
         if (showFeedback) {
           showToast(
-            `${localTracks.length} faixa(s) carregada(s) da biblioteca local.`,
+            `${localTracks.length} faixa(s) carregada(s) da biblioteca do caixa.`,
             "info",
           );
         }
       } catch {
-        setMusicCompanionHealth(null);
-        setMusicCompanionStatus("offline");
+        setMusicCompanionStatus("unavailable");
         if (showFeedback) {
           showToast(
-            "O companion local não respondeu. Confira a instalação no Windows.",
+            "O serviço de músicas está indisponível. Tente novamente em instantes.",
             "warning",
           );
         }
@@ -272,6 +356,91 @@ export default function PoolPetiscosApp() {
     setCashReceived("");
   }, []);
 
+  const flushPrimaryState = useCallback(async () => {
+    if (
+      !primaryStorageReadyRef.current ||
+      primaryStorageWriteRef.current ||
+      !pendingPrimaryStateRef.current
+    ) {
+      return;
+    }
+
+    const state = pendingPrimaryStateRef.current;
+    const serialized = JSON.stringify(state);
+    pendingPrimaryStateRef.current = null;
+
+    if (serialized === primaryStorageSnapshotRef.current) {
+      return;
+    }
+
+    primaryStorageWriteRef.current = true;
+    try {
+      const result = await saveLocalPoolState(
+        state,
+        primaryStorageRevisionRef.current,
+      );
+      primaryStorageRevisionRef.current = result.revision;
+      primaryStorageSnapshotRef.current = serialized;
+      clearPendingSyncIfMatched(serialized);
+      persistenceWarningRef.current = false;
+      if (!result.backupHealthy && !persistenceWarningRef.current) {
+        persistenceWarningRef.current = true;
+        showToast(
+          "Os dados foram salvos, mas o backup automático precisa de atenção.",
+          "warning",
+        );
+      }
+    } catch (error) {
+      if (error instanceof LocalStateConflictError) {
+        primaryStorageRevisionRef.current = error.revision;
+        const latestState = parsePoolState(error.state);
+        if (latestState) {
+          const latestSerialized = JSON.stringify(latestState);
+          primaryStorageSnapshotRef.current = latestSerialized;
+          pendingPrimaryStateRef.current = null;
+          try {
+            window.localStorage.setItem(STORAGE_KEY, latestSerialized);
+            window.localStorage.removeItem(PENDING_SYNC_KEY);
+            localFallbackWritableRef.current = true;
+          } catch {
+            localFallbackWritableRef.current = false;
+          }
+          restorePoolState(latestState);
+          showToast(
+            "Os dados foram atualizados em outro acesso. Exibimos a versão mais recente.",
+            "info",
+          );
+        } else {
+          primaryStorageReadyRef.current = false;
+          showToast(
+            "Os dados mudaram em outro acesso. Reabra o sistema antes de continuar.",
+            "warning",
+          );
+        }
+      } else {
+        primaryStorageReadyRef.current = false;
+        if (!localFallbackWritableRef.current) {
+          showToast(
+            "Não foi possível salvar com segurança. Exporte um backup antes de continuar.",
+            "warning",
+          );
+        }
+      }
+    } finally {
+      primaryStorageWriteRef.current = false;
+      if (
+        primaryStorageReadyRef.current &&
+        pendingPrimaryStateRef.current &&
+        primaryStorageTimerRef.current === null
+      ) {
+        primaryStorageTimerRef.current = window.setTimeout(() => {
+          primaryStorageTimerRef.current = null;
+          void flushPrimaryState();
+        }, 300);
+      }
+    }
+  }, [clearPendingSyncIfMatched, restorePoolState, showToast]);
+
   useEffect(() => {
     const updateClock = () => setNow(new Date());
     updateClock();
@@ -291,55 +460,232 @@ export default function PoolPetiscosApp() {
 
   useEffect(() => {
     let cancelled = false;
-    window.queueMicrotask(() => {
-      if (cancelled) return;
-      const saved = window.localStorage.getItem(STORAGE_KEY);
-      const parsed = parseStoredState(saved);
-      if (parsed) {
-        restorePoolState(parsed);
-      } else {
-        setSales(createDemoSales());
-        setExpenses(createDemoExpenses());
-        if (saved) {
+
+    async function hydratePoolState() {
+      let saved: string | null = null;
+      let pendingSync: PendingStateSync | null = null;
+      try {
+        saved = window.localStorage.getItem(STORAGE_KEY);
+        pendingSync = parsePendingStateSync(
+          window.localStorage.getItem(PENDING_SYNC_KEY),
+        );
+      } catch {
+        localFallbackWritableRef.current = false;
+      }
+
+      const storedState = parseStoredState(saved);
+      const fallbackState =
+        pendingSync?.state ?? storedState ?? createInitialPoolState();
+
+      try {
+        const snapshot = await loadLocalPoolState();
+        if (cancelled) return;
+
+        primaryStorageReadyRef.current = true;
+        primaryStorageRevisionRef.current = snapshot.revision;
+        let primaryState = parsePoolState(snapshot.state);
+        const pendingMatchesPrimary =
+          pendingSync &&
+          primaryState &&
+          JSON.stringify(pendingSync.state) === JSON.stringify(primaryState);
+        const serverSavedAt = snapshot.savedAt
+          ? Date.parse(snapshot.savedAt)
+          : Number.NEGATIVE_INFINITY;
+        const pendingCanBeReplayed =
+          pendingSync &&
+          !pendingMatchesPrimary &&
+          (primaryState === null ||
+            pendingSync.expectedRevision === snapshot.revision ||
+            (pendingSync.expectedRevision === null &&
+              Date.parse(pendingSync.savedAt) > serverSavedAt));
+
+        if (pendingMatchesPrimary) {
+          try {
+            window.localStorage.removeItem(PENDING_SYNC_KEY);
+          } catch {
+            localFallbackWritableRef.current = false;
+          }
+        } else if (pendingCanBeReplayed && pendingSync) {
+          try {
+            const result = await saveLocalPoolState(
+              pendingSync.state,
+              snapshot.revision,
+            );
+            if (cancelled) return;
+            primaryStorageRevisionRef.current = result.revision;
+            primaryState = pendingSync.state;
+            try {
+              window.localStorage.removeItem(PENDING_SYNC_KEY);
+            } catch {
+              localFallbackWritableRef.current = false;
+            }
+            if (!result.backupHealthy) {
+              persistenceWarningRef.current = true;
+              showToast(
+                "Os dados foram recuperados, mas o backup automático precisa de atenção.",
+                "warning",
+              );
+            }
+          } catch (error) {
+            if (error instanceof LocalStateConflictError) {
+              primaryStorageRevisionRef.current = error.revision;
+              primaryState = parsePoolState(error.state);
+              try {
+                window.localStorage.removeItem(PENDING_SYNC_KEY);
+              } catch {
+                localFallbackWritableRef.current = false;
+              }
+            } else {
+              primaryStorageReadyRef.current = false;
+              restorePoolState(fallbackState);
+            }
+          }
+        } else if (pendingSync) {
+          try {
+            window.localStorage.removeItem(PENDING_SYNC_KEY);
+          } catch {
+            localFallbackWritableRef.current = false;
+          }
+        }
+
+        if (primaryState) {
+          const serialized = JSON.stringify(primaryState);
+          primaryStorageSnapshotRef.current = serialized;
+          restorePoolState(primaryState);
+          try {
+            window.localStorage.setItem(STORAGE_KEY, serialized);
+            localFallbackWritableRef.current = true;
+          } catch {
+            localFallbackWritableRef.current = false;
+          }
+        } else if (primaryStorageReadyRef.current) {
+          restorePoolState(fallbackState);
+          try {
+            const result = await saveLocalPoolState(
+              fallbackState,
+              snapshot.revision,
+            );
+            if (cancelled) return;
+            primaryStorageRevisionRef.current = result.revision;
+            primaryStorageSnapshotRef.current = JSON.stringify(fallbackState);
+            clearPendingSyncIfMatched(
+              primaryStorageSnapshotRef.current,
+            );
+            if (!result.backupHealthy) {
+              persistenceWarningRef.current = true;
+              showToast(
+                "Os dados foram salvos, mas o backup automático precisa de atenção.",
+                "warning",
+              );
+            }
+          } catch (error) {
+            if (error instanceof LocalStateConflictError) {
+              primaryStorageRevisionRef.current = error.revision;
+              const latestState = parsePoolState(error.state);
+              if (latestState) {
+                primaryStorageSnapshotRef.current =
+                  JSON.stringify(latestState);
+                restorePoolState(latestState);
+              } else {
+                primaryStorageReadyRef.current = false;
+              }
+            } else {
+              primaryStorageReadyRef.current = false;
+            }
+          }
+        }
+
+        if (!snapshot.backupHealthy && !persistenceWarningRef.current) {
+          persistenceWarningRef.current = true;
           showToast(
-            "Os dados locais estavam inválidos e foram substituídos pela demonstração.",
+            "O backup automático precisa de atenção. Os dados continuam salvos neste caixa.",
             "warning",
           );
         }
+      } catch {
+        if (cancelled) return;
+        primaryStorageReadyRef.current = false;
+        primaryStorageSnapshotRef.current = JSON.stringify(fallbackState);
+        restorePoolState(fallbackState);
+      }
+
+      if (saved && !storedState) {
+        showToast(
+          "A cópia anterior não pôde ser lida. Os dados iniciais foram carregados.",
+          "warning",
+        );
       }
       setHydrated(true);
+    }
+
+    window.queueMicrotask(() => {
+      if (!cancelled) void hydratePoolState();
     });
     return () => {
       cancelled = true;
     };
-  }, [restorePoolState, showToast]);
+  }, [clearPendingSyncIfMatched, restorePoolState, showToast]);
 
   useEffect(() => {
     if (!hydrated) return;
+    const state = {
+      products,
+      sales,
+      expenses,
+      cashOpen,
+      openingBalance,
+      cashOpenedAt,
+      cashMovements,
+      cashClosures,
+    } satisfies PersistedPoolState;
+    const serialized = JSON.stringify(state);
+
     try {
-      window.localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify({
-          products,
-          sales,
-          expenses,
-          cashOpen,
-          openingBalance,
-          cashOpenedAt,
-          cashMovements,
-          cashClosures,
-        } satisfies PersistedPoolState),
-      );
+      window.localStorage.setItem(STORAGE_KEY, serialized);
+      localFallbackWritableRef.current = true;
       persistenceWarningRef.current = false;
     } catch {
-      if (!persistenceWarningRef.current) {
+      localFallbackWritableRef.current = false;
+      if (
+        !primaryStorageReadyRef.current &&
+        !persistenceWarningRef.current
+      ) {
         persistenceWarningRef.current = true;
         showToast(
-          "Não foi possível salvar neste navegador. Exporte um backup antes de continuar.",
+          "Não foi possível salvar com segurança. Exporte um backup antes de continuar.",
           "warning",
         );
       }
     }
+
+    if (serialized === primaryStorageSnapshotRef.current) {
+      return;
+    }
+
+    rememberPendingSync(
+      state,
+      primaryStorageReadyRef.current
+        ? primaryStorageRevisionRef.current
+        : null,
+    );
+
+    if (!primaryStorageReadyRef.current) return;
+
+    pendingPrimaryStateRef.current = state;
+    if (primaryStorageTimerRef.current !== null) {
+      window.clearTimeout(primaryStorageTimerRef.current);
+    }
+    primaryStorageTimerRef.current = window.setTimeout(() => {
+      primaryStorageTimerRef.current = null;
+      void flushPrimaryState();
+    }, 650);
+
+    return () => {
+      if (primaryStorageTimerRef.current !== null) {
+        window.clearTimeout(primaryStorageTimerRef.current);
+        primaryStorageTimerRef.current = null;
+      }
+    };
   }, [
     cashClosures,
     cashMovements,
@@ -350,12 +696,34 @@ export default function PoolPetiscosApp() {
     openingBalance,
     products,
     sales,
+    flushPrimaryState,
+    rememberPendingSync,
     showToast,
   ]);
 
   useEffect(() => {
+    const flushBeforeLeaving = () => {
+      if (primaryStorageTimerRef.current !== null) {
+        window.clearTimeout(primaryStorageTimerRef.current);
+        primaryStorageTimerRef.current = null;
+      }
+      void flushPrimaryState();
+    };
+    const flushWhenHidden = () => {
+      if (document.visibilityState === "hidden") flushBeforeLeaving();
+    };
+    window.addEventListener("pagehide", flushBeforeLeaving);
+    document.addEventListener("visibilitychange", flushWhenHidden);
+    return () => {
+      window.removeEventListener("pagehide", flushBeforeLeaving);
+      document.removeEventListener("visibilitychange", flushWhenHidden);
+    };
+  }, [flushPrimaryState]);
+
+  useEffect(() => {
     if (!hydrated) return;
     const syncFromAnotherTab = (event: StorageEvent) => {
+      if (primaryStorageReadyRef.current) return;
       if (event.key !== STORAGE_KEY || !event.newValue) return;
       const state = parseStoredState(event.newValue);
       if (!state) return;
@@ -1071,7 +1439,7 @@ export default function PoolPetiscosApp() {
       backup,
       `pool-backup-${formatDateKey(Date.now())}.json`,
     );
-    showToast("Backup exportado. Guarde o arquivo no Google Drive.", "info");
+    showToast("Backup exportado. Guarde o arquivo no OneDrive.", "info");
   }
 
   function currentPoolState(): PersistedPoolState {
@@ -1133,31 +1501,6 @@ export default function PoolPetiscosApp() {
     reader.readAsText(file);
   }
 
-  function resetDemo() {
-    if (
-      !window.confirm(
-        "Restaurar os dados da demonstração? As vendas adicionadas neste navegador serão apagadas.",
-      )
-    ) {
-      return;
-    }
-    setProducts(DEMO_PRODUCTS);
-    setSales(createDemoSales());
-    setExpenses(createDemoExpenses());
-    setCashOpen(true);
-    setOpeningBalance(100);
-    setCashOpenForm("100");
-    setCashOpenedAt(Date.now() - 2 * 60 * 60_000);
-    setCashMovements([]);
-    setCashClosures([]);
-    setCart([]);
-    setCashReceived("");
-    setCashCloseForm("");
-    setPaymentMethod("Pix");
-    setModal(null);
-    showToast("Dados de demonstração restaurados.", "info");
-  }
-
   function handleAudioFiles(event: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.target.files ?? []);
     if (!files.length) return;
@@ -1185,16 +1528,9 @@ export default function PoolPetiscosApp() {
       showToast("Cole o link de uma faixa para baixar.", "warning");
       return;
     }
-    if (!downloadAuthorized) {
-      showToast(
-        "Confirme que a faixa pode ser baixada e usada pela lanchonete.",
-        "warning",
-      );
-      return;
-    }
     if (musicCompanionStatus !== "ready") {
       showToast(
-        "O companion precisa estar instalado com yt-dlp e FFmpeg.",
+        "O serviço de músicas está indisponível. Tente novamente.",
         "warning",
       );
       return;
@@ -1212,22 +1548,22 @@ export default function PoolPetiscosApp() {
       }
       if (job.status === "finished") {
         setDownloadSourceUrl("");
-        setDownloadAuthorized(false);
         await syncMusicCompanion();
-        showToast("Faixa baixada e adicionada à biblioteca local.");
+        showToast("Faixa adicionada à biblioteca do caixa.");
       } else if (job.status === "failed") {
-        showToast(job.message, "warning");
+        showToast(
+          "Não foi possível baixar esta faixa. Confira o link e tente novamente.",
+          "warning",
+        );
       } else {
         showToast(
-          "O download continua no companion. Atualize a biblioteca em instantes.",
+          "A faixa continua sendo preparada. Atualize a biblioteca em instantes.",
           "info",
         );
       }
-    } catch (error) {
+    } catch {
       showToast(
-        error instanceof Error
-          ? error.message
-          : "Não foi possível iniciar o download.",
+        "Não foi possível iniciar o download. Tente novamente.",
         "warning",
       );
     } finally {
@@ -1293,7 +1629,7 @@ export default function PoolPetiscosApp() {
             Preparando o caixa da Pool…
           </strong>
           <span className="mt-1 block text-xs text-[#6d6561]">
-            Conferindo os dados salvos neste navegador.
+            Preparando o sistema.
           </span>
         </div>
       </main>
@@ -1339,38 +1675,12 @@ export default function PoolPetiscosApp() {
               >
                 <Icon size={19} strokeWidth={2.1} />
                 <span className="flex-1">{item.label}</span>
-                {item.badge && (
-                  <span className="rounded-full bg-[#f5b617]/15 px-2 py-1 text-[8px] font-extrabold text-[#ffd467]">
-                    {item.badge}
-                  </span>
-                )}
               </button>
             );
           })}
         </nav>
 
         <div className="flex-1" />
-        <div className="mt-5 rounded-xl border border-[#f5b617]/15 bg-[#f5b617]/8 p-3">
-          <div className="flex gap-2 text-[#f6c746]">
-            <Sparkles size={17} className="shrink-0" />
-            <div>
-              <strong className="block text-[10px] text-[#ffe39a]">
-                Modo demonstração
-              </strong>
-              <span className="mt-1 block text-[9px] leading-4 text-white/45">
-                Os dados ficam salvos somente neste navegador.
-              </span>
-            </div>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={resetDemo}
-          className="mt-2 flex items-center gap-2 px-3 py-2 text-left text-[9px] text-white/40 transition hover:text-white/75"
-        >
-          <RotateCcw size={15} />
-          Restaurar dados de exemplo
-        </button>
         <div className="mt-2 flex items-center gap-3 border-t border-white/8 px-2 pt-4">
           <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-white font-extrabold text-[#d9202c]">
             E
@@ -1525,8 +1835,8 @@ export default function PoolPetiscosApp() {
 
         {activeView === "inicio" && (
           <div className="mx-auto w-full max-w-[1480px] space-y-4 p-4 sm:p-6 lg:p-9">
-            <section className="relative flex min-h-[220px] items-center overflow-hidden rounded-[24px] bg-gradient-to-br from-[#d9202c] to-[#a8101c] p-6 shadow-[0_16px_40px_rgba(66,45,37,.08)] sm:p-9">
-              <div className="absolute inset-y-0 left-0 w-[75%] bg-white [clip-path:polygon(0_0,82%_0,100%_100%,0_100%)] sm:w-[70%]" />
+            <section className="relative flex min-h-[220px] items-center overflow-hidden rounded-[24px] border border-[#f1d0d3] bg-gradient-to-br from-[#d9202c] to-[#a8101c] p-6 shadow-[0_16px_40px_rgba(66,45,37,.08)] sm:p-9">
+              <div className="absolute inset-y-0 left-0 w-full bg-white sm:w-[70%] sm:[clip-path:polygon(0_0,82%_0,100%_100%,0_100%)]" />
               <div className="relative z-10 max-w-[600px]">
                 <span className="flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-[.12em] text-[#d9202c]">
                   <Sparkles size={15} />
@@ -1558,7 +1868,7 @@ export default function PoolPetiscosApp() {
                   </button>
                 </div>
               </div>
-              <div className="absolute bottom-3 right-3 z-10 rounded-full border border-white/30 bg-white/10 p-2 shadow-2xl sm:bottom-auto sm:right-[6%]">
+              <div className="absolute bottom-3 right-3 z-10 hidden rounded-full border border-white/30 bg-white/10 p-2 shadow-2xl sm:bottom-auto sm:right-[6%] sm:block">
                 <Image
                   src="/pool-logo-round.jpg"
                   alt=""
@@ -1779,69 +2089,6 @@ export default function PoolPetiscosApp() {
               </section>
             </div>
 
-            <section className="rounded-[20px] border border-[#ebe5e1] bg-white p-5 shadow-[0_7px_22px_rgba(66,45,37,.035)]">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <span className="text-[9px] font-extrabold uppercase tracking-[.13em] text-[#9c928d]">
-                    Economize nas compras
-                  </span>
-                  <h2 className="text-base font-extrabold tracking-tight">
-                    Radar de preços da região
-                  </h2>
-                </div>
-                <span className="hidden text-[9px] text-[#aaa19d] sm:block">
-                  Abre fontes atualizadas na internet
-                </span>
-              </div>
-              <div className="mt-4 grid gap-3 md:grid-cols-3">
-                {[
-                  {
-                    tag: "Cotação diária",
-                    color: "bg-[#eaf8f1] text-[#27865d]",
-                    title:
-                      "Compare carnes, laticínios e hortaliças na CEASA-PE",
-                    action: "Consultar preços",
-                    href: "https://www.ceasape.org.br/cotacao",
-                  },
-                  {
-                    tag: "Encarte regional",
-                    color: "bg-[#fff8de] text-[#9a6700]",
-                    title:
-                      "Veja promoções do Novo Atacarejo perto da Pool",
-                    action: "Abrir ofertas",
-                    href: "https://ofertas.novoatacarejo.com/",
-                  },
-                  {
-                    tag: "Para o negócio",
-                    color: "bg-[#fff0f1] text-[#d9202c]",
-                    title:
-                      "Acompanhe as ofertas semanais do Assaí em Pernambuco",
-                    action: "Ver encarte",
-                    href: "https://www.assai.com.br/ofertas/pernambuco",
-                  },
-                ].map((item) => (
-                  <a
-                    key={item.href}
-                    href={item.href}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="flex min-h-[130px] flex-col items-start rounded-2xl border border-[#ebe5e1] bg-gradient-to-br from-white to-[#fcfaf8] p-4 no-underline transition hover:-translate-y-0.5 hover:shadow-lg"
-                  >
-                    <span
-                      className={`rounded-full px-2 py-1 text-[8px] font-extrabold ${item.color}`}
-                    >
-                      {item.tag}
-                    </span>
-                    <strong className="my-3 text-[11px] leading-5">
-                      {item.title}
-                    </strong>
-                    <span className="mt-auto flex items-center gap-1 text-[9px] font-extrabold text-[#d9202c]">
-                      {item.action} <ExternalLink size={13} />
-                    </span>
-                  </a>
-                ))}
-              </div>
-            </section>
           </div>
         )}
 
@@ -2440,7 +2687,7 @@ export default function PoolPetiscosApp() {
                   <h2 className="text-sm font-extrabold">Proteção dos dados</h2>
                   <p className="mt-1 max-w-2xl text-[9px] leading-4 text-[#776f6b]">
                     Exporte uma cópia das vendas, estoque e caixa. O arquivo pode
-                    ser guardado no Google Drive e restaurado neste navegador.
+                    ser guardado no OneDrive e restaurado quando necessário.
                   </p>
                 </div>
               </div>
@@ -2612,8 +2859,8 @@ export default function PoolPetiscosApp() {
                 Música ambiente
               </h1>
               <p className="mt-1 max-w-2xl text-xs leading-5 text-[#776f6b]">
-                Importe arquivos ou use o companion local com yt-dlp para montar
-                uma biblioteca persistente, sem misturar esta função com o caixa.
+                Importe arquivos de áudio ou adicione faixas por link. Tudo fica
+                organizado na biblioteca deste caixa.
               </p>
             </div>
 
@@ -2623,16 +2870,15 @@ export default function PoolPetiscosApp() {
                 <div>
                   <span className="inline-flex items-center gap-2 rounded-full bg-[#d9202c]/15 px-3 py-2 text-[9px] font-extrabold text-[#ff8790]">
                     <Music2 size={14} />
-                    Biblioteca local • Beta
+                    Biblioteca do caixa
                   </span>
                   <h2 className="mt-5 max-w-lg text-2xl font-extrabold tracking-[-.04em] sm:text-4xl">
                     O clima da Pool, do jeito de vocês.
                   </h2>
                   <p className="mt-3 max-w-xl text-[10px] leading-5 text-white/50 sm:text-xs">
-                    O navegador usa a saída de som escolhida no Windows. Basta
+                    O sistema usa a saída de som escolhida no Windows. Basta
                     conectar a caixa Bluetooth no computador e selecioná-la nas
-                    configurações de áudio. As faixas baixadas ficam somente
-                    neste caixa.
+                    configurações de áudio.
                   </p>
                   <div className="mt-5 flex flex-wrap gap-2">
                     <label className="flex min-h-11 cursor-pointer items-center gap-2 rounded-xl bg-[#d9202c] px-4 text-[10px] font-extrabold shadow-lg focus-within:ring-2 focus-within:ring-white focus-within:ring-offset-2 focus-within:ring-offset-[#211e1d]">
@@ -2735,7 +2981,7 @@ export default function PoolPetiscosApp() {
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-[11px] font-extrabold uppercase tracking-[.13em] text-[#d9202c]">
-                      Download assistido
+                      Baixar por link
                     </span>
                     <span
                       className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-extrabold ${
@@ -2754,21 +3000,18 @@ export default function PoolPetiscosApp() {
                         <WifiOff size={13} />
                       )}
                       {musicCompanionStatus === "ready"
-                        ? "Companion pronto"
-                        : musicCompanionStatus === "setup"
-                          ? "Instalação incompleta"
-                          : musicCompanionStatus === "checking"
-                            ? "Verificando"
-                            : "Companion desligado"}
+                        ? "Biblioteca disponível"
+                        : musicCompanionStatus === "checking"
+                          ? "Verificando"
+                          : "Serviço indisponível"}
                     </span>
                   </div>
                   <h2 className="mt-2 text-xl font-extrabold tracking-[-.025em]">
                     Adicionar uma faixa por link
                   </h2>
                   <p className="mt-1 max-w-2xl text-[13px] leading-5 text-[#776f6b]">
-                    O yt-dlp roda no próprio computador e entrega um MP3 para a
-                    biblioteca local. Playlists inteiras não são importadas
-                    automaticamente.
+                    Cole o link de uma faixa para adicioná-la à biblioteca deste
+                    caixa. A importação é feita uma faixa por vez.
                   </p>
                 </div>
                 <button
@@ -2817,20 +3060,6 @@ export default function PoolPetiscosApp() {
                     {musicDownloadBusy ? "Preparando faixa…" : "Baixar faixa"}
                   </button>
                 </div>
-                <label className="mt-3 flex cursor-pointer items-start gap-3 text-[12px] leading-5 text-[#6d6561]">
-                  <input
-                    type="checkbox"
-                    checked={downloadAuthorized}
-                    onChange={(event) =>
-                      setDownloadAuthorized(event.target.checked)
-                    }
-                    className="mt-1 size-4 accent-[#d9202c]"
-                  />
-                  <span>
-                    Confirmo que a lanchonete possui autorização para baixar e
-                    reproduzir esta faixa.
-                  </span>
-                </label>
 
                 {downloadJob && (
                   <div
@@ -2842,7 +3071,17 @@ export default function PoolPetiscosApp() {
                     role="status"
                   >
                     <div className="flex items-center justify-between gap-3 text-[12px]">
-                      <strong>{downloadJob.message}</strong>
+                      <strong>
+                        {downloadJob.status === "queued"
+                          ? "Aguardando início…"
+                          : downloadJob.status === "downloading"
+                            ? "Baixando faixa…"
+                            : downloadJob.status === "processing"
+                              ? "Preparando para reprodução…"
+                              : downloadJob.status === "finished"
+                                ? "Faixa pronta"
+                                : "Não foi possível concluir"}
+                      </strong>
                       <span className="font-extrabold tabular-nums">
                         {downloadJob.progress}%
                       </span>
@@ -2860,18 +3099,24 @@ export default function PoolPetiscosApp() {
                   </div>
                 )}
 
-                {musicCompanionStatus !== "ready" && (
-                  <div className="mt-4 flex items-start gap-3 rounded-xl border border-[#f0dfad] bg-[#fff9e9] p-4 text-[12px] leading-5 text-[#7b6129]">
-                    <ShieldCheck size={18} className="mt-0.5 shrink-0" />
-                    <span>
-                      Execute <strong>scripts\install-local.ps1</strong> e depois
-                      <strong> scripts\start-local.ps1</strong> no computador do
-                      caixa.
-                      {musicCompanionHealth &&
-                        (!musicCompanionHealth.yt_dlp ||
-                          !musicCompanionHealth.ffmpeg) &&
-                        " O serviço respondeu, mas ainda falta instalar yt-dlp ou FFmpeg."}
-                    </span>
+                {musicCompanionStatus === "unavailable" && (
+                  <div className="mt-4 flex flex-col gap-3 rounded-xl border border-[#f0dfad] bg-[#fff9e9] p-4 text-[12px] leading-5 text-[#7b6129] sm:flex-row sm:items-center">
+                    <AlertTriangle size={18} className="shrink-0" />
+                    <div className="flex-1">
+                      <strong className="block">
+                        Serviço de músicas indisponível
+                      </strong>
+                      <span>
+                        As demais funções do caixa continuam disponíveis.
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void syncMusicCompanion(true)}
+                      className="min-h-10 rounded-xl border border-[#d7be79] bg-white px-4 font-extrabold text-[#6d5421] transition hover:border-[#a98029]"
+                    >
+                      Tentar novamente
+                    </button>
                   </div>
                 )}
               </form>
@@ -2882,7 +3127,7 @@ export default function PoolPetiscosApp() {
                 <div className="flex items-center justify-between border-b border-[#ebe5e1] p-5">
                   <div>
                     <span className="text-[9px] font-extrabold uppercase tracking-[.13em] text-[#9c928d]">
-                      Nesta sessão
+                      Biblioteca do caixa
                     </span>
                     <h2 className="text-base font-extrabold">Fila de reprodução</h2>
                   </div>
@@ -2901,7 +3146,7 @@ export default function PoolPetiscosApp() {
                         A fila está vazia
                       </strong>
                       <span className="mt-1 block text-[9px] text-[#8d8581]">
-                        Importe MP3, WAV, OGG ou outro áudio compatível.
+                        Adicione uma música para começar a reprodução.
                       </span>
                     </div>
                   </div>
@@ -2936,8 +3181,8 @@ export default function PoolPetiscosApp() {
                           </strong>
                           <span className="text-[8px] text-[#9c928d]">
                             {track.source === "yt-dlp"
-                              ? "Biblioteca yt-dlp"
-                              : "Arquivo importado"}{" "}
+                              ? "Biblioteca do caixa"
+                              : "Arquivo selecionado"}{" "}
                             • {track.size}
                           </span>
                         </div>
@@ -2957,10 +3202,10 @@ export default function PoolPetiscosApp() {
                 </h2>
                 <ul className="mt-3 space-y-3">
                   {[
-                    "Uma faixa por download para evitar lotes acidentais",
-                    "Conversão para MP3 com FFmpeg",
-                    "Arquivos salvos no perfil do Windows",
-                    "Recarregamento automático ao abrir esta tela",
+                    "Uma faixa por vez para evitar lotes acidentais",
+                    "Faixas prontas para reprodução",
+                    "Arquivos mantidos neste caixa",
+                    "Biblioteca carregada ao abrir esta tela",
                   ].map((item) => (
                     <li
                       key={item}
@@ -2974,15 +3219,6 @@ export default function PoolPetiscosApp() {
                     </li>
                   ))}
                 </ul>
-                <div className="mt-5 rounded-xl bg-[#fff0f1] p-3">
-                  <strong className="block text-[9px] text-[#b41622]">
-                    Sobre downloads
-                  </strong>
-                  <p className="mt-1 text-[8px] leading-4 text-[#9b555b]">
-                    O sistema deverá trabalhar apenas com arquivos próprios,
-                    licenciados ou obtidos por fontes que autorizem o download.
-                  </p>
-                </div>
               </aside>
             </div>
           </div>

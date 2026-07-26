@@ -42,12 +42,14 @@ async function companionRequest<T>(
     });
     const payload = (await response.json()) as T & { error?: string };
     if (!response.ok) {
-      throw new Error(payload.error || "O companion local recusou a solicitação.");
+      throw new Error(
+        payload.error || "O serviço de músicas recusou a solicitação.",
+      );
     }
     return payload;
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
-      throw new Error("O companion local demorou para responder.");
+      throw new Error("O serviço de músicas demorou para responder.");
     }
     throw error;
   } finally {

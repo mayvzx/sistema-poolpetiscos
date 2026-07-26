@@ -10,7 +10,7 @@ vendas, estoque e controle gerencial da Pool Petiscos & Lanches.
 - Cardápio e preços foram cadastrados a partir das fotos fornecidas.
 - Funcionamento: quinta a domingo, das 16h às 23h.
 - O caixa deve continuar operando quando a internet cair.
-- O Google Drive é a preferência inicial para cópias em nuvem.
+- O OneDrive é a preferência para as cópias automáticas.
 - O módulo musical deve usar arquivos próprios ou legalmente obtidos.
 
 ## Entregue no protótipo
@@ -27,6 +27,11 @@ vendas, estoque e controle gerencial da Pool Petiscos & Lanches.
 - separação do dinheiro físico de Pix e cartão;
 - backup manual exportável e restaurável;
 - reprodução de áudios locais;
+- biblioteca musical persistente com download de uma faixa por vez;
+- dados principais em SQLite, com revisão e histórico;
+- backup diário automático no OneDrive, com retenção de 30 dias;
+- inicialização automática com o Windows;
+- instalador reproduzível com Node.js, yt-dlp e FFmpeg incluídos;
 - layout responsivo.
 
 ### Revisão técnica de 25/07/2026
@@ -41,6 +46,21 @@ vendas, estoque e controle gerencial da Pool Petiscos & Lanches.
 - navegação, modal e foco por teclado revisados;
 - scripts de desenvolvimento compatíveis com Windows;
 - código organizado por domínio, persistência, dados de demonstração e interface.
+
+### Revisão técnica de 26/07/2026
+
+- SQLite passou a ser a fonte principal dos dados no computador do caixa;
+- gravações usam transação e detectam alterações concorrentes;
+- as últimas 50 revisões ficam preservadas no banco;
+- uma mudança ainda não sincronizada sobrevive ao fechamento inesperado da
+  página e é reconciliada na próxima abertura;
+- o backup diário é criado como uma cópia SQLite íntegra e atômica;
+- o OneDrive corporativo ou pessoal é usado quando estiver configurado;
+- o serviço local, a interface e as ferramentas de música passam a fazer parte
+  do mesmo instalador;
+- a interface deixou de exibir nomes de bibliotecas, comandos de instalação e
+  avisos técnicos ao operador;
+- textos operacionais foram ampliados para leitura confortável no balcão.
 
 ## Itens bloqueados pela visita presencial
 
@@ -64,9 +84,11 @@ Não implementar com dados inventados:
 - [x] Companion local restrito a `127.0.0.1`.
 - [x] Integração inicial de biblioteca com `yt-dlp`.
 - [x] Scripts de instalação, início e encerramento no Windows.
-- [ ] Empacotar a interface e o companion em um instalador Windows assinado.
-- [ ] Substituir `localStorage` por SQLite antes do uso financeiro real.
-- [ ] Automatizar backup diário e testar restauração completa.
+- [x] Empacotar interface, serviço, Node.js, `yt-dlp` e FFmpeg em um instalador.
+- [x] Usar SQLite como armazenamento principal.
+- [x] Automatizar backup diário e testar a restauração.
+- [ ] Assinar executável, instalador e desinstalador com certificado
+      Authenticode emitido para o responsável pela distribuição.
 
 ## Pagamentos integrados
 
@@ -97,15 +119,14 @@ Não implementar com dados inventados:
 
 ### 3. Aplicativo Windows
 
-- empacotar a interface como aplicativo;
-- substituir armazenamento do navegador por SQLite;
-- criar migrações e cópias automáticas;
-- configurar pasta sincronizada com Google Drive;
+- instalar o protótipo no computador que será usado na apresentação;
+- confirmar a sincronização da pasta de backups no OneDrive;
+- assinar o pacote após a aquisição do certificado;
 - testar instalação e restauração no computador da lanchonete.
 
-Antes da operação oficial, substituir o armazenamento do navegador por sessões
-de caixa explícitas no SQLite. Cada venda, despesa e movimento deverá guardar o
-identificador da sessão, sem depender apenas do relógio do computador.
+Antes da operação oficial, evoluir o estado SQLite para sessões de caixa
+explícitas. Cada venda, despesa e movimento deverá guardar o identificador da
+sessão, sem depender apenas do relógio do computador.
 
 ### 4. Operação assistida
 

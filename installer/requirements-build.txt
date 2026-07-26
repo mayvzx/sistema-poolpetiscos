@@ -1,0 +1,2 @@
+-r ../local_service/requirements.txt
+PyInstaller==6.21.0
