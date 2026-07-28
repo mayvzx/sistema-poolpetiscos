@@ -5,7 +5,10 @@
   #error AppOutput não foi informado.
 #endif
 #ifndef AppVersion
-  #define AppVersion "1.0.1"
+  #define AppVersion "1.1.0"
+#endif
+#ifndef AppIcon
+  #error AppIcon não foi informado.
 #endif
 
 [Setup]
@@ -27,6 +30,7 @@ CloseApplications=force
 RestartApplications=no
 AppMutex=Local\PoolPetiscosLauncher
 UninstallDisplayIcon={app}\PoolPetiscos.exe
+SetupIconFile={#AppIcon}
 VersionInfoVersion={#AppVersion}
 VersionInfoCompany=Pool Petiscos & Lanches
 VersionInfoDescription=Instalador do sistema de caixa Pool Petiscos
@@ -50,13 +54,37 @@ Name: "startup"; Description: "Iniciar o Pool Petiscos automaticamente com o Win
 Source: "{#AppStage}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\Pool Petiscos"; Filename: "{app}\PoolPetiscos.exe"
-Name: "{group}\Encerrar Pool Petiscos"; Filename: "{app}\PoolPetiscos.exe"; Parameters: "--shutdown"
-Name: "{autodesktop}\Pool Petiscos"; Filename: "{app}\PoolPetiscos.exe"; Tasks: desktopicon
-Name: "{userstartup}\Pool Petiscos"; Filename: "{app}\PoolPetiscos.exe"; Parameters: "--background"; Tasks: startup
+Name: "{group}\Pool Petiscos"; Filename: "{app}\PoolPetiscos.exe"; IconFilename: "{app}\PoolPetiscos.exe"
+Name: "{group}\Encerrar Pool Petiscos"; Filename: "{app}\PoolPetiscos.exe"; Parameters: "--shutdown"; IconFilename: "{app}\PoolPetiscos.exe"
+Name: "{autodesktop}\Pool Petiscos"; Filename: "{app}\PoolPetiscos.exe"; IconFilename: "{app}\PoolPetiscos.exe"; Tasks: desktopicon
+
+[Registry]
+; HKCU\Run é mais confiável que um atalho na pasta Startup. O modo --startup
+; abre o navegador somente depois que o serviço e os dados locais estão prontos.
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "Pool Petiscos"; ValueData: """{app}\PoolPetiscos.exe"" --startup"; Flags: uninsdeletevalue; Tasks: startup
 
 [Run]
 Filename: "{app}\PoolPetiscos.exe"; Description: "Abrir Pool Petiscos"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
 Filename: "{app}\PoolPetiscos.exe"; Parameters: "--shutdown"; Flags: runhidden waituntilterminated skipifdoesntexist; RunOnceId: "StopPoolPetiscos"
+
+[Code]
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssPostInstall then
+  begin
+    { Remove o atalho legado apenas depois que a atualização terminou. }
+    DeleteFile(ExpandConstant('{userstartup}\Pool Petiscos.lnk'));
+
+    { Em uma atualização, também respeita a opção desmarcada pelo usuário. }
+    if not WizardIsTaskSelected('startup') then
+    begin
+      RegDeleteValue(
+        HKEY_CURRENT_USER,
+        'Software\Microsoft\Windows\CurrentVersion\Run',
+        'Pool Petiscos'
+      );
+    end;
+  end;
+end;

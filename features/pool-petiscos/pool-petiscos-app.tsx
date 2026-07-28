@@ -33,6 +33,7 @@ import {
   Music2,
   Package,
   Pause,
+  Pencil,
   Play,
   Plus,
   QrCode,
@@ -44,6 +45,7 @@ import {
   SkipForward,
   Sparkles,
   Store,
+  Trash2,
   Upload,
   UserRound,
   Volume2,
@@ -91,6 +93,7 @@ import {
   checkMusicCompanion,
   getTrackDownloadJob,
   listCompanionTracks,
+  MUSIC_COMPANION_URL,
   queueTrackDownload,
   type MusicDownloadJob,
 } from "./music-companion";
@@ -120,6 +123,8 @@ const categories = [
   "Adicionais",
 ] as const;
 
+const productCategories = categories.slice(1) as readonly Product["category"][];
+
 const navigation = [
   { id: "inicio" as const, label: "Início", icon: LayoutDashboard },
   { id: "venda" as const, label: "Nova venda", icon: ShoppingCart },
@@ -136,6 +141,116 @@ type PendingStateSync = {
   expectedRevision: number | null;
   savedAt: string;
 };
+
+type ProductFormState = {
+  id: string | null;
+  name: string;
+  category: Product["category"];
+  price: string;
+  stock: string;
+  minimum: string;
+  emoji: string;
+};
+
+type YoutubeSearchResult = {
+  id: string;
+  title: string;
+  channel: string;
+  duration: string;
+  thumbnail: string;
+  url: string;
+};
+
+type YoutubeSearchStatus = "idle" | "waiting" | "loading" | "success" | "error";
+
+function createProductForm(product?: Product): ProductFormState {
+  return {
+    id: product?.id ?? null,
+    name: product?.name ?? "",
+    category: product?.category ?? "Salgados",
+    price: product ? currency.format(product.price).replace("R$", "").trim() : "",
+    stock: String(product?.stock ?? 0),
+    minimum: String(product?.minimum ?? 0),
+    emoji: product?.emoji ?? "🍽️",
+  };
+}
+
+function isCompleteWebUrl(value: string) {
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function parseYoutubeSearchResults(payload: unknown): YoutubeSearchResult[] {
+  const source =
+    Array.isArray(payload)
+      ? payload
+      : payload &&
+          typeof payload === "object" &&
+          "results" in payload &&
+          Array.isArray(payload.results)
+        ? payload.results
+        : [];
+
+  return source
+    .map((candidate): YoutubeSearchResult | null => {
+      if (!candidate || typeof candidate !== "object") return null;
+      const item = candidate as Record<string, unknown>;
+      const id =
+        typeof item.id === "string"
+          ? item.id
+          : typeof item.video_id === "string"
+            ? item.video_id
+            : "";
+      const title = typeof item.title === "string" ? item.title.trim() : "";
+      const channel =
+        typeof item.channel === "string"
+          ? item.channel.trim()
+          : typeof item.uploader === "string"
+            ? item.uploader.trim()
+            : "Canal do YouTube";
+      const duration =
+        typeof item.duration === "string"
+          ? item.duration
+          : typeof item.duration === "number" &&
+              Number.isFinite(item.duration) &&
+              item.duration >= 0
+            ? `${Math.floor(item.duration / 60)}:${String(
+                Math.floor(item.duration % 60),
+              ).padStart(2, "0")}`
+          : typeof item.duration_label === "string"
+            ? item.duration_label
+            : "";
+      const thumbnail =
+        typeof item.thumbnail === "string" ? item.thumbnail : "";
+      const url =
+        typeof item.url === "string"
+          ? item.url
+          : id
+            ? `https://www.youtube.com/watch?v=${encodeURIComponent(id)}`
+            : "";
+      if (!id || !title || !isCompleteWebUrl(url)) return null;
+      return { id, title, channel, duration, thumbnail, url };
+    })
+    .filter((item): item is YoutubeSearchResult => item !== null)
+    .slice(0, 5);
+}
+
+function readCompanionError(payload: unknown, fallback: string) {
+  if (
+    payload &&
+    typeof payload === "object" &&
+    "error" in payload &&
+    typeof payload.error === "string"
+  ) {
+    const message = payload.error.trim();
+    if (message && message.length <= 300) return message;
+  }
+  return fallback;
+}
 
 function parsePendingStateSync(value: string | null): PendingStateSync | null {
   if (!value) return null;
@@ -206,7 +321,14 @@ export default function PoolPetiscosApp() {
     "Todos",
   );
   const [modal, setModal] = useState<
-    "stock" | "expense" | "cash-open" | "cash-close" | "cash-movement" | null
+    | "stock"
+    | "product"
+    | "product-delete"
+    | "expense"
+    | "cash-open"
+    | "cash-close"
+    | "cash-movement"
+    | null
   >(null);
   const [stockForm, setStockForm] = useState({
     productId: DEMO_PRODUCTS[0].id,
@@ -214,6 +336,10 @@ export default function PoolPetiscosApp() {
     cost: "",
     payment: "Dinheiro" as PaymentMethod,
   });
+  const [productForm, setProductForm] = useState<ProductFormState>(() =>
+    createProductForm(),
+  );
+  const [productDeleteId, setProductDeleteId] = useState<string | null>(null);
   const [expenseForm, setExpenseForm] = useState({
     description: "",
     category: "Matéria-prima",
@@ -239,6 +365,14 @@ export default function PoolPetiscosApp() {
   const [downloadSourceUrl, setDownloadSourceUrl] = useState("");
   const [downloadJob, setDownloadJob] = useState<MusicDownloadJob | null>(null);
   const [musicDownloadBusy, setMusicDownloadBusy] = useState(false);
+  const [youtubeSearchResults, setYoutubeSearchResults] = useState<
+    YoutubeSearchResult[]
+  >([]);
+  const [youtubeSearchStatus, setYoutubeSearchStatus] =
+    useState<YoutubeSearchStatus>("idle");
+  const [youtubeSearchError, setYoutubeSearchError] = useState("");
+  const [selectedYoutubeResult, setSelectedYoutubeResult] =
+    useState<YoutubeSearchResult | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const notificationsRef = useRef<HTMLDivElement>(null);
@@ -254,6 +388,8 @@ export default function PoolPetiscosApp() {
   const primaryStorageWriteRef = useRef(false);
   const pendingPrimaryStateRef = useRef<PersistedPoolState | null>(null);
   const localFallbackWritableRef = useRef(true);
+  const youtubeSearchQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const youtubeSearchSequenceRef = useRef(0);
 
   const rememberPendingSync = useCallback(
     (state: PersistedPoolState, expectedRevision: number | null) => {
@@ -753,6 +889,89 @@ export default function PoolPetiscosApp() {
     };
   }, [activeView, hydrated, syncMusicCompanion]);
 
+  useEffect(() => {
+    const query = downloadSourceUrl.trim();
+    const sequence = ++youtubeSearchSequenceRef.current;
+    if (
+      !hydrated ||
+      activeView !== "musica" ||
+      query.length < 2 ||
+      isCompleteWebUrl(query)
+    ) {
+      return;
+    }
+
+    const debounce = window.setTimeout(() => {
+      const search = async () => {
+        if (sequence !== youtubeSearchSequenceRef.current) return;
+
+        const controller = new AbortController();
+        let requestTimedOut = false;
+        const requestTimeout = window.setTimeout(() => {
+          requestTimedOut = true;
+          controller.abort();
+        }, 18_000);
+
+        setYoutubeSearchStatus("loading");
+        try {
+          const response = await fetch(
+            `${MUSIC_COMPANION_URL}/api/youtube/search?q=${encodeURIComponent(
+              query,
+            )}&limit=5`,
+            {
+              headers: { Accept: "application/json" },
+              signal: controller.signal,
+            },
+          );
+          const payload: unknown = await response.json().catch(() => null);
+          if (!response.ok) {
+            throw new Error(
+              readCompanionError(
+                payload,
+                response.status === 429
+                  ? "Há outra pesquisa em andamento. Aguarde um instante."
+                  : response.status === 504
+                    ? "A pesquisa demorou mais do que o esperado. Tente novamente."
+                    : "Não foi possível pesquisar agora. Você ainda pode colar o link da faixa.",
+              ),
+            );
+          }
+          if (sequence !== youtubeSearchSequenceRef.current) return;
+          const results = parseYoutubeSearchResults(payload);
+          setYoutubeSearchResults(results);
+          setYoutubeSearchStatus("success");
+          setYoutubeSearchError("");
+        } catch (error) {
+          if (sequence !== youtubeSearchSequenceRef.current) return;
+          setYoutubeSearchResults([]);
+          setYoutubeSearchStatus("error");
+          setYoutubeSearchError(
+            requestTimedOut
+              ? "A pesquisa demorou mais do que o esperado. Tente novamente."
+              : error instanceof Error && error.message
+                ? error.message
+                : "Não foi possível pesquisar agora. Você ainda pode colar o link da faixa.",
+          );
+        } finally {
+          window.clearTimeout(requestTimeout);
+        }
+      };
+
+      /*
+       * Uma busca por vez evita que consultas parciais, abandonadas enquanto a
+       * pessoa digita, ocupem simultaneamente os dois slots do serviço local.
+       * Consultas já ultrapassadas saem da fila sem acessar a rede.
+       */
+      youtubeSearchQueueRef.current = youtubeSearchQueueRef.current
+        .catch(() => undefined)
+        .then(search);
+    }, 450);
+
+    return () => {
+      window.clearTimeout(debounce);
+    };
+  }, [activeView, downloadSourceUrl, hydrated]);
+
   useEffect(
     () => () => {
       if (toastTimerRef.current !== null) {
@@ -1077,12 +1296,24 @@ export default function PoolPetiscosApp() {
 
   const currentTrack =
     currentTrackIndex >= 0 ? tracks[currentTrackIndex] : undefined;
+  const productToDelete =
+    products.find((product) => product.id === productDeleteId) ?? null;
   const modalContent = modal
     ? {
         stock: {
           eyebrow: "Reposição",
           title: "Registrar entrada",
           aria: "Registrar entrada de estoque",
+        },
+        product: {
+          eyebrow: productForm.id ? "Editar cadastro" : "Novo cadastro",
+          title: productForm.id ? "Editar produto" : "Criar produto",
+          aria: productForm.id ? "Editar produto" : "Criar produto",
+        },
+        "product-delete": {
+          eyebrow: "Ação permanente",
+          title: "Excluir produto?",
+          aria: "Confirmar exclusão do produto",
         },
         expense: {
           eyebrow: "Financeiro",
@@ -1201,6 +1432,119 @@ export default function PoolPetiscosApp() {
     setCart([]);
     setCashReceived("");
     showToast(`Venda ${sale.id} finalizada e estoque atualizado.`);
+  }
+
+  function openProductModal(product?: Product) {
+    setProductForm(createProductForm(product));
+    setModal("product");
+  }
+
+  function submitProduct(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = productForm.name.trim();
+    const price = parseAmount(productForm.price);
+    const stock = Number(productForm.stock);
+    const minimum = Number(productForm.minimum);
+    const category = productForm.category;
+
+    if (!name) {
+      showToast("Informe o nome do produto.", "warning");
+      return;
+    }
+    if (productForm.price.trim() === "" || !Number.isFinite(price) || price < 0) {
+      showToast("Informe um preço válido.", "warning");
+      return;
+    }
+    if (!Number.isInteger(stock) || stock < 0) {
+      showToast("Informe um estoque atual inteiro e maior ou igual a zero.", "warning");
+      return;
+    }
+    if (!Number.isInteger(minimum) || minimum < 0) {
+      showToast("Informe um estoque mínimo inteiro e maior ou igual a zero.", "warning");
+      return;
+    }
+    if (!productCategories.includes(category)) {
+      showToast("Escolha uma categoria válida.", "warning");
+      return;
+    }
+    const duplicatedName = products.some(
+      (product) =>
+        product.id !== productForm.id &&
+        normalizeText(product.name) === normalizeText(name),
+    );
+    if (duplicatedName) {
+      showToast("Já existe um produto com esse nome.", "warning");
+      return;
+    }
+
+    const product: Product = {
+      id:
+        productForm.id ??
+        `PR-${Date.now()}-${window.crypto.randomUUID().slice(0, 8)}`,
+      name,
+      category,
+      price: roundMoney(price),
+      stock,
+      minimum,
+      emoji: productForm.emoji.trim() || "🍽️",
+    };
+    if (productForm.id) {
+      if (!products.some((item) => item.id === productForm.id)) {
+        showToast("Esse produto não está mais disponível para edição.", "warning");
+        setModal(null);
+        return;
+      }
+      setProducts((current) =>
+        current.map((item) => (item.id === product.id ? product : item)),
+      );
+      setCart((current) =>
+        current
+          .map((item) =>
+            item.productId === product.id
+              ? { ...item, quantity: Math.min(item.quantity, product.stock) }
+              : item,
+          )
+          .filter((item) => item.quantity > 0),
+      );
+      showToast(`${product.name} foi atualizado.`);
+    } else {
+      setProducts((current) => [...current, product]);
+      showToast(`${product.name} foi criado e já aparece nas vendas.`);
+    }
+    setModal(null);
+  }
+
+  function requestProductDelete(product: Product) {
+    setProductDeleteId(product.id);
+    setModal("product-delete");
+  }
+
+  function confirmProductDelete() {
+    if (!productToDelete) {
+      setModal(null);
+      showToast("Esse produto já foi removido.", "info");
+      return;
+    }
+    const replacement = products.find(
+      (product) => product.id !== productToDelete.id,
+    );
+    setProducts((current) =>
+      current.filter((product) => product.id !== productToDelete.id),
+    );
+    setCart((current) =>
+      current.filter((item) => item.productId !== productToDelete.id),
+    );
+    setStockForm((current) =>
+      current.productId === productToDelete.id
+        ? { ...current, productId: replacement?.id ?? "" }
+        : current,
+    );
+    setProductDeleteId(null);
+    setModal(null);
+    showToast(
+      `${productToDelete.name} foi excluído. As vendas anteriores continuam no histórico.`,
+      "info",
+    );
   }
 
   function openStockModal(productId?: string) {
@@ -1522,11 +1866,38 @@ export default function PoolPetiscosApp() {
     event.target.value = "";
   }
 
+  function updateMusicSource(value: string) {
+    setDownloadSourceUrl(value);
+    setSelectedYoutubeResult(null);
+    setYoutubeSearchResults([]);
+    setYoutubeSearchError("");
+    setYoutubeSearchStatus(
+      value.trim().length >= 2 && !isCompleteWebUrl(value)
+        ? "waiting"
+        : "idle",
+    );
+  }
+
+  function chooseYoutubeResult(result: YoutubeSearchResult) {
+    setDownloadSourceUrl(result.url);
+    setSelectedYoutubeResult(result);
+    setYoutubeSearchResults([]);
+    setYoutubeSearchError("");
+    setYoutubeSearchStatus("idle");
+  }
+
   async function handleCompanionDownload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const sourceUrl = downloadSourceUrl.trim();
     if (!sourceUrl) {
-      showToast("Cole o link de uma faixa para baixar.", "warning");
+      showToast("Pesquise uma música ou cole o link de uma faixa.", "warning");
+      return;
+    }
+    if (!isCompleteWebUrl(sourceUrl)) {
+      showToast(
+        "Escolha uma música nos resultados ou cole um link completo.",
+        "warning",
+      );
       return;
     }
     if (musicCompanionStatus !== "ready") {
@@ -1549,6 +1920,8 @@ export default function PoolPetiscosApp() {
       }
       if (job.status === "finished") {
         setDownloadSourceUrl("");
+        setSelectedYoutubeResult(null);
+        setYoutubeSearchStatus("idle");
         await syncMusicCompanion();
         showToast("Faixa adicionada à biblioteca do caixa.");
       } else if (job.status === "failed") {
@@ -1619,7 +1992,7 @@ export default function PoolPetiscosApp() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f7f5f2] text-[#24201f]">
+    <div className="pool-app min-h-screen bg-[#f7f5f2] text-[#24201f]">
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-[252px] flex-col overflow-y-auto bg-[#211e1d] px-4 py-5 text-white shadow-2xl lg:flex">
         <div className="rounded-xl bg-white/5 p-2">
           <Image
@@ -1816,7 +2189,7 @@ export default function PoolPetiscosApp() {
         </header>
 
         {activeView === "inicio" && (
-          <div className="mx-auto w-full max-w-[1480px] space-y-4 p-4 sm:p-6 lg:p-9">
+          <div className="pool-view-enter mx-auto w-full max-w-[1480px] space-y-4 p-4 sm:p-6 lg:p-9">
             <section className="relative flex min-h-[220px] items-center overflow-hidden rounded-[24px] border border-[#f1d0d3] bg-gradient-to-br from-[#d9202c] to-[#a8101c] p-6 shadow-[0_16px_40px_rgba(66,45,37,.08)] sm:p-9">
               <div className="absolute inset-y-0 left-0 w-full bg-white sm:w-[70%] sm:[clip-path:polygon(0_0,82%_0,100%_100%,0_100%)]" />
               <div className="relative z-10 max-w-[600px]">
@@ -2028,6 +2401,24 @@ export default function PoolPetiscosApp() {
                   </button>
                 </div>
                 <div className="mt-4 flex flex-col gap-2">
+                  {lowStock.length === 0 && (
+                    <div className="rounded-xl border border-dashed border-[#dfe9e4] bg-[#f5fbf8] p-4 text-center">
+                      <CheckCircle2
+                        size={26}
+                        className="mx-auto text-[#27865d]"
+                      />
+                      <strong className="mt-2 block text-sm text-[#276348]">
+                        {products.length
+                          ? "Estoque em dia"
+                          : "Nenhum produto cadastrado"}
+                      </strong>
+                      <span className="mt-1 block text-xs text-[#6d6561]">
+                        {products.length
+                          ? "Nenhum item precisa de reposição agora."
+                          : "Abra Estoque para cadastrar o primeiro produto."}
+                      </span>
+                    </div>
+                  )}
                   {lowStock.slice(0, 4).map((product) => (
                     <article
                       key={product.id}
@@ -2051,7 +2442,9 @@ export default function PoolPetiscosApp() {
                             style={{
                               width: `${Math.min(
                                 100,
-                                (product.stock / product.minimum) * 100,
+                                product.minimum > 0
+                                  ? (product.stock / product.minimum) * 100
+                                  : 0,
                               )}%`,
                             }}
                           />
@@ -2075,7 +2468,7 @@ export default function PoolPetiscosApp() {
         )}
 
         {activeView === "venda" && (
-          <div className="mx-auto w-full max-w-[1480px] p-4 sm:p-6 lg:p-9">
+          <div className="pool-view-enter mx-auto w-full max-w-[1480px] p-4 sm:p-6 lg:p-9">
             <div className="mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
               <div>
                 <span className="text-[9px] font-extrabold uppercase tracking-[.13em] text-[#d9202c]">
@@ -2167,13 +2560,31 @@ export default function PoolPetiscosApp() {
                 {!filteredProducts.length && (
                   <div className="grid min-h-56 place-items-center text-center">
                     <div>
-                      <Search size={30} className="mx-auto text-[#c7beba]" />
+                      {products.length ? (
+                        <Search size={30} className="mx-auto text-[#c7beba]" />
+                      ) : (
+                        <Package size={30} className="mx-auto text-[#c7beba]" />
+                      )}
                       <strong className="mt-3 block text-sm">
-                        Nenhum produto encontrado
+                        {products.length
+                          ? "Nenhum produto encontrado"
+                          : "Cadastre o primeiro produto"}
                       </strong>
                       <span className="text-[10px] text-[#8d8581]">
-                        Tente buscar por outro nome.
+                        {products.length
+                          ? "Ajuste a busca ou escolha outra categoria."
+                          : "Os produtos cadastrados aparecerão aqui para venda."}
                       </span>
+                      {!products.length && (
+                        <button
+                          type="button"
+                          onClick={() => navigateTo("estoque")}
+                          className="mx-auto mt-4 flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#d9202c] px-5 text-sm font-extrabold text-white"
+                        >
+                          <Plus size={18} />
+                          Ir para Estoque
+                        </button>
+                      )}
                     </div>
                   </div>
                 )}
@@ -2288,7 +2699,7 @@ export default function PoolPetiscosApp() {
                   </div>
                   {paymentMethod === "Dinheiro" && (
                     <label className="mt-3 block">
-                      <span className="mb-1 block text-[9px] font-bold text-[#776f6b]">
+                      <span className="mb-1.5 block text-sm font-extrabold text-[#5f5753]">
                         Valor recebido
                       </span>
                       <input
@@ -2296,16 +2707,24 @@ export default function PoolPetiscosApp() {
                         onChange={(event) => setCashReceived(event.target.value)}
                         inputMode="decimal"
                         placeholder="R$ 0,00"
-                        className="h-10 w-full rounded-xl border border-[#ebe5e1] px-3 text-xs outline-none focus:border-[#d9202c]"
+                        className="h-12 w-full rounded-xl border border-[#ded7d2] px-4 text-lg font-bold outline-none transition focus:border-[#d9202c] focus:ring-4 focus:ring-[#d9202c]/10"
                       />
                       {Number.isFinite(cashReceivedAmount) &&
                         cashReceivedAmount >= cartTotal &&
                         cartTotal > 0 && (
-                          <span className="mt-1 block text-[9px] font-bold text-[#27865d]">
-                            Troco:{" "}
-                            {currency.format(
-                              roundMoney(cashReceivedAmount - cartTotal),
-                            )}
+                          <span
+                            className="pool-emphasis mt-3 block rounded-2xl border-2 border-[#9bd0b6] bg-[#eaf8f1] p-4 text-[#185c3e] shadow-[0_10px_24px_rgba(39,134,93,.12)]"
+                            role="status"
+                            aria-live="polite"
+                          >
+                            <span className="block text-sm font-extrabold uppercase tracking-[.08em]">
+                              Troco a devolver
+                            </span>
+                            <strong className="mt-1 block text-3xl font-black tracking-[-.04em] sm:text-4xl">
+                              {currency.format(
+                                roundMoney(cashReceivedAmount - cartTotal),
+                              )}
+                            </strong>
                           </span>
                         )}
                       {cashReceived.trim() && cashPaymentInvalid && (
@@ -2347,28 +2766,40 @@ export default function PoolPetiscosApp() {
         )}
 
         {activeView === "estoque" && (
-          <div className="mx-auto w-full max-w-[1480px] p-4 sm:p-6 lg:p-9">
+          <div className="pool-view-enter mx-auto w-full max-w-[1480px] p-4 sm:p-6 lg:p-9">
             <div className="mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
               <div>
-                <span className="text-[9px] font-extrabold uppercase tracking-[.13em] text-[#d9202c]">
+                <span className="text-xs font-extrabold uppercase tracking-[.13em] text-[#d9202c]">
                   Controle de produtos
                 </span>
-                <h1 className="text-2xl font-extrabold tracking-[-.04em] sm:text-3xl">
+                <h1 className="text-3xl font-extrabold tracking-[-.04em] sm:text-4xl">
                   Estoque
                 </h1>
-                <p className="mt-1 text-xs text-[#776f6b]">
-                  Veja o que tem disponível e planeje a próxima compra.
+                <p className="mt-2 text-base leading-6 text-[#6d6561]">
+                  Crie produtos, altere preços e mantenha as quantidades em dia.
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => openStockModal()}
-                data-testid="open-stock-modal"
-                className="flex min-h-11 items-center justify-center gap-2 self-start rounded-xl bg-[#d9202c] px-4 text-xs font-extrabold text-white shadow-lg sm:self-auto"
-              >
-                <Plus size={18} />
-                Registrar entrada
-              </button>
+              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+                <button
+                  type="button"
+                  onClick={() => openStockModal()}
+                  disabled={products.length === 0}
+                  data-testid="open-stock-modal"
+                  className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-[#ded7d2] bg-white px-5 text-sm font-extrabold text-[#4b4542] shadow-sm transition hover:-translate-y-0.5 hover:border-[#d9202c] hover:text-[#d9202c] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:translate-y-0"
+                >
+                  <Plus size={19} />
+                  Registrar entrada
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openProductModal()}
+                  data-testid="open-product-modal"
+                  className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#d9202c] px-5 text-sm font-extrabold text-white shadow-[0_10px_24px_rgba(217,32,44,.2)] transition hover:-translate-y-0.5 hover:bg-[#b41622]"
+                >
+                  <Plus size={19} />
+                  Novo produto
+                </button>
+              </div>
             </div>
 
             <section className="grid gap-3 sm:grid-cols-3">
@@ -2407,11 +2838,11 @@ export default function PoolPetiscosApp() {
                       <Icon size={21} />
                     </span>
                     <div>
-                      <span className="block text-[9px] font-semibold text-[#776f6b]">
+                      <span className="block text-sm font-semibold text-[#6d6561]">
                         {item.label}
                       </span>
-                      <strong className="text-xl">{item.value}</strong>
-                      <small className="ml-2 text-[8px] text-[#9c928d]">
+                      <strong className="text-2xl">{item.value}</strong>
+                      <small className="ml-2 text-xs text-[#8d8581]">
                         {item.helper}
                       </small>
                     </div>
@@ -2432,7 +2863,7 @@ export default function PoolPetiscosApp() {
                     onChange={(event) => setStockSearch(event.target.value)}
                     placeholder="Buscar produto no estoque..."
                     aria-label="Buscar no estoque"
-                    className="h-10 w-full rounded-xl border border-[#ebe5e1] bg-[#faf8f6] pl-10 pr-3 text-xs outline-none focus:border-[#d9202c]"
+                    className="h-12 w-full rounded-xl border border-[#ebe5e1] bg-[#faf8f6] pl-10 pr-3 text-base outline-none transition focus:border-[#d9202c] focus:bg-white"
                   />
                 </div>
                 <select
@@ -2443,7 +2874,7 @@ export default function PoolPetiscosApp() {
                     )
                   }
                   aria-label="Filtrar situação do estoque"
-                  className="h-10 rounded-xl border border-[#ebe5e1] bg-white px-3 text-[10px] font-bold outline-none"
+                  className="h-12 rounded-xl border border-[#ebe5e1] bg-white px-4 text-sm font-bold outline-none focus:border-[#d9202c]"
                 >
                   <option>Todos</option>
                   <option>Baixo</option>
@@ -2452,58 +2883,67 @@ export default function PoolPetiscosApp() {
               </div>
 
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[760px] border-collapse text-left">
-                  <thead className="bg-[#faf8f6] text-[8px] font-extrabold uppercase tracking-[.12em] text-[#8d8581]">
+                <table className="w-full min-w-[980px] border-collapse text-left">
+                  <thead className="bg-[#faf8f6] text-[11px] font-extrabold uppercase tracking-[.1em] text-[#776f6b]">
                     <tr>
-                      <th className="px-5 py-3">Produto</th>
-                      <th className="px-4 py-3">Categoria</th>
-                      <th className="px-4 py-3">Quantidade</th>
-                      <th className="px-4 py-3">Estoque mínimo</th>
-                      <th className="px-4 py-3">Situação</th>
-                      <th className="px-5 py-3 text-right">Ação</th>
+                      <th className="px-5 py-4">Produto</th>
+                      <th className="px-4 py-4">Categoria</th>
+                      <th className="px-4 py-4">Preço</th>
+                      <th className="px-4 py-4">Quantidade</th>
+                      <th className="px-4 py-4">Estoque mínimo</th>
+                      <th className="px-4 py-4">Situação</th>
+                      <th className="px-5 py-4 text-right">Ações</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#eee9e5]">
                     {filteredStock.map((product) => {
                       const low = product.stock <= product.minimum;
                       return (
-                        <tr key={product.id} className="hover:bg-[#fdfbf9]">
-                          <td className="px-5 py-3">
+                        <tr
+                          key={product.id}
+                          className="transition-colors hover:bg-[#fdfbf9]"
+                        >
+                          <td className="px-5 py-4">
                             <div className="flex items-center gap-3">
-                              <span className="grid size-9 place-items-center rounded-xl bg-[#fff7ec] text-lg">
+                              <span className="grid size-11 place-items-center rounded-xl bg-[#fff7ec] text-2xl">
                                 {product.emoji}
                               </span>
                               <div>
-                                <strong className="block text-[10px]">
+                                <strong className="block text-base">
                                   {product.name}
                                 </strong>
-                                <span className="text-[8px] text-[#9c928d]">
-                                  {currency.format(product.price)}
+                                <span className="text-xs text-[#8d8581]">
+                                  Código {product.id}
                                 </span>
                               </div>
                             </div>
                           </td>
-                          <td className="px-4 py-3 text-[9px] text-[#776f6b]">
+                          <td className="px-4 py-4 text-sm text-[#6d6561]">
                             {product.category}
                           </td>
-                          <td className="px-4 py-3">
+                          <td className="px-4 py-4">
+                            <strong className="text-base text-[#302b29]">
+                              {currency.format(product.price)}
+                            </strong>
+                          </td>
+                          <td className="px-4 py-4">
                             <strong
-                              className={`text-sm ${
+                              className={`text-xl ${
                                 low ? "text-[#d76822]" : ""
                               }`}
                             >
                               {product.stock}
                             </strong>
-                            <span className="ml-1 text-[8px] text-[#9c928d]">
+                            <span className="ml-1 text-xs text-[#8d8581]">
                               un.
                             </span>
                           </td>
-                          <td className="px-4 py-3 text-[9px] text-[#776f6b]">
+                          <td className="px-4 py-4 text-sm text-[#6d6561]">
                             {product.minimum} un.
                           </td>
-                          <td className="px-4 py-3">
+                          <td className="px-4 py-4">
                             <span
-                              className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[8px] font-extrabold ${
+                              className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-extrabold ${
                                 low
                                   ? "bg-[#fff2e8] text-[#d76822]"
                                   : "bg-[#eaf8f1] text-[#27865d]"
@@ -2517,19 +2957,55 @@ export default function PoolPetiscosApp() {
                               {low ? "Estoque baixo" : "Normal"}
                             </span>
                           </td>
-                          <td className="px-5 py-3 text-right">
-                            <button
-                              type="button"
-                              onClick={() => openStockModal(product.id)}
-                              className="inline-flex items-center gap-1 rounded-lg border border-[#ebe5e1] px-2 py-1.5 text-[8px] font-extrabold text-[#d9202c] transition hover:bg-[#fff0f1]"
-                            >
-                              <Plus size={13} />
-                              Repor
-                            </button>
+                          <td className="px-5 py-4">
+                            <div className="flex justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() => openStockModal(product.id)}
+                                aria-label={`Repor ${product.name}`}
+                                className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-[#e4ddd8] px-3 text-sm font-extrabold text-[#d9202c] transition hover:border-[#d9202c] hover:bg-[#fff0f1]"
+                              >
+                                <Plus size={16} />
+                                Repor
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => openProductModal(product)}
+                                aria-label={`Editar ${product.name}`}
+                                className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-[#e4ddd8] px-3 text-sm font-extrabold text-[#4b4542] transition hover:border-[#4b4542] hover:bg-[#f7f5f2]"
+                              >
+                                <Pencil size={15} />
+                                Editar
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => requestProductDelete(product)}
+                                aria-label={`Excluir ${product.name}`}
+                                className="grid size-10 place-items-center rounded-xl border border-[#f1d0d3] text-[#b41622] transition hover:border-[#b41622] hover:bg-[#fff0f1]"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
                     })}
+                    {!filteredStock.length && (
+                      <tr>
+                        <td colSpan={7} className="px-6 py-14 text-center">
+                          <Package
+                            size={30}
+                            className="mx-auto text-[#c7beba]"
+                          />
+                          <strong className="mt-3 block text-base">
+                            Nenhum produto encontrado
+                          </strong>
+                          <span className="mt-1 block text-sm text-[#776f6b]">
+                            Limpe a busca ou cadastre um novo produto.
+                          </span>
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -2538,13 +3014,13 @@ export default function PoolPetiscosApp() {
             <div className="mt-4 flex items-start gap-3 rounded-2xl border border-[#f1dfaf] bg-[#fff9e9] p-4">
               <Sparkles size={18} className="shrink-0 text-[#b27a00]" />
               <div>
-                <strong className="block text-[10px] text-[#8d6100]">
-                  Modelo recomendado para a versão real
+                <strong className="block text-sm text-[#8d6100]">
+                  Dica para manter o estoque confiável
                 </strong>
-                <p className="mt-1 text-[9px] leading-4 text-[#8d6e2e]">
-                  Bebidas, pastel, coxinha e embalagens podem ser controlados
-                  por unidade. Já os hambúrgueres devem usar ficha técnica:
-                  vender um X-Bacon diminui pão, carne, queijo, ovo e bacon.
+                <p className="mt-1 text-sm leading-5 text-[#7b6129]">
+                  Use <strong>Repor</strong> quando chegar mercadoria. Use{" "}
+                  <strong>Editar</strong> para corrigir preço, nome, quantidade
+                  atual ou estoque mínimo.
                 </p>
               </div>
             </div>
@@ -2552,7 +3028,7 @@ export default function PoolPetiscosApp() {
         )}
 
         {activeView === "financeiro" && (
-          <div className="mx-auto w-full max-w-[1480px] p-4 sm:p-6 lg:p-9">
+          <div className="pool-view-enter mx-auto w-full max-w-[1480px] p-4 sm:p-6 lg:p-9">
             <div className="mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
               <div>
                 <span className="text-[9px] font-extrabold uppercase tracking-[.13em] text-[#d9202c]">
@@ -2832,7 +3308,7 @@ export default function PoolPetiscosApp() {
         )}
 
         {activeView === "musica" && (
-          <div className="mx-auto w-full max-w-[1240px] p-4 sm:p-6 lg:p-9">
+          <div className="pool-view-enter mx-auto w-full max-w-[1240px] p-4 sm:p-6 lg:p-9">
             <div className="mb-5">
               <span className="text-[9px] font-extrabold uppercase tracking-[.13em] text-[#d9202c]">
                 Um cantinho para o MC Poolblay
@@ -2962,8 +3438,8 @@ export default function PoolPetiscosApp() {
               <div className="grid gap-5 p-5 lg:grid-cols-[1fr_auto] lg:items-start lg:p-6">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-[11px] font-extrabold uppercase tracking-[.13em] text-[#d9202c]">
-                      Baixar por link
+                    <span className="text-xs font-extrabold uppercase tracking-[.13em] text-[#d9202c]">
+                      Busca rápida no YouTube
                     </span>
                     <span
                       className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-extrabold ${
@@ -2988,12 +3464,12 @@ export default function PoolPetiscosApp() {
                           : "Serviço indisponível"}
                     </span>
                   </div>
-                  <h2 className="mt-2 text-xl font-extrabold tracking-[-.025em]">
-                    Adicionar uma faixa por link
+                  <h2 className="mt-2 text-2xl font-extrabold tracking-[-.025em]">
+                    Encontre uma música ou cole o link
                   </h2>
-                  <p className="mt-1 max-w-2xl text-[13px] leading-5 text-[#776f6b]">
-                    Cole o link de uma faixa para adicioná-la à biblioteca deste
-                    caixa. A importação é feita uma faixa por vez.
+                  <p className="mt-1 max-w-2xl text-sm leading-6 text-[#6d6561]">
+                    Digite o nome e escolha entre os cinco resultados. Se já
+                    tiver o endereço da música, basta colá-lo no mesmo campo.
                   </p>
                 </div>
                 <button
@@ -3012,27 +3488,58 @@ export default function PoolPetiscosApp() {
                 className="border-t border-[#eee8e4] bg-[#faf8f6] p-5 lg:p-6"
               >
                 <div className="grid gap-3 lg:grid-cols-[1fr_auto]">
-                  <label>
-                    <span className="mb-1.5 block text-[12px] font-extrabold text-[#5f5753]">
-                      Link da faixa
+                  <div>
+                    <label
+                      htmlFor="music-source-search"
+                      className="mb-1.5 block text-sm font-extrabold text-[#4b4542]"
+                    >
+                      Nome da música ou link
+                    </label>
+                    <div className="relative">
+                      <Search
+                        size={20}
+                        className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#8d8581]"
+                      />
+                      <input
+                        id="music-source-search"
+                        type="text"
+                        maxLength={120}
+                        value={downloadSourceUrl}
+                        onChange={(event) =>
+                          updateMusicSource(event.target.value)
+                        }
+                        placeholder="Ex.: Tim Maia Azul da Cor do Mar"
+                        autoComplete="off"
+                        aria-controls="youtube-search-results"
+                        aria-describedby="music-source-help"
+                        className="h-14 w-full rounded-2xl border border-[#ded7d2] bg-white pl-12 pr-12 text-base font-semibold outline-none transition focus:border-[#d9202c] focus:ring-4 focus:ring-[#d9202c]/10"
+                      />
+                      {downloadSourceUrl && (
+                        <button
+                          type="button"
+                          onClick={() => updateMusicSource("")}
+                          aria-label="Limpar pesquisa"
+                          className="absolute right-2 top-1/2 grid size-10 -translate-y-1/2 place-items-center rounded-xl text-[#776f6b] transition hover:bg-[#f3efec] hover:text-[#302b29]"
+                        >
+                          <X size={18} />
+                        </button>
+                      )}
+                    </div>
+                    <span
+                      id="music-source-help"
+                      className="mt-2 block text-xs leading-5 text-[#776f6b]"
+                    >
+                      A busca começa automaticamente enquanto você digita.
                     </span>
-                    <input
-                      type="url"
-                      value={downloadSourceUrl}
-                      onChange={(event) =>
-                        setDownloadSourceUrl(event.target.value)
-                      }
-                      placeholder="https://..."
-                      autoComplete="url"
-                      className="h-12 w-full rounded-xl border border-[#ded7d2] bg-white px-4 text-sm outline-none transition focus:border-[#d9202c]"
-                    />
-                  </label>
+                  </div>
                   <button
                     type="submit"
                     disabled={
-                      musicDownloadBusy || musicCompanionStatus !== "ready"
+                      musicDownloadBusy ||
+                      musicCompanionStatus !== "ready" ||
+                      !isCompleteWebUrl(downloadSourceUrl)
                     }
-                    className="flex min-h-12 items-center justify-center gap-2 self-end rounded-xl bg-[#302b29] px-5 text-[13px] font-extrabold text-white shadow-lg transition hover:bg-[#211e1d] disabled:cursor-not-allowed disabled:opacity-45"
+                    className="flex min-h-14 items-center justify-center gap-2 self-end rounded-2xl bg-[#302b29] px-6 text-sm font-extrabold text-white shadow-lg transition hover:-translate-y-0.5 hover:bg-[#211e1d] disabled:cursor-not-allowed disabled:opacity-45"
                   >
                     {musicDownloadBusy ? (
                       <LoaderCircle size={18} className="animate-spin" />
@@ -3041,6 +3548,128 @@ export default function PoolPetiscosApp() {
                     )}
                     {musicDownloadBusy ? "Preparando faixa…" : "Baixar faixa"}
                   </button>
+                </div>
+
+                <div
+                  className="mt-3"
+                  aria-live="polite"
+                  aria-atomic="true"
+                >
+                  {(youtubeSearchStatus === "waiting" ||
+                    youtubeSearchStatus === "loading") && (
+                    <div
+                      role="status"
+                      className="flex min-h-12 items-center gap-3 rounded-xl border border-[#e5deda] bg-white px-4 text-sm font-semibold text-[#5f5753]"
+                    >
+                      <LoaderCircle
+                        size={18}
+                        className={
+                          youtubeSearchStatus === "loading"
+                            ? "animate-spin text-[#d9202c]"
+                            : "text-[#9c928d]"
+                        }
+                      />
+                      {youtubeSearchStatus === "loading"
+                        ? "Pesquisando no YouTube…"
+                        : "Aguardando você terminar de digitar…"}
+                    </div>
+                  )}
+
+                  {youtubeSearchStatus === "error" && (
+                    <div
+                      role="alert"
+                      className="flex min-h-12 items-center gap-3 rounded-xl border border-[#f0dfad] bg-[#fff9e9] px-4 text-sm leading-5 text-[#7b6129]"
+                    >
+                      <AlertTriangle size={18} className="shrink-0" />
+                      {youtubeSearchError}
+                    </div>
+                  )}
+
+                  {youtubeSearchStatus === "success" &&
+                    youtubeSearchResults.length === 0 && (
+                      <div className="rounded-xl border border-[#e5deda] bg-white px-4 py-3 text-sm text-[#6d6561]">
+                        Nenhuma música encontrada. Tente escrever o nome do
+                        artista junto com o título.
+                      </div>
+                    )}
+
+                  {youtubeSearchResults.length > 0 && (
+                    <div
+                      id="youtube-search-results"
+                      className="overflow-hidden rounded-2xl border border-[#ded7d2] bg-white shadow-[0_16px_38px_rgba(48,43,41,.1)]"
+                    >
+                      <div className="border-b border-[#eee8e4] px-4 py-3">
+                        <strong className="text-sm">
+                          Escolha uma música
+                        </strong>
+                        <span className="ml-2 text-xs text-[#776f6b]">
+                          {youtubeSearchResults.length} resultado(s)
+                        </span>
+                      </div>
+                      <ul className="divide-y divide-[#eee8e4]">
+                        {youtubeSearchResults.map((result) => (
+                          <li key={result.id}>
+                            <button
+                              type="button"
+                              onClick={() => chooseYoutubeResult(result)}
+                              className="group grid w-full grid-cols-[96px_1fr_auto] items-center gap-3 p-3 text-left transition hover:bg-[#fff7f7] focus:bg-[#fff7f7] focus:outline-none"
+                            >
+                              <span
+                                role="img"
+                                aria-label={`Miniatura de ${result.title}`}
+                                className="relative block aspect-video overflow-hidden rounded-xl bg-[#e9e3df] bg-cover bg-center"
+                                style={
+                                  result.thumbnail
+                                    ? {
+                                        backgroundImage: `url(${JSON.stringify(
+                                          result.thumbnail,
+                                        )})`,
+                                      }
+                                    : undefined
+                                }
+                              >
+                                {!result.thumbnail && (
+                                  <Music2
+                                    size={22}
+                                    className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[#9c928d]"
+                                  />
+                                )}
+                              </span>
+                              <span className="min-w-0">
+                                <strong className="block truncate text-sm text-[#302b29] group-hover:text-[#b41622]">
+                                  {result.title}
+                                </strong>
+                                <span className="mt-1 block truncate text-xs text-[#776f6b]">
+                                  {result.channel || "Canal do YouTube"}
+                                  {result.duration
+                                    ? ` • ${result.duration}`
+                                    : ""}
+                                </span>
+                              </span>
+                              <span className="inline-flex min-h-10 items-center rounded-xl bg-[#f5f1ee] px-3 text-xs font-extrabold text-[#4b4542] transition group-hover:bg-[#d9202c] group-hover:text-white">
+                                Escolher
+                              </span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {selectedYoutubeResult && (
+                    <div className="flex items-center gap-3 rounded-2xl border border-[#bfe0d0] bg-[#eef9f3] p-4 text-[#205f43]">
+                      <CheckCircle2 size={21} className="shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <strong className="block truncate text-sm">
+                          {selectedYoutubeResult.title}
+                        </strong>
+                        <span className="block truncate text-xs">
+                          Pronta para baixar •{" "}
+                          {selectedYoutubeResult.channel || "YouTube"}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {downloadJob && (
@@ -3244,7 +3873,9 @@ export default function PoolPetiscosApp() {
             aria-label={modalContent?.aria}
             tabIndex={-1}
             onClick={(event) => event.stopPropagation()}
-            className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-[22px] bg-white p-5 shadow-2xl outline-none sm:p-6"
+            className={`max-h-[calc(100dvh-2rem)] w-full overflow-y-auto rounded-[22px] bg-white p-5 shadow-2xl outline-none sm:p-6 ${
+              modal === "product" ? "max-w-2xl" : "max-w-md"
+            }`}
           >
             <div className="flex items-start justify-between">
               <div>
@@ -3265,7 +3896,227 @@ export default function PoolPetiscosApp() {
               </button>
             </div>
 
-            {modal === "stock" ? (
+            {modal === "product" ? (
+              <form onSubmit={submitProduct} className="mt-6 space-y-5">
+                <div className="grid gap-4 sm:grid-cols-[1fr_110px]">
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-extrabold text-[#5f5753]">
+                      Nome do produto
+                    </span>
+                    <input
+                      required
+                      autoFocus
+                      maxLength={80}
+                      value={productForm.name}
+                      onChange={(event) =>
+                        setProductForm((current) => ({
+                          ...current,
+                          name: event.target.value,
+                        }))
+                      }
+                      placeholder="Ex.: X-Bacon"
+                      className="h-12 w-full rounded-xl border border-[#ded7d2] px-4 text-base outline-none transition focus:border-[#d9202c] focus:ring-4 focus:ring-[#d9202c]/10"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-extrabold text-[#5f5753]">
+                      Ícone
+                    </span>
+                    <input
+                      maxLength={12}
+                      value={productForm.emoji}
+                      onChange={(event) =>
+                        setProductForm((current) => ({
+                          ...current,
+                          emoji: event.target.value,
+                        }))
+                      }
+                      aria-describedby="product-emoji-help"
+                      className="h-12 w-full rounded-xl border border-[#ded7d2] px-3 text-center text-2xl outline-none transition focus:border-[#d9202c]"
+                    />
+                    <span
+                      id="product-emoji-help"
+                      className="mt-1 block text-center text-[11px] text-[#8d8581]"
+                    >
+                      Um emoji
+                    </span>
+                  </label>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-extrabold text-[#5f5753]">
+                      Categoria
+                    </span>
+                    <select
+                      value={productForm.category}
+                      onChange={(event) =>
+                        setProductForm((current) => ({
+                          ...current,
+                          category: event.target.value as Product["category"],
+                        }))
+                      }
+                      className="h-12 w-full rounded-xl border border-[#ded7d2] bg-white px-4 text-base outline-none focus:border-[#d9202c]"
+                    >
+                      {productCategories.map((productCategory) => (
+                        <option value={productCategory} key={productCategory}>
+                          {productCategory}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-extrabold text-[#5f5753]">
+                      Preço de venda
+                    </span>
+                    <input
+                      required
+                      inputMode="decimal"
+                      value={productForm.price}
+                      onChange={(event) =>
+                        setProductForm((current) => ({
+                          ...current,
+                          price: event.target.value,
+                        }))
+                      }
+                      placeholder="R$ 0,00"
+                      className="h-12 w-full rounded-xl border border-[#ded7d2] px-4 text-base font-bold outline-none transition focus:border-[#d9202c]"
+                    />
+                  </label>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-extrabold text-[#5f5753]">
+                      Quantidade atual
+                    </span>
+                    <input
+                      required
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={productForm.stock}
+                      onChange={(event) =>
+                        setProductForm((current) => ({
+                          ...current,
+                          stock: event.target.value,
+                        }))
+                      }
+                      className="h-12 w-full rounded-xl border border-[#ded7d2] px-4 text-base font-bold outline-none transition focus:border-[#d9202c]"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-extrabold text-[#5f5753]">
+                      Avisar quando chegar a
+                    </span>
+                    <input
+                      required
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={productForm.minimum}
+                      onChange={(event) =>
+                        setProductForm((current) => ({
+                          ...current,
+                          minimum: event.target.value,
+                        }))
+                      }
+                      aria-describedby="product-minimum-help"
+                      className="h-12 w-full rounded-xl border border-[#ded7d2] px-4 text-base font-bold outline-none transition focus:border-[#d9202c]"
+                    />
+                    <span
+                      id="product-minimum-help"
+                      className="mt-1.5 block text-xs leading-4 text-[#776f6b]"
+                    >
+                      Esse é o estoque mínimo para o alerta de reposição.
+                    </span>
+                  </label>
+                </div>
+
+                {productForm.id && (
+                  <div className="rounded-xl border border-[#dfe9e4] bg-[#eef9f3] p-4 text-sm leading-5 text-[#276348]">
+                    As alterações valem para as próximas vendas. Vendas antigas
+                    continuam com o nome e o preço registrados no momento da
+                    compra.
+                  </div>
+                )}
+
+                <div className="flex flex-col-reverse gap-3 border-t border-[#eee8e4] pt-5 sm:flex-row sm:justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setModal(null)}
+                    className="min-h-12 rounded-xl border border-[#ded7d2] px-5 text-sm font-extrabold text-[#5f5753] transition hover:bg-[#f7f5f2]"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#d9202c] px-6 text-sm font-extrabold text-white shadow-[0_10px_24px_rgba(217,32,44,.18)] transition hover:bg-[#b41622]"
+                  >
+                    <Check size={19} />
+                    {productForm.id ? "Salvar alterações" : "Criar produto"}
+                  </button>
+                </div>
+              </form>
+            ) : modal === "product-delete" ? (
+              <div className="mt-6">
+                {productToDelete ? (
+                  <>
+                    <div className="flex items-center gap-4 rounded-2xl bg-[#fff7ec] p-4">
+                      <span className="grid size-14 shrink-0 place-items-center rounded-2xl bg-white text-3xl shadow-sm">
+                        {productToDelete.emoji}
+                      </span>
+                      <div className="min-w-0">
+                        <strong className="block truncate text-lg">
+                          {productToDelete.name}
+                        </strong>
+                        <span className="text-sm text-[#776f6b]">
+                          {productToDelete.stock} un. •{" "}
+                          {currency.format(productToDelete.price)}
+                        </span>
+                      </div>
+                    </div>
+                    <p className="mt-5 text-base leading-6 text-[#4b4542]">
+                      O produto deixará de aparecer no estoque e nas novas
+                      vendas. <strong>As vendas antigas serão preservadas.</strong>
+                    </p>
+                    {cart.some(
+                      (item) => item.productId === productToDelete.id,
+                    ) && (
+                      <div
+                        role="alert"
+                        className="mt-4 flex items-start gap-3 rounded-xl border border-[#f0dfad] bg-[#fff9e9] p-4 text-sm leading-5 text-[#7b6129]"
+                      >
+                        <AlertTriangle size={18} className="mt-0.5 shrink-0" />
+                        Este produto está na comanda atual e também será
+                        removido dela.
+                      </div>
+                    )}
+                    <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setModal(null)}
+                        className="min-h-12 rounded-xl border border-[#ded7d2] px-5 text-sm font-extrabold text-[#5f5753] transition hover:bg-[#f7f5f2]"
+                      >
+                        Manter produto
+                      </button>
+                      <button
+                        type="button"
+                        onClick={confirmProductDelete}
+                        className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#b41622] px-6 text-sm font-extrabold text-white transition hover:bg-[#8f111a]"
+                      >
+                        <Trash2 size={18} />
+                        Sim, excluir produto
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-sm text-[#776f6b]">
+                    Esse produto já não está mais disponível.
+                  </p>
+                )}
+              </div>
+            ) : modal === "stock" ? (
               <form onSubmit={submitStock} className="mt-5 space-y-4">
                 <label className="block">
                   <span className="mb-1.5 block text-[9px] font-extrabold text-[#776f6b]">

@@ -393,7 +393,9 @@ def wait_for_services(
 
 
 def run_launcher(arguments: argparse.Namespace) -> int:
-    logger = configure_logging(arguments.background or arguments.no_browser)
+    logger = configure_logging(
+        arguments.background or arguments.no_browser or arguments.startup
+    )
     errors = validate_installation()
     if errors:
         for error in errors:
@@ -404,7 +406,7 @@ def run_launcher(arguments: argparse.Namespace) -> int:
     if already_running:
         close_windows_handle(mutex_handle)
         site_url = f"http://127.0.0.1:{arguments.site_port}"
-        if not arguments.background and not arguments.no_browser:
+        if should_open_browser(arguments):
             for _ in range(20):
                 if endpoint_ready(site_url):
                     webbrowser.open(site_url)
@@ -464,7 +466,7 @@ def run_launcher(arguments: argparse.Namespace) -> int:
             children=children,
         )
         logger.info("%s disponível em %s.", APP_NAME, site_url)
-        if not arguments.background and not arguments.no_browser:
+        if should_open_browser(arguments):
             webbrowser.open(site_url)
 
         while not stop_flag and not shutdown_requested(shutdown_handle):
@@ -492,7 +494,17 @@ def run_launcher(arguments: argparse.Namespace) -> int:
 
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Inicializador do Pool Petiscos.")
-    parser.add_argument("--background", action="store_true")
+    launch_mode = parser.add_mutually_exclusive_group()
+    launch_mode.add_argument(
+        "--background",
+        action="store_true",
+        help="inicia os serviços sem abrir o navegador",
+    )
+    launch_mode.add_argument(
+        "--startup",
+        action="store_true",
+        help="inicia com o Windows e abre o caixa quando estiver pronto",
+    )
     parser.add_argument("--no-browser", action="store_true")
     parser.add_argument("--shutdown", action="store_true")
     parser.add_argument("--self-test", action="store_true")
@@ -517,6 +529,12 @@ def parse_arguments() -> argparse.Namespace:
     if arguments.site_port == arguments.companion_port:
         parser.error("As portas do site e do companion precisam ser diferentes.")
     return arguments
+
+
+def should_open_browser(arguments: argparse.Namespace) -> bool:
+    """Indica se esta execução precisa tornar o caixa visível ao usuário."""
+
+    return not arguments.background and not arguments.no_browser
 
 
 def main() -> int:

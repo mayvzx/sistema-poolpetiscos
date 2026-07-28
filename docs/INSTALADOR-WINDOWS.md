@@ -37,8 +37,8 @@ os dados é necessária uma ação manual e consciente.
 
 O launcher mantém uma única instância, grava logs rotativos, supervisiona os
 dois processos e reinicia um componente que encerre inesperadamente. O atalho
-normal abre o navegador. O atalho de inicialização do Windows usa
-`--background` e não abre uma aba durante o login.
+normal abre o navegador. A inicialização automática aguarda os serviços locais
+e abre o caixa no navegador após o login do Windows.
 
 O serviço iniciado em segundo plano também executa a política de backup do
 armazenamento. Quando o OneDrive está configurado no Windows, o serviço detecta
@@ -59,13 +59,28 @@ Esses requisitos são apenas para o computador de desenvolvimento:
 
 O computador da lanchonete não precisa desses itens separadamente.
 
+## Ícone do aplicativo
+
+O executável, o instalador e os atalhos usam
+`installer/assets/pool-petiscos.ico`, gerado a partir da marca já existente em
+`public/pool-logo-round.jpg`. O arquivo contém resoluções de 16 a 256 pixels e
+transparência para a barra de tarefas do Windows.
+
+Somente quando a marca de origem mudar, instale o Pillow no ambiente de
+desenvolvimento e regenere o arquivo:
+
+```powershell
+python -m pip install Pillow
+python .\scripts\generate-windows-icon.py
+```
+
 ## Build de protótipo, explicitamente sem assinatura
 
 Use somente para validação interna:
 
 ```powershell
 .\scripts\build-windows-installer.ps1 `
-  -Version 1.0.1 `
+  -Version 1.1.0 `
   -UnsignedPrototype
 ```
 
@@ -73,7 +88,7 @@ O script exige a opção `-UnsignedPrototype`; ele não produz silenciosamente u
 executável que pareça assinado. A saída mostra um aviso claro e fica em:
 
 ```text
-build\windows\installer\PoolPetiscos-Setup-1.0.1.exe
+build\windows\installer\PoolPetiscos-Setup-1.1.0.exe
 ```
 
 Cache e stage são mantidos fora de pastas sincronizadas para evitar bloqueios
@@ -89,7 +104,7 @@ Para manter a árvore usada pelo Inno Setup e poder revisá-la:
 
 ```powershell
 .\scripts\build-windows-installer.ps1 `
-  -Version 1.0.1 `
+  -Version 1.1.0 `
   -UnsignedPrototype `
   -KeepStage
 ```
@@ -103,7 +118,7 @@ Exemplo com o repositório do usuário atual:
 
 ```powershell
 .\scripts\build-windows-installer.ps1 `
-  -Version 1.0.1 `
+  -Version 1.1.0 `
   -CertificateThumbprint '0123456789ABCDEF0123456789ABCDEF01234567' `
   -CertificateStoreLocation CurrentUser
 ```
@@ -112,7 +127,7 @@ Para um certificado instalado no repositório da máquina:
 
 ```powershell
 .\scripts\build-windows-installer.ps1 `
-  -Version 1.0.1 `
+  -Version 1.1.0 `
   -CertificateThumbprint '0123456789ABCDEF0123456789ABCDEF01234567' `
   -CertificateStoreLocation LocalMachine
 ```
@@ -137,10 +152,16 @@ Uma atualização é sempre explícita:
 
 ```powershell
 .\scripts\build-windows-installer.ps1 `
-  -Version 0.2.0 `
+  -Version 1.1.0 `
   -UnsignedPrototype `
   -RefreshDependencyLock
 ```
+
+O build também confere se a versão coincide com `package.json` e, por padrão,
+recusa código-fonte com alterações ainda não registradas no Git. Assim, o
+manifesto dentro do instalador identifica exatamente o commit distribuído.
+Se a atualização do lock alterar hashes ou versões, revise e faça o commit do
+arquivo; depois execute novamente o build normal, sem `-RefreshDependencyLock`.
 
 Essa opção consulta:
 

@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [ValidatePattern('^\d+\.\d+\.\d+(?:\.\d+)?$')]
-    [string]$Version = '1.0.1',
+    [string]$Version = '1.1.0',
     [string]$OutputDirectory = '',
     [string]$WorkDirectory = '',
     [string]$CertificateThumbprint = '',
@@ -11,6 +11,7 @@ param(
     [switch]$UnsignedPrototype,
     [switch]$RefreshDependencyLock,
     [switch]$SkipNpmInstall,
+    [switch]$AllowDirtySource,
     [switch]$KeepStage
 )
 
@@ -37,6 +38,7 @@ $installerOutputDirectory = Join-Path $OutputDirectory 'installer'
 $lockPath = Join-Path $projectRoot 'installer\dependencies.lock.json'
 $requirementsPath = Join-Path $projectRoot 'installer\requirements-build.txt'
 $issPath = Join-Path $projectRoot 'installer\PoolPetiscos.iss'
+$iconPath = Join-Path $projectRoot 'installer\assets\pool-petiscos.ico'
 
 function Assert-ChildPath {
     param(
@@ -92,6 +94,108 @@ function Get-CommandPath {
         }
     }
     throw "Nenhum destes comandos foi encontrado: $($Names -join ', ')."
+}
+
+function Get-SourceMetadata {
+    $packagePath = Join-Path $projectRoot 'package.json'
+    $package = Get-Content -LiteralPath $packagePath -Raw | ConvertFrom-Json
+    $projectVersion = [string]$package.version
+    if ($projectVersion -ne $Version) {
+        throw (
+            "A versão solicitada ($Version) difere de package.json " +
+            "($projectVersion). Atualize o projeto antes de gerar o instalador."
+        )
+    }
+
+    $metadata = [ordered]@{
+        commit = 'unknown'
+        dirty = $false
+    }
+    $gitCommand = Get-Command 'git.exe' -ErrorAction SilentlyContinue
+    if (-not $gitCommand) {
+        return [pscustomobject]$metadata
+    }
+
+    $insideWorkTree = (
+        & $gitCommand.Source -C $projectRoot rev-parse --is-inside-work-tree 2>$null
+    )
+    if ($LASTEXITCODE -ne 0 -or $insideWorkTree.Trim() -ne 'true') {
+        return [pscustomobject]$metadata
+    }
+
+    $metadata.commit = (
+        & $gitCommand.Source -C $projectRoot rev-parse HEAD
+    ).Trim()
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Não foi possível identificar o commit usado no instalador.'
+    }
+
+    $changes = @(
+        & $gitCommand.Source -C $projectRoot status --porcelain --untracked-files=normal
+    )
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Não foi possível verificar o estado do código-fonte.'
+    }
+    $metadata.dirty = $changes.Count -gt 0
+    if ($metadata.dirty -and -not $AllowDirtySource) {
+        throw (
+            'O código-fonte possui alterações sem commit. Faça o commit antes ' +
+            'do build ou use -AllowDirtySource somente para diagnóstico local.'
+        )
+    }
+
+    return [pscustomobject]$metadata
+}
+
+function Assert-WindowsIcon {
+    param([Parameter(Mandatory)][string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "O ícone do aplicativo não foi encontrado em '$Path'."
+    }
+    [byte[]]$bytes = [System.IO.File]::ReadAllBytes($Path)
+    if ($bytes.Length -lt 6) {
+        throw 'O arquivo de ícone está vazio ou truncado.'
+    }
+    $reserved = [System.BitConverter]::ToUInt16($bytes, 0)
+    $kind = [System.BitConverter]::ToUInt16($bytes, 2)
+    $count = [System.BitConverter]::ToUInt16($bytes, 4)
+    if ($reserved -ne 0 -or $kind -ne 1 -or $count -lt 1) {
+        throw 'O arquivo configurado não é um ícone ICO válido.'
+    }
+    if ($bytes.Length -lt (6 + (16 * $count))) {
+        throw 'O diretório do ícone ICO está truncado.'
+    }
+
+    $sizes = [System.Collections.Generic.HashSet[int]]::new()
+    for ($index = 0; $index -lt $count; $index++) {
+        $entryOffset = 6 + (16 * $index)
+        $width = [int]$bytes[$entryOffset]
+        $height = [int]$bytes[$entryOffset + 1]
+        if ($width -eq 0) {
+            $width = 256
+        }
+        if ($height -eq 0) {
+            $height = 256
+        }
+        $imageLength = [System.BitConverter]::ToUInt32($bytes, $entryOffset + 8)
+        $imageOffset = [System.BitConverter]::ToUInt32($bytes, $entryOffset + 12)
+        if (
+            $width -ne $height -or
+            $imageLength -eq 0 -or
+            ([uint64]$imageOffset + [uint64]$imageLength) -gt $bytes.Length
+        ) {
+            throw "A entrada $index do ícone ICO é inválida."
+        }
+        [void]$sizes.Add($width)
+    }
+
+    foreach ($requiredSize in @(16, 32, 48, 256)) {
+        if (-not $sizes.Contains($requiredSize)) {
+            throw "O ícone não contém a resolução obrigatória ${requiredSize}x${requiredSize}."
+        }
+    }
+    Write-Host "Ícone Windows validado: $($sizes.Count) resoluções."
 }
 
 function Get-VerifiedDownload {
@@ -483,7 +587,7 @@ function Test-PackagedLauncher {
     $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
     $startInfo.FileName = $LauncherPath
     $startInfo.Arguments = (
-        "--no-browser --site-port $sitePort --companion-port $companionPort"
+        "--startup --no-browser --site-port $sitePort --companion-port $companionPort"
     )
     $startInfo.WorkingDirectory = Split-Path -Parent $LauncherPath
     $startInfo.UseShellExecute = $false
@@ -553,10 +657,12 @@ function Test-PackagedLauncher {
 if (-not [Environment]::Is64BitOperatingSystem) {
     throw 'O instalador é destinado ao Windows x64.'
 }
+Assert-WindowsIcon -Path $iconPath
 $signingContext = Get-SigningContext
 if ($RefreshDependencyLock) {
     Refresh-DependencyLock
 }
+$sourceMetadata = Get-SourceMetadata
 
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 New-Item -ItemType Directory -Path $WorkDirectory -Force | Out-Null
@@ -609,6 +715,7 @@ Invoke-NativeCommand `
         '--onedir',
         '--windowed',
         '--noupx',
+        '--icon', $iconPath,
         '--name', 'PoolPetiscos',
         '--distpath', $pyinstallerDist,
         '--workpath', $pyinstallerWork,
@@ -744,11 +851,6 @@ foreach ($licenseFile in $ffmpegLicenseFiles) {
         -Destination (Join-Path $licensesDirectory $safeName)
 }
 
-$gitCommit = 'unknown'
-$gitCommand = Get-Command 'git.exe' -ErrorAction SilentlyContinue
-if ($gitCommand) {
-    $gitCommit = (& $gitCommand.Source -C $projectRoot rev-parse HEAD).Trim()
-}
 $ytDlpVersion = (
     Get-Content -LiteralPath (Join-Path $projectRoot 'local_service\requirements.txt') |
     Where-Object { $_ -match '^yt-dlp==' } |
@@ -756,7 +858,8 @@ $ytDlpVersion = (
 ) -replace '^yt-dlp==', ''
 $buildManifest = [ordered]@{
     application_version = $Version
-    source_commit = $gitCommit
+    source_commit = $sourceMetadata.commit
+    source_dirty = [bool]$sourceMetadata.dirty
     built_at_utc = [datetime]::UtcNow.ToString('o')
     signed = [bool]$signingContext
     node = $dependencyLock.node
@@ -786,7 +889,8 @@ $innoCompiler = Find-InnoCompiler
 $innoArguments = @(
     "/DAppStage=$stageDirectory",
     "/DAppOutput=$installerOutputDirectory",
-    "/DAppVersion=$Version"
+    "/DAppVersion=$Version",
+    "/DAppIcon=$iconPath"
 )
 if ($signingContext) {
     $storeFlag = ''

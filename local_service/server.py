@@ -12,16 +12,29 @@ import shutil
 import sqlite3
 import threading
 import uuid
+from collections.abc import Callable
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from local_service.storage import (
     RevisionConflict,
     StateStorage,
     default_database_path,
+)
+from local_service.youtube_search import (
+    DEFAULT_YOUTUBE_SEARCH_LIMIT,
+    YOUTUBE_SEARCH_CONCURRENCY,
+    YOUTUBE_SEARCH_TIMEOUT_SECONDS,
+    YouTubeSearchBusy,
+    YouTubeSearchTimeout,
+    YouTubeSearchUnavailable,
+    run_youtube_search_with_timeout,
+    search_youtube,
+    validate_youtube_search_limit,
+    validate_youtube_search_query,
 )
 
 SERVICE_VERSION = "1.1.0"
@@ -296,10 +309,19 @@ class PoolCompanionServer(ThreadingHTTPServer):
         handler_class: type[BaseHTTPRequestHandler],
         music_directory: Path,
         storage: StateStorage | None = None,
+        youtube_searcher: (
+            Callable[[str, int], list[dict[str, Any]]] | None
+        ) = None,
+        youtube_search_timeout_seconds: float = YOUTUBE_SEARCH_TIMEOUT_SECONDS,
     ) -> None:
         super().__init__(server_address, handler_class)
         self.music_directory = music_directory
         self.storage = storage or StateStorage()
+        self.youtube_searcher = youtube_searcher or search_youtube
+        self.youtube_search_timeout_seconds = youtube_search_timeout_seconds
+        self.youtube_search_slots = threading.BoundedSemaphore(
+            YOUTUBE_SEARCH_CONCURRENCY
+        )
 
 
 class PoolCompanionHandler(BaseHTTPRequestHandler):
@@ -360,6 +382,102 @@ class PoolCompanionHandler(BaseHTTPRequestHandler):
         if self._reject_origin():
             return
         parsed = urlparse(self.path)
+        if parsed.path == "/api/youtube/search":
+            try:
+                parameters = parse_qs(
+                    parsed.query,
+                    keep_blank_values=True,
+                    max_num_fields=10,
+                )
+            except ValueError:
+                self._send_json(
+                    {
+                        "code": "invalid_search",
+                        "error": "A pesquisa contém parâmetros inválidos.",
+                    },
+                    HTTPStatus.BAD_REQUEST,
+                )
+                return
+            try:
+                queries = parameters.get("q", [])
+                limits = parameters.get("limit", [])
+                if len(queries) != 1 or len(limits) > 1:
+                    raise ValueError("Informe uma única pesquisa por vez.")
+                query = validate_youtube_search_query(queries[0])
+                limit = validate_youtube_search_limit(
+                    limits[0] if limits else DEFAULT_YOUTUBE_SEARCH_LIMIT
+                )
+            except ValueError as error:
+                self._send_json(
+                    {"code": "invalid_search", "error": str(error)},
+                    HTTPStatus.BAD_REQUEST,
+                )
+                return
+
+            try:
+                results = run_youtube_search_with_timeout(
+                    self.pool_server.youtube_searcher,
+                    query,
+                    limit,
+                    timeout_seconds=(
+                        self.pool_server.youtube_search_timeout_seconds
+                    ),
+                    slots=self.pool_server.youtube_search_slots,
+                )
+            except YouTubeSearchBusy:
+                self._send_json(
+                    {
+                        "code": "search_busy",
+                        "error": (
+                            "Há outras pesquisas em andamento. "
+                            "Tente novamente em instantes."
+                        )
+                    },
+                    HTTPStatus.TOO_MANY_REQUESTS,
+                )
+                return
+            except YouTubeSearchTimeout:
+                self._send_json(
+                    {
+                        "code": "search_timeout",
+                        "error": (
+                            "A pesquisa demorou mais do que o esperado. "
+                            "Tente novamente."
+                        )
+                    },
+                    HTTPStatus.GATEWAY_TIMEOUT,
+                )
+                return
+            except (ImportError, YouTubeSearchUnavailable):
+                self._send_json(
+                    {
+                        "code": "search_unavailable",
+                        "error": (
+                            "A pesquisa de músicas não está disponível "
+                            "neste computador."
+                        )
+                    },
+                    HTTPStatus.SERVICE_UNAVAILABLE,
+                )
+                return
+            except Exception as error:
+                self.log_error(
+                    "falha na pesquisa do YouTube (%s)",
+                    type(error).__name__,
+                )
+                self._send_json(
+                    {
+                        "code": "search_failed",
+                        "error": (
+                            "Não foi possível pesquisar no YouTube agora. "
+                            "Tente novamente."
+                        )
+                    },
+                    HTTPStatus.BAD_GATEWAY,
+                )
+                return
+            self._send_json({"results": results[:limit]})
+            return
         if parsed.path == "/api/health":
             self._send_json(
                 {

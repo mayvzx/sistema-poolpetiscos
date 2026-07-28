@@ -10,7 +10,7 @@ nem confirma pagamentos diretamente com banco ou maquininha.
 ## O que funciona
 
 - vendas em Pix, dinheiro ou cartão, com cálculo de troco;
-- baixa e reposição de estoque;
+- cadastro, edição, exclusão, baixa e reposição de produtos no estoque;
 - despesas, sangria, suprimento, abertura e fechamento de caixa;
 - conferência entre saldo esperado e dinheiro contado;
 - indicadores financeiros calculados a partir dos registros;
@@ -19,7 +19,8 @@ nem confirma pagamentos diretamente com banco ou maquininha.
 - recuperação de uma alteração pendente após fechamento inesperado;
 - backup SQLite diário no OneDrive, com retenção de 30 dias;
 - exportação e restauração manual de backup JSON;
-- biblioteca de músicas local e download de uma faixa por link;
+- busca de músicas no YouTube, biblioteca local e download de uma faixa por
+  link;
 - instalador Windows com Node.js, yt-dlp e FFmpeg incluídos;
 - atalho, inicialização automática com o Windows e atualização sem apagar os
   dados.
@@ -57,15 +58,20 @@ features/pool-petiscos/
   types.ts                        Tipos do negócio
 local_service/
   server.py                       API restrita ao computador
+  youtube_search.py               Pesquisa segura no YouTube via yt-dlp
   storage.py                      SQLite, revisões e backups diários
   launcher.py                     Inicializador e supervisor dos serviços
   test_server.py                  Testes do serviço e do banco
+  test_launcher.py                Testes dos modos normal e auto-início
+  test_youtube_search.py          Testes isolados da busca de músicas
 installer/
   PoolPetiscos.iss                Definição do instalador Inno Setup
+  assets/pool-petiscos.ico        Ícone multirresolução do Windows
   dependencies.lock.json          URLs e hashes das dependências incluídas
   THIRD_PARTY_NOTICES.txt         Avisos de componentes redistribuídos
 scripts/
   build-windows-installer.ps1     Geração reproduzível do instalador
+  generate-windows-icon.py        Regenera o ícone usando a marca existente
   build.mjs                       Build da interface e do Sites
   validate-artifact.mjs           Validação do pacote publicado
 tests/
@@ -100,7 +106,7 @@ npm run check
 
 ## Instalação no computador do caixa
 
-O usuário final deve executar somente `PoolPetiscos-Setup-1.0.1.exe`. O
+O usuário final deve executar somente `PoolPetiscos-Setup-1.1.0.exe`. O
 instalador prepara o aplicativo e oferece atalhos; Node.js, Python, yt-dlp e
 FFmpeg não precisam ser instalados separadamente.
 
