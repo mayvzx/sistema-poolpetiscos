@@ -2,6 +2,22 @@
 
 Todas as mudanças relevantes do Pool Petiscos são registradas neste arquivo.
 
+## 1.2.1 — 2026-07-29
+
+### Alterado
+
+- o instalador usa as portas locais dedicadas `14173` e `18765`, separadas das
+  portas normalmente usadas pelo ambiente de desenvolvimento;
+- um novo clique no atalho aguarda a interface e o serviço de dados ficarem
+  prontos antes de abrir o navegador.
+
+### Corrigido
+
+- uma porta ocupada por outro programa agora é detectada imediatamente;
+- processos Node e Python iniciados pelo launcher são vinculados ao processo
+  principal e não permanecem órfãos após um encerramento inesperado;
+- falhas de inicialização deixam de acontecer silenciosamente no atalho.
+
 ## 1.2.0 — 2026-07-29
 
 ### Adicionado

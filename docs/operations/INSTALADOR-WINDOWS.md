@@ -28,9 +28,9 @@ os dados é necessária uma ação manual e consciente.
 
 - interface React em saída standalone de produção;
 - Node.js 22 LTS portátil para servir a interface somente em
-  `127.0.0.1:4173`;
+  `127.0.0.1:14173`;
 - launcher Python criado com PyInstaller;
-- serviço local de dados e músicas em `127.0.0.1:8765`;
+- serviço local de dados e músicas em `127.0.0.1:18765`;
 - `yt-dlp` fixado pelo arquivo `local_service/requirements.txt`;
 - FFmpeg e ffprobe do projeto recomendado pelo `yt-dlp`;
 - manual do operador e guia de acesso ao banco;
@@ -88,7 +88,7 @@ Use somente para validação interna:
 
 ```powershell
 .\scripts\build-windows-installer.ps1 `
-  -Version 1.2.0 `
+  -Version 1.2.1 `
   -UnsignedPrototype
 ```
 
@@ -96,7 +96,7 @@ O script exige a opção `-UnsignedPrototype`; ele não produz silenciosamente u
 executável que pareça assinado. A saída mostra um aviso claro e fica em:
 
 ```text
-build\windows\installer\PoolPetiscos-Setup-1.2.0.exe
+build\windows\installer\PoolPetiscos-Setup-1.2.1.exe
 ```
 
 Cache e stage são mantidos fora de pastas sincronizadas para evitar bloqueios
@@ -112,7 +112,7 @@ Para manter a árvore usada pelo Inno Setup e poder revisá-la:
 
 ```powershell
 .\scripts\build-windows-installer.ps1 `
-  -Version 1.2.0 `
+  -Version 1.2.1 `
   -UnsignedPrototype `
   -KeepStage
 ```
@@ -126,7 +126,7 @@ Exemplo com o repositório do usuário atual:
 
 ```powershell
 .\scripts\build-windows-installer.ps1 `
-  -Version 1.2.0 `
+  -Version 1.2.1 `
   -CertificateThumbprint '0123456789ABCDEF0123456789ABCDEF01234567' `
   -CertificateStoreLocation CurrentUser
 ```
@@ -135,7 +135,7 @@ Para um certificado instalado no repositório da máquina:
 
 ```powershell
 .\scripts\build-windows-installer.ps1 `
-  -Version 1.2.0 `
+  -Version 1.2.1 `
   -CertificateThumbprint '0123456789ABCDEF0123456789ABCDEF01234567' `
   -CertificateStoreLocation LocalMachine
 ```
@@ -160,7 +160,7 @@ Uma atualização é sempre explícita:
 
 ```powershell
 .\scripts\build-windows-installer.ps1 `
-  -Version 1.2.0 `
+  -Version 1.2.1 `
   -UnsignedPrototype `
   -RefreshDependencyLock
 ```
@@ -207,7 +207,7 @@ normais não existe atualização silenciosa de binários.
 3. executar com o usuário Windows que operará o sistema;
 4. manter marcadas as opções de atalho e inicialização automática;
 5. abrir o sistema pelo atalho “Pool Petiscos”;
-6. confirmar que o navegador mostra `http://127.0.0.1:4173`;
+6. confirmar que o navegador mostra `http://127.0.0.1:14173`;
 7. configurar e testar o destino de backup no OneDrive;
 8. usar um nobreak para computador, roteador e equipamentos de pagamento;
 9. realizar uma restauração de teste antes de colocar o caixa em produção.

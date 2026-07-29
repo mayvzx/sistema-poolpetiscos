@@ -37,8 +37,8 @@ from local_service.youtube_search import (
     validate_youtube_search_query,
 )
 
-SERVICE_VERSION = "1.2.0"
-DEFAULT_PORT = 8765
+SERVICE_VERSION = "1.2.1"
+DEFAULT_PORT = 18765
 MAX_BODY_BYTES = 32 * 1024
 MAX_STATE_BODY_BYTES = 10 * 1024 * 1024
 SUPPORTED_AUDIO_SUFFIXES = {

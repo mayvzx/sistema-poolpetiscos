@@ -8,8 +8,8 @@ externo para registrar vendas ou movimentar estoque.
 
 ```mermaid
 flowchart LR
-    O["Operadora no navegador"] --> UI["Interface React<br/>127.0.0.1:4173"]
-    UI --> API["Serviço local Python<br/>127.0.0.1:8765"]
+    O["Operadora no navegador"] --> UI["Interface React<br/>127.0.0.1:14173"]
+    UI --> API["Serviço local Python<br/>127.0.0.1:18765"]
     API --> DB[("SQLite<br/>pool-petiscos.db")]
     API --> BK["Backups verificados<br/>OneDrive ou pasta local"]
     API --> YT["yt-dlp"]
@@ -22,6 +22,8 @@ flowchart LR
 O executável `PoolPetiscos.exe` supervisiona os dois processos locais, aguarda
 ambos ficarem prontos e só então abre o navegador. Se um processo terminar de
 forma inesperada, o launcher tenta reiniciá-lo e registra o ocorrido em log.
+No Windows, os processos filhos também pertencem a um grupo encerrado
+automaticamente junto com o launcher, evitando servidores locais órfãos.
 
 ## Fronteiras do código
 
