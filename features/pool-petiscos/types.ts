@@ -72,6 +72,7 @@ export type Track = {
   name: string;
   url: string;
   size: string;
+  source: "upload" | "yt-dlp";
 };
 
 export type Toast = {

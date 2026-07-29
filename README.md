@@ -1,101 +1,145 @@
-# Pool Petiscos & Lanches — sistema de caixa
+<p align="center">
+  <img src="public/pool-logo-banner.jpg" alt="Pool Petiscos & Lanches" width="520">
+</p>
 
-Protótipo funcional e revisável do caixa da **Pool Petiscos & Lanches**. O site
-reúne vendas, estoque, fluxo de dinheiro, backup local e música ambiente para
-validar o uso antes da futura versão instalada no Windows.
+<h1 align="center">Pool Petiscos — Caixa local</h1>
 
-> O projeto continua em modo demonstração. Ele não substitui emissão fiscal,
-> contabilidade nem um banco de dados transacional.
+<p align="center">
+  Vendas, estoque, financeiro e música em um sistema Windows pensado para a
+  rotina real da lanchonete.
+</p>
 
-## O que já funciona
+<p align="center">
+  <img alt="Versão" src="https://img.shields.io/badge/vers%C3%A3o-1.1.1-d9202c">
+  <img alt="Plataforma Windows" src="https://img.shields.io/badge/plataforma-Windows-302b29">
+  <img alt="Banco SQLite" src="https://img.shields.io/badge/dados-SQLite-7458b4">
+  <img alt="Status protótipo operacional" src="https://img.shields.io/badge/status-prot%C3%B3tipo%20operacional-dc9b19">
+</p>
 
-- registro de vendas em Pix, dinheiro ou cartão;
-- cálculo de troco e baixa automática do estoque;
-- reposição de produtos com custo opcional;
-- despesas, sangria, suprimento, abertura e fechamento de caixa;
-- conferência entre saldo esperado e dinheiro contado;
-- resumo financeiro calculado apenas com registros reais;
-- backup JSON validado antes da restauração;
-- sincronização básica quando outra aba altera os dados;
-- importação temporária de áudios locais;
-- navegação responsiva, por teclado e com histórico no endereço.
+![Visão do produto](public/og.png)
 
-## Estrutura do código
+## Sobre
+
+O Pool Petiscos funciona no próprio computador do caixa, sem exigir a compra de
+um servidor. O instalador inclui a interface React, o serviço local, SQLite,
+Node.js, yt-dlp e FFmpeg. As vendas continuam disponíveis sem internet; a rede
+é usada para músicas, sincronização do OneDrive e futuras integrações de
+pagamento.
+
+Esta versão é um protótipo operacional para validação com os proprietários. Ela
+não emite documento fiscal e ainda não confirma Pix ou cartão diretamente com
+banco ou maquininha.
+
+## Funcionalidades
+
+- vendas em Pix, dinheiro ou cartão, com troco em destaque;
+- abertura, movimentação, conferência e fechamento de caixa;
+- cadastro, alteração, exclusão, reposição e alerta de estoque;
+- histórico de vendas preservado quando um produto muda;
+- despesas e indicadores financeiros calculados dos registros;
+- SQLite com controle de revisão e consultas legíveis para auditoria;
+- cópia completa do banco e backup de restauração pela interface;
+- backup diário verificado no OneDrive, com retenção de 30 dias;
+- busca de músicas no YouTube com até cinco resultados;
+- downloads locais com yt-dlp e conversão/reprodução com FFmpeg;
+- inicialização automática, ícone próprio e atualização sem apagar dados;
+- tipografia ampliada, alvos de toque e animações suaves.
+
+## Instalar no Windows
+
+Baixe o instalador mais recente em
+[Releases](https://github.com/mayvzx/sistema-poolpetiscos/releases/latest). O
+usuário final executa apenas `PoolPetiscos-Setup-1.1.1.exe`; as dependências já
+estão incluídas.
+
+> O protótipo atual ainda não possui assinatura Authenticode. O Windows pode
+> exibir um aviso de origem desconhecida. A assinatura será adicionada antes da
+> implantação definitiva.
+
+Os dados ficam separados do programa e são preservados nas atualizações:
 
 ```text
-app/
-  layout.tsx                 Metadados e estrutura HTML
-  page.tsx                   Entrada enxuta da página
-  globals.css                Estilos globais e acessibilidade
-config/
-  sites-vite-plugin.ts       Empacotamento para o Sites
-features/pool-petiscos/
-  pool-petiscos-app.tsx      Interface e coordenação das telas
-  demo-data.ts               Catálogo e registros da demonstração
-  domain.ts                  Dinheiro, horário, caixa e gráficos
-  persistence.ts             Validação do estado e dos backups
-  types.ts                   Tipos do negócio
-public/
-  pool-logo-banner.jpg       Marca horizontal
-  pool-logo-round.jpg        Marca redonda e ícone
-scripts/
-  build.mjs                  Build multiplataforma
-  validate-artifact.mjs      Validação do pacote publicado
-tests/
-  domain.test.ts             Regras de negócio e backup
-  rendered-html.test.mjs     Teste da página gerada
-docs/
-  DECISOES-E-ROADMAP.md      Decisões e próximos marcos
-  GUIA-DE-REVISAO.md         Roteiro para revisar o código
+%LOCALAPPDATA%\PoolPetiscos\data\pool-petiscos.db
+%LOCALAPPDATA%\PoolPetiscos\musicas
+%LOCALAPPDATA%\PoolPetiscos\logs
 ```
 
-## Rodar no Windows
+O manual completo está em
+[docs/operations/MANUAL-DO-OPERADOR.md](docs/operations/MANUAL-DO-OPERADOR.md).
 
-Requisitos:
+## Acessar o banco de dados
 
-- Node.js 22.13 ou superior;
-- npm.
+No aplicativo, abra **Financeiro > Proteção dos dados > Baixar banco completo**.
+O menu Iniciar também oferece **Pool Petiscos > Dados e backups**.
 
-No PowerShell, dentro desta pasta:
+Para uma inspeção somente leitura pelo projeto:
+
+```powershell
+npm run database:inspect
+npm run database:inspect -- --view produtos
+```
+
+Localização, consultas disponíveis e cuidados estão documentados em
+[docs/architecture/BANCO-DE-DADOS.md](docs/architecture/BANCO-DE-DADOS.md).
+
+## Arquitetura
+
+```text
+PoolPetiscos.exe
+  ├─ Interface React          http://127.0.0.1:4173
+  └─ Serviço local Python     http://127.0.0.1:8765
+       ├─ SQLite e revisões
+       ├─ backups verificados
+       └─ yt-dlp + FFmpeg + biblioteca local
+```
+
+As portas aceitam apenas conexões da interface executada no próprio computador.
+A demonstração pública não acessa o serviço, o banco ou as músicas instaladas.
+
+Leia [docs/architecture/ARQUITETURA.md](docs/architecture/ARQUITETURA.md) para o
+fluxo completo e [docs/README.md](docs/README.md) para o índice da documentação.
+
+## Desenvolvimento
+
+Requisitos: Node.js 22, npm e Python 3.10 ou superior.
 
 ```powershell
 npm ci
 npm run dev
-```
-
-O terminal mostrará o endereço local. Para validar tudo:
-
-```powershell
 npm run check
 ```
 
-Também é possível executar separadamente:
+O código está organizado por fronteira:
 
-```powershell
-npm run typecheck
-npm run lint
-npm test
-npm run build
+```text
+app/                        entrada web e estilos
+features/pool-petiscos/     interface e regras do negócio
+local_service/              API, SQLite, músicas e launcher
+installer/                  instalador e ativos do Windows
+scripts/                    build e ferramentas de manutenção
+tests/                      validações da aplicação
+docs/                       produto, arquitetura e operação
 ```
 
-## Onde os dados ficam
+Consulte o
+[guia de desenvolvimento](docs/development/DESENVOLVIMENTO.md), o
+[guia de revisão](docs/development/GUIA-DE-REVISAO.md) e o
+[histórico de versões](CHANGELOG.md).
 
-Nesta demonstração, os dados ficam no armazenamento local do navegador. O
-backup exportado contém vendas, produtos, despesas e sessões de caixa; antes de
-restaurá-lo, o sistema valida toda a estrutura e baixa uma cópia de segurança
-dos dados atuais.
+## Demonstração
 
-Para testes que imitam a operação da lanchonete, mantenha apenas uma aba aberta.
-A sincronização entre abas reduz sobrescritas acidentais, mas o armazenamento do
-navegador não oferece as garantias transacionais da futura versão com SQLite.
+A versão web para apresentação está em
+[pool-petiscos-caixa.mayrom.chatgpt.site](https://pool-petiscos-caixa.mayrom.chatgpt.site).
+Sem o aplicativo local, ela usa somente o armazenamento do navegador e não
+oferece SQLite ou download de músicas.
 
-Os áudios importados não entram no backup e são removidos ao fechar a página.
+## Segurança e dados reais
 
-## Publicação e acesso
+Banco, backups, logs e credenciais nunca devem ser enviados ao repositório
+público. Consulte [SECURITY.md](SECURITY.md) antes de compartilhar um
+diagnóstico.
 
-O arquivo `.openai/hosting.json` mantém o vínculo com o projeto existente no
-Sites. O controle de acesso da versão publicada é gerenciado pelo próprio Sites;
-não há senhas ou tokens gravados neste repositório.
+## Licenciamento
 
-As decisões confirmadas e as limitações que ainda precisam de validação
-presencial estão em [docs/DECISOES-E-ROADMAP.md](docs/DECISOES-E-ROADMAP.md).
+O código está publicamente visível para avaliação, mas não possui licença de
+uso, cópia ou redistribuição. Consulte [LICENSE.md](LICENSE.md).

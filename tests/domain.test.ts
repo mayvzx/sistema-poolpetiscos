@@ -115,6 +115,13 @@ test("valida estado e backup completos antes de restaurar", () => {
   const backup = createBackup(state);
   assert.deepEqual(parseBackup(JSON.stringify(backup)), state);
 
+  const emptyInventory = { ...state, products: [] };
+  assert.deepEqual(parsePoolState(emptyInventory), emptyInventory);
+  assert.deepEqual(
+    parseBackup(JSON.stringify(createBackup(emptyInventory))),
+    emptyInventory,
+  );
+
   const invalidStock = structuredClone(backup);
   invalidStock.data.products[0].stock = -1;
   assert.equal(parseBackup(JSON.stringify(invalidStock)), null);

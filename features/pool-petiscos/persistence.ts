@@ -175,7 +175,7 @@ export function parsePoolState(value: unknown): PersistedPoolState | null {
   const cashMovements = parseList(value.cashMovements, parseCashMovement);
   const cashClosures = parseList(value.cashClosures, parseCashClosure);
   if (
-    !products?.length ||
+    products === null ||
     sales === null ||
     expenses === null ||
     typeof value.cashOpen !== "boolean" ||

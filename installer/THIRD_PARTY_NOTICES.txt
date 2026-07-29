@@ -1,0 +1,31 @@
+POOL PETISCOS - AVISOS DE COMPONENTES DE TERCEIROS
+==================================================
+
+Este produto redistribui componentes de terceiros. Os avisos abaixo não
+substituem os textos integrais das licenças incluídos na pasta "licenses" da
+instalação.
+
+Node.js
+-------
+Projeto: https://nodejs.org/
+Código-fonte: https://github.com/nodejs/node
+Licença principal: MIT. O pacote do Node.js também contém componentes sob
+outras licenças permissivas; consulte NODE-LICENSE.txt.
+
+yt-dlp
+------
+Projeto e código-fonte: https://github.com/yt-dlp/yt-dlp
+Licença: The Unlicense. Consulte YT-DLP-LICENSE.txt.
+
+FFmpeg (build do projeto yt-dlp/FFmpeg-Builds)
+----------------------------------------------
+Build: https://github.com/yt-dlp/FFmpeg-Builds
+Código-fonte e scripts do build: https://github.com/yt-dlp/FFmpeg-Builds
+Código-fonte do FFmpeg: https://ffmpeg.org/download.html
+Licença do build incluído: GPL, versão 3 ou posterior. Consulte os arquivos
+FFMPEG-* na pasta "licenses".
+
+O FFmpeg é um projeto independente e não endossa este aplicativo. Antes de
+distribuir o instalador a terceiros, o responsável pela distribuição deve
+revisar as obrigações da GPL, manter os avisos e disponibilizar o código-fonte
+correspondente e os scripts de build exigidos pela licença.

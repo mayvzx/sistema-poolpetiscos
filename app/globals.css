@@ -3,6 +3,8 @@
 :root {
   --background: #f7f5f2;
   --foreground: #24201f;
+  --pool-red: #d9202c;
+  --pool-ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 * {
@@ -11,21 +13,103 @@
 
 html {
   background: var(--background);
+  font-size: 17px;
+  scroll-behavior: smooth;
 }
 
 body {
   margin: 0;
   background: var(--background);
   color: var(--foreground);
+  font-size: 1rem;
+  line-height: 1.55;
   font-family:
-    "Segoe UI", Inter, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    "Trebuchet MS", Aptos, "Segoe UI", system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/*
+ * O caixa é operado à distância de um braço, muitas vezes com movimento ao
+ * redor. Estes limites substituem os microtextos do protótipo sem aumentar
+ * títulos e valores que já possuem hierarquia própria.
+ */
+.text-\[7px\],
+.text-\[8px\] {
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.text-\[9px\] {
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+}
+
+.text-\[10px\] {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+.text-\[11px\] {
+  font-size: 0.9375rem;
+  line-height: 1.35rem;
+}
+
+.text-\[12px\] {
+  font-size: 0.9375rem;
+  line-height: 1.35rem;
+}
+
+.text-\[13px\] {
+  font-size: 1rem;
+  line-height: 1.5rem;
+}
+
+.text-xs {
+  font-size: 0.9rem;
+  line-height: 1.35rem;
+}
+
+.text-sm {
+  font-size: 1rem;
+  line-height: 1.55rem;
+}
+
+/*
+ * O protótipo original usava muitos rótulos entre 7 px e 12 px. No balcão,
+ * esses tamanhos não resistem à distância, ao brilho da tela nem à pressa.
+ * Mantemos a hierarquia visual, mas estabelecemos um piso legível dentro do
+ * caixa sem afetar a tela técnica de preparação.
+ */
+.pool-app [class~="text-[7px]"],
+.pool-app [class~="text-[8px]"] {
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.pool-app [class~="text-[9px]"],
+.pool-app [class~="text-[10px]"] {
+  font-size: 0.8125rem;
+  line-height: 1.15rem;
+}
+
+.pool-app [class~="text-[11px]"],
+.pool-app [class~="text-[12px]"] {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
 }
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
+}
+
+input,
+select,
+textarea {
+  font-size: max(1rem, 16px);
 }
 
 button,
@@ -34,13 +118,93 @@ label {
   -webkit-tap-highlight-color: transparent;
 }
 
+button {
+  transition:
+    transform 150ms var(--pool-ease),
+    box-shadow 180ms var(--pool-ease),
+    background-color 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease,
+    opacity 180ms ease;
+}
+
+button:not(:disabled):active {
+  transform: translateY(1px) scale(0.985);
+}
+
 button:focus-visible,
 a:focus-visible,
 input:focus-visible,
-select:focus-visible {
+select:focus-visible,
+textarea:focus-visible {
   outline: 3px solid #d9202c;
   outline-offset: 2px;
   box-shadow: 0 0 0 5px rgba(255, 255, 255, 0.95);
+}
+
+table th {
+  font-size: 0.9rem;
+  letter-spacing: 0.035em;
+}
+
+table td {
+  font-size: 1rem;
+}
+
+@keyframes pool-view-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pool-dialog-enter {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes pool-emphasis-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(217, 32, 44, 0);
+  }
+  45% {
+    box-shadow: 0 0 0 7px rgba(217, 32, 44, 0.1);
+  }
+}
+
+.pool-view-enter {
+  animation: pool-view-enter 380ms var(--pool-ease) both;
+}
+
+[role="dialog"] {
+  animation: pool-dialog-enter 260ms var(--pool-ease) both;
+}
+
+.pool-emphasis {
+  animation: pool-emphasis-pulse 650ms var(--pool-ease) 1;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  button:not(:disabled):hover {
+    transform: translateY(-1px);
+  }
+}
+
+@media (max-width: 900px) {
+  html {
+    font-size: 16px;
+  }
 }
 
 .no-scrollbar {
@@ -81,6 +245,8 @@ select:focus-visible {
   *::before,
   *::after {
     scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
 }
