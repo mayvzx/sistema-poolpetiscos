@@ -19,6 +19,7 @@ DATABASE_FILENAME = "pool-petiscos.db"
 READABLE_VIEWS = {
     "produtos": "vw_produtos",
     "vendas": "vw_vendas",
+    "comandas": "vw_comandas",
     "itens-venda": "vw_itens_venda",
     "despesas": "vw_despesas",
     "movimentos-caixa": "vw_movimentos_caixa",

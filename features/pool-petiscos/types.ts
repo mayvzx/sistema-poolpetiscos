@@ -1,4 +1,10 @@
-export type View = "inicio" | "venda" | "estoque" | "financeiro" | "musica";
+export type View =
+  | "inicio"
+  | "venda"
+  | "comandas"
+  | "estoque"
+  | "financeiro"
+  | "musica";
 
 export type PaymentMethod = "Pix" | "Dinheiro" | "Cartão";
 
@@ -32,12 +38,21 @@ export type SaleItem = {
   quantity: number;
 };
 
+export type OrderStatus =
+  | "aguardando"
+  | "em-preparo"
+  | "pronto"
+  | "entregue";
+
 export type Sale = {
   id: string;
   timestamp: number;
   total: number;
   payment: PaymentMethod;
   items: SaleItem[];
+  customerName: string;
+  orderStatus: OrderStatus;
+  statusUpdatedAt: number;
 };
 
 export type Expense = {

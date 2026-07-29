@@ -5,7 +5,7 @@
   #error AppOutput não foi informado.
 #endif
 #ifndef AppVersion
-  #define AppVersion "1.1.1"
+  #define AppVersion "1.2.0"
 #endif
 #ifndef AppIcon
   #error AppIcon não foi informado.
@@ -29,7 +29,7 @@ SetupLogging=yes
 CloseApplications=force
 RestartApplications=no
 AppMutex=Local\PoolPetiscosLauncher
-UninstallDisplayIcon={app}\PoolPetiscos.exe
+UninstallDisplayIcon={app}\PoolPetiscos-{#AppVersion}.ico
 SetupIconFile={#AppIcon}
 VersionInfoVersion={#AppVersion}
 VersionInfoCompany=Pool Petiscos & Lanches
@@ -52,13 +52,14 @@ Name: "startup"; Description: "Iniciar o Pool Petiscos automaticamente com o Win
 
 [Files]
 Source: "{#AppStage}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#AppIcon}"; DestDir: "{app}"; DestName: "PoolPetiscos-{#AppVersion}.ico"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\Pool Petiscos"; Filename: "{app}\PoolPetiscos.exe"; IconFilename: "{app}\PoolPetiscos.exe"
-Name: "{group}\Dados e backups"; Filename: "{app}\PoolPetiscos.exe"; Parameters: "--open-data-folder"; IconFilename: "{app}\PoolPetiscos.exe"
+Name: "{group}\Pool Petiscos"; Filename: "{app}\PoolPetiscos.exe"; IconFilename: "{app}\PoolPetiscos-{#AppVersion}.ico"; IconIndex: 0
+Name: "{group}\Dados e backups"; Filename: "{app}\PoolPetiscos.exe"; Parameters: "--open-data-folder"; IconFilename: "{app}\PoolPetiscos-{#AppVersion}.ico"; IconIndex: 0
 Name: "{group}\Manual do sistema"; Filename: "{app}\manual\MANUAL-DO-OPERADOR.txt"
-Name: "{group}\Encerrar Pool Petiscos"; Filename: "{app}\PoolPetiscos.exe"; Parameters: "--shutdown"; IconFilename: "{app}\PoolPetiscos.exe"
-Name: "{autodesktop}\Pool Petiscos"; Filename: "{app}\PoolPetiscos.exe"; IconFilename: "{app}\PoolPetiscos.exe"; Tasks: desktopicon
+Name: "{group}\Encerrar Pool Petiscos"; Filename: "{app}\PoolPetiscos.exe"; Parameters: "--shutdown"; IconFilename: "{app}\PoolPetiscos-{#AppVersion}.ico"; IconIndex: 0
+Name: "{autodesktop}\Pool Petiscos"; Filename: "{app}\PoolPetiscos.exe"; IconFilename: "{app}\PoolPetiscos-{#AppVersion}.ico"; IconIndex: 0; Tasks: desktopicon
 
 [Registry]
 ; HKCU\Run é mais confiável que um atalho na pasta Startup. O modo --startup

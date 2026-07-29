@@ -27,6 +27,7 @@ ONEDRIVE_ENVIRONMENT_KEYS = (
 READABLE_VIEW_NAMES = (
     "vw_produtos",
     "vw_vendas",
+    "vw_comandas",
     "vw_itens_venda",
     "vw_despesas",
     "vw_movimentos_caixa",
@@ -222,6 +223,58 @@ class StateStorage:
                     'unixepoch',
                     'localtime'
                 ) AS data_hora,
+                CAST(json_extract(sale.value, '$.total') AS REAL) AS total,
+                json_extract(sale.value, '$.payment') AS forma_pagamento,
+                (
+                    SELECT COALESCE(
+                        SUM(
+                            CAST(
+                                json_extract(item.value, '$.quantity')
+                                AS INTEGER
+                            )
+                        ),
+                        0
+                    )
+                    FROM json_each(
+                        json_extract(sale.value, '$.items')
+                    ) AS item
+                ) AS quantidade_itens
+            FROM app_state
+            JOIN json_each(
+                COALESCE(app_state.state_json, '{}'),
+                '$.sales'
+            ) AS sale
+            WHERE app_state.id = 1;
+
+            CREATE VIEW vw_comandas AS
+            SELECT
+                json_extract(sale.value, '$.id') AS venda_id,
+                COALESCE(
+                    NULLIF(
+                        TRIM(json_extract(sale.value, '$.customerName')),
+                        ''
+                    ),
+                    'Cliente sem nome'
+                ) AS cliente,
+                COALESCE(
+                    json_extract(sale.value, '$.orderStatus'),
+                    'entregue'
+                ) AS situacao,
+                CAST(json_extract(sale.value, '$.timestamp') AS INTEGER)
+                    AS recebido_em_ms,
+                datetime(
+                    CAST(json_extract(sale.value, '$.timestamp') AS INTEGER)
+                        / 1000,
+                    'unixepoch',
+                    'localtime'
+                ) AS recebido_em,
+                CAST(
+                    COALESCE(
+                        json_extract(sale.value, '$.statusUpdatedAt'),
+                        json_extract(sale.value, '$.timestamp')
+                    )
+                    AS INTEGER
+                ) AS situacao_atualizada_em_ms,
                 CAST(json_extract(sale.value, '$.total') AS REAL) AS total,
                 json_extract(sale.value, '$.payment') AS forma_pagamento,
                 (

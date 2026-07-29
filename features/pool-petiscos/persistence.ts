@@ -2,6 +2,7 @@ import type {
   CashClosure,
   CashMovement,
   Expense,
+  OrderStatus,
   PaymentMethod,
   PersistedPoolState,
   PoolBackup,
@@ -16,6 +17,12 @@ export const STORAGE_KEY = "pool-caixa-prototype-v3-requisitos-confirmados";
 export const BACKUP_VERSION = 1;
 
 const PAYMENT_METHODS = new Set<PaymentMethod>(["Pix", "Dinheiro", "Cartão"]);
+const ORDER_STATUSES = new Set<OrderStatus>([
+  "aguardando",
+  "em-preparo",
+  "pronto",
+  "entregue",
+]);
 const PRODUCT_CATEGORIES = new Set<ProductCategory>([
   "Hambúrgueres",
   "Salgados",
@@ -106,7 +113,30 @@ function parseSale(value: unknown): Sale | null {
     ),
   );
   if (Math.abs(itemTotal - roundMoney(value.total)) > 0.005) return null;
-  return { ...(value as Sale), total: itemTotal, items: items as SaleItem[] };
+  const customerName = isNonEmptyString(value.customerName)
+    ? value.customerName.trim()
+    : "Cliente sem nome";
+  const orderStatus =
+    typeof value.orderStatus === "string" &&
+    ORDER_STATUSES.has(value.orderStatus as OrderStatus)
+      ? (value.orderStatus as OrderStatus)
+      : "entregue";
+  const statusUpdatedAt =
+    value.statusUpdatedAt === undefined
+      ? value.timestamp
+      : isTimestamp(value.statusUpdatedAt) &&
+          value.statusUpdatedAt >= value.timestamp
+        ? value.statusUpdatedAt
+        : null;
+  if (statusUpdatedAt === null) return null;
+  return {
+    ...(value as Sale),
+    total: itemTotal,
+    items: items as SaleItem[],
+    customerName,
+    orderStatus,
+    statusUpdatedAt,
+  };
 }
 
 function parseExpense(value: unknown): Expense | null {

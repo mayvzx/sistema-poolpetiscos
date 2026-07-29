@@ -296,6 +296,9 @@ class StateStorageTest(unittest.TestCase):
                             "timestamp": 1_700_000_000_000,
                             "total": 37,
                             "payment": "Pix",
+                            "customerName": "Ana",
+                            "orderStatus": "em-preparo",
+                            "statusUpdatedAt": 1_700_000_300_000,
                             "items": [
                                 {
                                     "productId": "P1",
@@ -334,6 +337,13 @@ class StateStorageTest(unittest.TestCase):
                         "FROM vw_vendas"
                     ).fetchone(),
                     ("Pix", 2),
+                )
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT cliente, situacao, quantidade_itens "
+                        "FROM vw_comandas"
+                    ).fetchone(),
+                    ("Ana", "em-preparo", 2),
                 )
                 self.assertEqual(
                     connection.execute(

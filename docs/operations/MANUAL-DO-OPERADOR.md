@@ -13,13 +13,27 @@ automaticamente quando essa opção permanece marcada no instalador.
 
 1. Abra **Nova venda**.
 2. Escolha os produtos e confira as quantidades.
-3. Selecione Pix, dinheiro ou cartão.
-4. Em dinheiro, informe o valor recebido e confira o **Troco**.
-5. Confirme a venda.
+3. Informe o nome da pessoa que fez o pedido.
+4. Selecione Pix, dinheiro ou cartão.
+5. Em dinheiro, informe o valor recebido e confira o **Troco**.
+6. Selecione **Finalizar e criar comanda**.
 
 Pix e cartão são registrados como forma de pagamento, mas ainda precisam ser
 confirmados na maquininha. O sistema não deve considerar uma transação aprovada
 automaticamente até a integração com o provedor ser contratada e homologada.
+
+## Acompanhar as comandas
+
+1. Abra **Comandas** no menu principal.
+2. As novas vendas aparecem em **Aguardando**, na ordem em que chegaram.
+3. Ao começar o lanche, selecione **Iniciar preparo**.
+4. Ao terminar, selecione **Marcar como pronto**.
+5. Depois de entregar ao cliente, selecione **Marcar como entregue**.
+
+As comandas entregues saem da fila principal, mas continuam disponíveis na aba
+**Concluídas**. Se uma etapa for marcada por engano, use **Voltar** ou
+**Reabrir**. A situação da comanda não altera novamente o estoque nem o valor
+registrado no financeiro.
 
 ## Cuidar do estoque
 

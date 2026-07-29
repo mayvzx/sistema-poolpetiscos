@@ -4,7 +4,7 @@ import "./globals.css";
 
 const title = "Pool Petiscos & Lanches | Caixa, estoque e financeiro";
 const description =
-  "Gestão de vendas, estoque, caixa, finanças e música ambiente da Pool Petiscos & Lanches.";
+  "Gestão de comandas, vendas, estoque, caixa, finanças e música ambiente da Pool Petiscos & Lanches.";
 const productionOrigin = "https://pool-petiscos-caixa.mayrom.chatgpt.site";
 
 export async function generateMetadata(): Promise<Metadata> {
