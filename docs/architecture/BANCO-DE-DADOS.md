@@ -33,6 +33,7 @@ botão **Baixar banco completo** gera o SQLite voltado à auditoria técnica.
 | --- | --- |
 | `vw_produtos` | nome, categoria, preço e estoque |
 | `vw_vendas` | data, total, forma de pagamento e quantidade de itens |
+| `vw_comandas` | cliente, situação do preparo, horários e pagamento |
 | `vw_itens_venda` | itens e valores de cada venda |
 | `vw_despesas` | despesas registradas |
 | `vw_movimentos_caixa` | sangrias e suprimentos |
@@ -49,6 +50,7 @@ Na raiz do projeto:
 npm run database:inspect
 npm run database:inspect -- --view produtos
 npm run database:inspect -- --view vendas --limit 50
+npm run database:inspect -- --view comandas --limit 50
 ```
 
 O script abre o arquivo em modo somente leitura. Para inspecionar uma cópia em

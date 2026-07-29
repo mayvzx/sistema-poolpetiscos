@@ -81,6 +81,15 @@ import {
   STORAGE_KEY,
 } from "./persistence";
 import {
+  formatOrderWait,
+  isActiveOrder,
+  nextOrderStatus,
+  ORDER_STATUS_LABELS,
+  previousOrderStatus,
+  sortOrdersNewestFirst,
+  sortOrdersOldestFirst,
+} from "./orders";
+import {
   downloadLocalDatabase,
   loadLocalPoolState,
   LocalStateConflictError,
@@ -116,6 +125,7 @@ import type {
   CashClosure,
   CashMovement,
   Expense,
+  OrderStatus,
   PaymentMethod,
   PersistedPoolState,
   Product,
@@ -126,6 +136,55 @@ import type {
   Transaction,
   View,
 } from "./types";
+
+const ORDER_STAGE_CONFIG = {
+  aguardando: {
+    label: "Aguardando",
+    helper: "Pedidos recebidos, por ordem de chegada.",
+    empty: "Nenhuma comanda esperando.",
+    badge: "border-[#efd38c] bg-[#fff8de] text-[#8d6100]",
+    accent: "border-t-[#dc9b19]",
+    action: "Iniciar preparo",
+  },
+  "em-preparo": {
+    label: "Em preparo",
+    helper: "Lanches que estão sendo preparados agora.",
+    empty: "Nenhum pedido em preparo.",
+    badge: "border-[#f1b7bc] bg-[#fff0f1] text-[#b41622]",
+    accent: "border-t-[#d9202c]",
+    action: "Marcar como pronto",
+  },
+  pronto: {
+    label: "Pronto",
+    helper: "Pedidos finalizados, aguardando a entrega.",
+    empty: "Nenhum pedido pronto para entregar.",
+    badge: "border-[#a9d9c2] bg-[#eaf8f1] text-[#23734f]",
+    accent: "border-t-[#27865d]",
+    action: "Marcar como entregue",
+  },
+  entregue: {
+    label: "Entregue",
+    helper: "Comandas concluídas e guardadas no histórico.",
+    empty: "Nenhuma comanda concluída.",
+    badge: "border-[#d9d2ce] bg-[#f7f5f2] text-[#5f5753]",
+    accent: "border-t-[#776f6b]",
+    action: "",
+  },
+} satisfies Record<
+  OrderStatus,
+  {
+    label: string;
+    helper: string;
+    empty: string;
+    badge: string;
+    accent: string;
+    action: string;
+  }
+>;
+
+const ACTIVE_ORDER_COLUMNS: Array<
+  Extract<OrderStatus, "aguardando" | "em-preparo" | "pronto">
+> = ["aguardando", "em-preparo", "pronto"];
 
 export default function PoolPetiscosApp() {
   const [activeView, setActiveView] = useState<View>("inicio");
@@ -142,8 +201,12 @@ export default function PoolPetiscosApp() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [saleSearch, setSaleSearch] = useState("");
   const [category, setCategory] = useState<(typeof categories)[number]>("Todos");
+  const [customerName, setCustomerName] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("Pix");
   const [cashReceived, setCashReceived] = useState("");
+  const [ordersMode, setOrdersMode] = useState<"andamento" | "historico">(
+    "andamento",
+  );
   const [stockSearch, setStockSearch] = useState("");
   const [stockFilter, setStockFilter] = useState<"Todos" | "Baixo" | "Normal">(
     "Todos",
@@ -318,6 +381,7 @@ export default function PoolPetiscosApp() {
     setCashMovements(state.cashMovements);
     setCashClosures(state.cashClosures);
     setCart([]);
+    setCustomerName("");
     setCashReceived("");
   }, []);
 
@@ -904,6 +968,29 @@ export default function PoolPetiscosApp() {
         : [],
     [sales, todayKey],
   );
+  const activeOrders = useMemo(
+    () => sortOrdersOldestFirst(sales.filter(isActiveOrder)),
+    [sales],
+  );
+  const completedOrders = useMemo(
+    () =>
+      sortOrdersNewestFirst(
+        sales.filter((sale) => sale.orderStatus === "entregue"),
+      ),
+    [sales],
+  );
+  const ordersByStatus = useMemo(
+    () => ({
+      aguardando: activeOrders.filter(
+        (sale) => sale.orderStatus === "aguardando",
+      ),
+      "em-preparo": activeOrders.filter(
+        (sale) => sale.orderStatus === "em-preparo",
+      ),
+      pronto: activeOrders.filter((sale) => sale.orderStatus === "pronto"),
+    }),
+    [activeOrders],
+  );
   const todayExpenses = useMemo(
     () =>
       todayKey
@@ -1215,6 +1302,11 @@ export default function PoolPetiscosApp() {
       showToast("Adicione pelo menos um produto ao pedido.", "warning");
       return;
     }
+    const orderCustomerName = customerName.trim();
+    if (!orderCustomerName) {
+      showToast("Informe o nome da pessoa para criar a comanda.", "warning");
+      return;
+    }
     const unavailableItem = cartDetails.find(
       (item) => item.quantity > item.product.stock,
     );
@@ -1247,6 +1339,9 @@ export default function PoolPetiscosApp() {
       total: cartTotal,
       payment: paymentMethod,
       items,
+      customerName: orderCustomerName,
+      orderStatus: "aguardando",
+      statusUpdatedAt: timestamp,
     };
     setProducts((current) =>
       current.map((product) => {
@@ -1258,8 +1353,135 @@ export default function PoolPetiscosApp() {
     );
     setSales((current) => [sale, ...current]);
     setCart([]);
+    setCustomerName("");
     setCashReceived("");
-    showToast(`Venda ${sale.id} finalizada e estoque atualizado.`);
+    setOrdersMode("andamento");
+    navigateTo("comandas");
+    showToast(
+      `Comanda de ${sale.customerName} adicionada em Aguardando.`,
+    );
+  }
+
+  function setOrderStatus(sale: Sale, status: OrderStatus) {
+    const updatedAt = Date.now();
+    setSales((current) =>
+      current.map((candidate) =>
+        candidate.id === sale.id
+          ? { ...candidate, orderStatus: status, statusUpdatedAt: updatedAt }
+          : candidate,
+      ),
+    );
+    showToast(
+      status === "entregue"
+        ? `Comanda de ${sale.customerName} concluída e guardada no histórico.`
+        : `${sale.customerName}: ${ORDER_STATUS_LABELS[status]}.`,
+    );
+  }
+
+  function advanceOrder(sale: Sale) {
+    const nextStatus = nextOrderStatus(sale.orderStatus);
+    if (nextStatus) setOrderStatus(sale, nextStatus);
+  }
+
+  function rewindOrder(sale: Sale) {
+    const previousStatus = previousOrderStatus(sale.orderStatus);
+    if (previousStatus) setOrderStatus(sale, previousStatus);
+  }
+
+  function renderOrderCard(sale: Sale) {
+    const stage = ORDER_STAGE_CONFIG[sale.orderStatus];
+    const nextStatus = nextOrderStatus(sale.orderStatus);
+    const previousStatus = previousOrderStatus(sale.orderStatus);
+    const itemCount = sale.items.reduce(
+      (total, item) => total + item.quantity,
+      0,
+    );
+    return (
+      <article
+        key={sale.id}
+        data-testid={`order-${sale.id}`}
+        className={`pool-card-enter overflow-hidden rounded-2xl border border-[#e5deda] border-t-4 bg-white shadow-[0_10px_28px_rgba(66,45,37,.07)] ${stage.accent}`}
+      >
+        <div className="p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <span className="block text-xs font-extrabold uppercase tracking-[.08em] text-[#9c928d]">
+                {sale.id}
+              </span>
+              <h3 className="mt-1 truncate text-xl font-black tracking-[-.03em] text-[#24201f]">
+                {sale.customerName}
+              </h3>
+            </div>
+            <span
+              className={`shrink-0 rounded-full border px-3 py-2 text-xs font-extrabold ${stage.badge}`}
+            >
+              {stage.label}
+            </span>
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm font-semibold text-[#6d6561]">
+            <span className="flex items-center gap-1.5">
+              <Clock3 size={16} className="text-[#d9202c]" />
+              {formatTime(sale.timestamp)}
+            </span>
+            <span>
+              {formatOrderWait(
+                sale.timestamp,
+                now?.getTime() ?? sale.timestamp,
+              )}
+            </span>
+          </div>
+
+          <div className="mt-4 space-y-2 rounded-xl bg-[#faf8f6] p-3">
+            {sale.items.map((item) => (
+              <div
+                key={`${sale.id}-${item.productId}`}
+                className="flex items-start gap-2 text-sm"
+              >
+                <strong className="min-w-7 text-[#d9202c]">
+                  {item.quantity}×
+                </strong>
+                <span className="font-semibold leading-5 text-[#4f4743]">
+                  {item.name}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-3 flex items-center justify-between gap-3 text-sm">
+            <span className="font-semibold text-[#776f6b]">
+              {itemCount} item(ns) • Pagamento: {sale.payment}
+            </span>
+            <strong className="text-base">{currency.format(sale.total)}</strong>
+          </div>
+        </div>
+
+        <div className="flex gap-2 border-t border-[#eee8e4] bg-[#fcfaf8] p-3">
+          {previousStatus && (
+            <button
+              type="button"
+              onClick={() => rewindOrder(sale)}
+              className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-[#ded7d2] bg-white px-3 text-sm font-extrabold text-[#5f5753] transition hover:border-[#b9aca5]"
+              aria-label={`Voltar a comanda de ${sale.customerName} para ${ORDER_STATUS_LABELS[previousStatus]}`}
+            >
+              <RotateCcw size={17} />
+              {sale.orderStatus === "entregue" ? "Reabrir" : "Voltar"}
+            </button>
+          )}
+          {nextStatus && (
+            <button
+              type="button"
+              onClick={() => advanceOrder(sale)}
+              className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-[#d9202c] px-4 text-sm font-extrabold text-white shadow-[0_9px_20px_rgba(217,32,44,.18)] transition hover:bg-[#b41622]"
+              aria-label={`${stage.action}: comanda de ${sale.customerName}`}
+            >
+              {stage.action}
+              <ChevronRight size={18} />
+            </button>
+          )}
+        </div>
+      </article>
+    );
   }
 
   function openProductModal(product?: Product) {
@@ -1882,6 +2104,11 @@ export default function PoolPetiscosApp() {
               >
                 <Icon size={19} strokeWidth={2.1} />
                 <span className="flex-1">{item.label}</span>
+                {item.id === "comandas" && activeOrders.length > 0 && (
+                  <span className="grid min-h-6 min-w-6 place-items-center rounded-full bg-white px-1.5 text-xs font-black text-[#d9202c]">
+                    {activeOrders.length}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -2068,10 +2295,13 @@ export default function PoolPetiscosApp() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => navigateTo("estoque")}
-                    className="min-h-11 rounded-xl border border-[#ebe5e1] bg-white px-4 text-xs font-bold transition hover:border-[#d9cfca]"
+                    onClick={() => navigateTo("comandas")}
+                    className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[#ebe5e1] bg-white px-4 text-xs font-bold transition hover:border-[#d9202c] hover:text-[#d9202c]"
                   >
-                    Conferir estoque
+                    <ReceiptText size={17} />
+                    {activeOrders.length > 0
+                      ? `${activeOrders.length} comanda(s) na fila`
+                      : "Ver comandas"}
                   </button>
                 </div>
               </div>
@@ -2521,6 +2751,23 @@ export default function PoolPetiscosApp() {
                 </div>
 
                 <div className="mt-4 border-t border-[#ebe5e1] pt-4">
+                  <label className="mb-4 block">
+                    <span className="mb-1.5 flex items-center gap-2 text-sm font-extrabold text-[#4f4743]">
+                      <UserRound size={17} className="text-[#d9202c]" />
+                      Nome na comanda
+                    </span>
+                    <input
+                      value={customerName}
+                      onChange={(event) => setCustomerName(event.target.value)}
+                      autoComplete="off"
+                      maxLength={60}
+                      placeholder="Ex.: João"
+                      className="h-12 w-full rounded-xl border border-[#ded7d2] bg-white px-4 text-base font-bold outline-none transition focus:border-[#d9202c] focus:ring-4 focus:ring-[#d9202c]/10"
+                    />
+                    <span className="mt-1.5 block text-xs leading-5 text-[#776f6b]">
+                      Esse nome aparecerá na fila de preparo.
+                    </span>
+                  </label>
                   <span className="text-[9px] font-extrabold uppercase tracking-[.13em] text-[#9c928d]">
                     Forma de pagamento
                   </span>
@@ -2609,11 +2856,190 @@ export default function PoolPetiscosApp() {
                     className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#d9202c] px-4 text-xs font-extrabold text-white shadow-[0_10px_22px_rgba(217,32,44,.22)] transition hover:bg-[#b41622] disabled:cursor-not-allowed disabled:bg-[#d8cfcb] disabled:shadow-none"
                   >
                     <Check size={18} />
-                    Finalizar venda
+                    Finalizar e criar comanda
                   </button>
                 </div>
               </aside>
             </div>
+          </div>
+        )}
+
+        {activeView === "comandas" && (
+          <div className="pool-view-enter mx-auto w-full max-w-[1560px] p-4 sm:p-6 lg:p-9">
+            <div className="mb-5 flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
+              <div>
+                <span className="text-xs font-extrabold uppercase tracking-[.13em] text-[#d9202c]">
+                  Fila de pedidos da Pool
+                </span>
+                <h1 className="mt-1 text-3xl font-black tracking-[-.04em] sm:text-4xl">
+                  Comandas
+                </h1>
+                <p className="mt-2 max-w-2xl text-base leading-6 text-[#6d6561]">
+                  Veja quem chegou primeiro e avance cada pedido com um toque.
+                  Nada desaparece: as comandas entregues ficam no histórico.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => navigateTo("venda")}
+                className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#d9202c] px-5 text-sm font-extrabold text-white shadow-[0_10px_24px_rgba(217,32,44,.2)] transition hover:bg-[#b41622]"
+              >
+                <Plus size={19} />
+                Nova venda
+              </button>
+            </div>
+
+            <section
+              className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
+              aria-label="Resumo das comandas"
+            >
+              {[
+                {
+                  label: "Aguardando",
+                  value: ordersByStatus.aguardando.length,
+                  tone: "border-[#efd38c] bg-[#fff8de] text-[#8d6100]",
+                },
+                {
+                  label: "Em preparo",
+                  value: ordersByStatus["em-preparo"].length,
+                  tone: "border-[#f1b7bc] bg-[#fff0f1] text-[#b41622]",
+                },
+                {
+                  label: "Prontas",
+                  value: ordersByStatus.pronto.length,
+                  tone: "border-[#a9d9c2] bg-[#eaf8f1] text-[#23734f]",
+                },
+                {
+                  label: "Em andamento",
+                  value: activeOrders.length,
+                  tone: "border-[#d9d2ce] bg-white text-[#302b29]",
+                },
+              ].map((summary) => (
+                <article
+                  key={summary.label}
+                  className={`flex items-center justify-between rounded-2xl border p-4 shadow-sm ${summary.tone}`}
+                >
+                  <strong className="text-sm">{summary.label}</strong>
+                  <span className="text-3xl font-black tabular-nums">
+                    {summary.value}
+                  </span>
+                </article>
+              ))}
+            </section>
+
+            <div className="mb-5 flex w-full rounded-2xl border border-[#e5deda] bg-white p-1.5 shadow-sm sm:w-fit">
+              <button
+                type="button"
+                onClick={() => setOrdersMode("andamento")}
+                aria-pressed={ordersMode === "andamento"}
+                className={`min-h-12 flex-1 rounded-xl px-5 text-sm font-extrabold transition sm:flex-none ${
+                  ordersMode === "andamento"
+                    ? "bg-[#302b29] text-white"
+                    : "text-[#6d6561] hover:bg-[#f7f5f2]"
+                }`}
+              >
+                Em andamento ({activeOrders.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setOrdersMode("historico")}
+                aria-pressed={ordersMode === "historico"}
+                className={`min-h-12 flex-1 rounded-xl px-5 text-sm font-extrabold transition sm:flex-none ${
+                  ordersMode === "historico"
+                    ? "bg-[#302b29] text-white"
+                    : "text-[#6d6561] hover:bg-[#f7f5f2]"
+                }`}
+              >
+                Concluídas ({completedOrders.length})
+              </button>
+            </div>
+
+            {ordersMode === "andamento" ? (
+              activeOrders.length > 0 ? (
+                <div className="grid items-start gap-4 xl:grid-cols-3">
+                  {ACTIVE_ORDER_COLUMNS.map((status) => {
+                    const stage = ORDER_STAGE_CONFIG[status];
+                    const stageOrders = ordersByStatus[status];
+                    return (
+                      <section
+                        key={status}
+                        aria-labelledby={`orders-${status}`}
+                        className="overflow-hidden rounded-[22px] border border-[#e5deda] bg-[#f4f1ee] shadow-[0_12px_34px_rgba(66,45,37,.05)]"
+                      >
+                        <header className="border-b border-[#e5deda] bg-white p-4">
+                          <div className="flex items-center justify-between gap-3">
+                            <h2
+                              id={`orders-${status}`}
+                              className="text-xl font-black tracking-[-.03em]"
+                            >
+                              {stage.label}
+                            </h2>
+                            <span
+                              className={`grid min-h-9 min-w-9 place-items-center rounded-full border px-2 text-base font-black ${stage.badge}`}
+                            >
+                              {stageOrders.length}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-sm leading-5 text-[#776f6b]">
+                            {stage.helper}
+                          </p>
+                        </header>
+                        <div className="space-y-3 p-3">
+                          {stageOrders.length > 0 ? (
+                            stageOrders.map(renderOrderCard)
+                          ) : (
+                            <div className="grid min-h-32 place-items-center rounded-2xl border border-dashed border-[#d9d2ce] bg-white/70 p-5 text-center">
+                              <div>
+                                <CheckCircle2
+                                  size={26}
+                                  className="mx-auto text-[#b9aca5]"
+                                />
+                                <strong className="mt-2 block text-sm">
+                                  {stage.empty}
+                                </strong>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </section>
+                    );
+                  })}
+                </div>
+              ) : (
+                <section className="grid min-h-[320px] place-items-center rounded-[24px] border border-dashed border-[#d9d2ce] bg-white p-6 text-center shadow-sm">
+                  <div className="max-w-md">
+                    <span className="mx-auto grid size-16 place-items-center rounded-2xl bg-[#eaf8f1] text-[#27865d]">
+                      <CheckCircle2 size={32} />
+                    </span>
+                    <h2 className="mt-4 text-2xl font-black">
+                      A fila está livre
+                    </h2>
+                    <p className="mt-2 text-base leading-6 text-[#776f6b]">
+                      Ao finalizar uma venda, a nova comanda aparecerá aqui
+                      automaticamente em Aguardando.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => navigateTo("venda")}
+                      className="mt-5 min-h-12 rounded-xl bg-[#d9202c] px-5 text-sm font-extrabold text-white"
+                    >
+                      Registrar uma venda
+                    </button>
+                  </div>
+                </section>
+              )
+            ) : completedOrders.length > 0 ? (
+              <section className="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {completedOrders.map(renderOrderCard)}
+              </section>
+            ) : (
+              <section className="rounded-[22px] border border-dashed border-[#d9d2ce] bg-white p-8 text-center">
+                <strong className="text-lg">Nenhuma comanda concluída.</strong>
+                <p className="mt-2 text-sm text-[#776f6b]">
+                  Quando um pedido for entregue, ele ficará guardado aqui.
+                </p>
+              </section>
+            )}
           </div>
         )}
 
@@ -3697,7 +4123,7 @@ export default function PoolPetiscosApp() {
       </main>
 
       <nav
-        className="fixed bottom-[max(.75rem,env(safe-area-inset-bottom))] left-3 right-3 z-40 grid grid-cols-5 rounded-2xl border border-white/10 bg-[#211e1d]/96 p-1.5 text-white shadow-2xl backdrop-blur-xl lg:hidden"
+        className="fixed bottom-[max(.75rem,env(safe-area-inset-bottom))] left-3 right-3 z-40 grid grid-cols-6 rounded-2xl border border-white/10 bg-[#211e1d]/96 p-1.5 text-white shadow-2xl backdrop-blur-xl lg:hidden"
         aria-label="Navegação móvel"
       >
         {navigation.map((item) => {
@@ -3709,12 +4135,17 @@ export default function PoolPetiscosApp() {
               type="button"
               onClick={() => navigateTo(item.id)}
               aria-current={active ? "page" : undefined}
-              className={`flex min-h-[50px] flex-col items-center justify-center gap-1 rounded-xl text-[7px] font-bold ${
+              className={`relative flex min-h-[50px] flex-col items-center justify-center gap-1 rounded-xl text-[7px] font-bold ${
                 active ? "bg-[#d9202c] text-white" : "text-white/45"
               }`}
             >
               <Icon size={18} />
               {item.id === "venda" ? "Venda" : item.label}
+              {item.id === "comandas" && activeOrders.length > 0 && (
+                <span className="absolute right-1 top-1 grid min-h-4 min-w-4 place-items-center rounded-full bg-white px-1 text-[9px] font-black text-[#d9202c]">
+                  {activeOrders.length}
+                </span>
+              )}
             </button>
           );
         })}

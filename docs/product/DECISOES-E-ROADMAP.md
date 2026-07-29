@@ -83,7 +83,7 @@ Não implementar com dados inventados:
 - fichas técnicas dos hambúrgueres e petiscos;
 - taxas das maquininhas;
 - fiado;
-- comandas, mesas, entrega e retirada;
+- mesas, entrega, retirada e regras de cancelamento;
 - permissões para desconto e cancelamento;
 - modelo de comprovante e impressora térmica;
 - relatórios prioritários;
@@ -100,6 +100,7 @@ Não implementar com dados inventados:
 - [x] Empacotar interface, serviço, Node.js, `yt-dlp` e FFmpeg em um instalador.
 - [x] Usar SQLite como armazenamento principal.
 - [x] Automatizar backup diário e testar a restauração.
+- [x] Persistir comandas e organizar a fila de preparo por etapa.
 - [ ] Assinar executável, instalador e desinstalador com certificado
       Authenticode emitido para o responsável pela distribuição.
 
@@ -125,7 +126,7 @@ Não implementar com dados inventados:
 ### 2. Protótipo aprovado
 
 - ajustar telas conforme a visita;
-- implementar comandas e cancelamentos;
+- validar a fila de comandas e implementar regras de cancelamento;
 - cadastrar receitas e ingredientes confirmados;
 - validar relatórios;
 - congelar o escopo da primeira versão.
@@ -157,4 +158,3 @@ sessão, sem depender apenas do relógio do computador.
 - pedidos automáticos pelo WhatsApp;
 - download de músicas sem autorização;
 - notícias ou preços externos sem fonte confiável e política de atualização.
-

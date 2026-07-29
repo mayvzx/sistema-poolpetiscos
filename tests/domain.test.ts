@@ -33,6 +33,9 @@ function validState(): PersistedPoolState {
         timestamp,
         total: 18,
         payment: "Dinheiro",
+        customerName: "Cliente teste",
+        orderStatus: "entregue",
+        statusUpdatedAt: timestamp,
         items: [
           {
             productId: "pastel",
@@ -134,4 +137,19 @@ test("valida estado e backup completos antes de restaurar", () => {
     parseBackup(JSON.stringify({ ...backup, app: "Outro sistema" })),
     null,
   );
+});
+
+test("migra vendas antigas para o histórico de comandas", () => {
+  const legacy = structuredClone(validState()) as unknown as {
+    sales: Array<Record<string, unknown>>;
+  };
+  delete legacy.sales[0].customerName;
+  delete legacy.sales[0].orderStatus;
+  delete legacy.sales[0].statusUpdatedAt;
+
+  const parsed = parsePoolState(legacy);
+  assert.ok(parsed);
+  assert.equal(parsed.sales[0].customerName, "Cliente sem nome");
+  assert.equal(parsed.sales[0].orderStatus, "entregue");
+  assert.equal(parsed.sales[0].statusUpdatedAt, parsed.sales[0].timestamp);
 });

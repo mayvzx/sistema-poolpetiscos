@@ -2,6 +2,27 @@
 
 Todas as mudanças relevantes do Pool Petiscos são registradas neste arquivo.
 
+## 1.2.0 — 2026-07-29
+
+### Adicionado
+
+- aba **Comandas** como fila digital de pedidos;
+- etapas **Aguardando**, **Em preparo**, **Pronto** e **Entregue**;
+- nome do cliente obrigatório ao finalizar a nova venda;
+- histórico de comandas concluídas com opção de reabertura;
+- consulta SQLite `vw_comandas` para auditoria.
+
+### Alterado
+
+- finalizar uma venda cria uma comanda em **Aguardando** e abre a fila;
+- comandas antigas são preservadas como concluídas durante a atualização;
+- o atalho do Windows aponta para um arquivo de ícone versionado.
+
+### Corrigido
+
+- ícone personalizado da Área de Trabalho deixa de depender do cache visual do
+  executável.
+
 ## 1.1.1 — 2026-07-28
 
 ### Adicionado

@@ -317,6 +317,9 @@ export function createDemoSales(): Sale[] {
       timestamp: now - 14 * 60_000,
       total: 29.98,
       payment: "Pix",
+      customerName: "Carlos",
+      orderStatus: "aguardando",
+      statusUpdatedAt: now - 14 * 60_000,
       items: [
         {
           productId: "xbacon-trad",
@@ -331,6 +334,9 @@ export function createDemoSales(): Sale[] {
       timestamp: now - 33 * 60_000,
       total: 31,
       payment: "Dinheiro",
+      customerName: "Ana",
+      orderStatus: "em-preparo",
+      statusUpdatedAt: now - 8 * 60_000,
       items: [
         {
           productId: "pastel",
@@ -357,6 +363,9 @@ export function createDemoSales(): Sale[] {
       timestamp: now - 57 * 60_000,
       total: 41,
       payment: "Cartão",
+      customerName: "Luiz",
+      orderStatus: "pronto",
+      statusUpdatedAt: now - 3 * 60_000,
       items: [
         {
           productId: "carne-fritas",
@@ -377,6 +386,9 @@ export function createDemoSales(): Sale[] {
       timestamp: now - 91 * 60_000,
       total: 24.99,
       payment: "Pix",
+      customerName: "Marina",
+      orderStatus: "entregue",
+      statusUpdatedAt: now - 62 * 60_000,
       items: [
         {
           productId: "xtudo-trad",
@@ -407,4 +419,3 @@ export function createDemoExpenses(): Expense[] {
     },
   ];
 }
-

@@ -70,6 +70,10 @@ O executável, o instalador e os atalhos usam
 `public/pool-logo-round.jpg`. O arquivo contém resoluções de 16 a 256 pixels e
 transparência para a barra de tarefas do Windows.
 
+O instalador também copia o `.ico` com o número da versão no nome e faz os
+atalhos apontarem diretamente para esse arquivo. Isso evita que o cache de
+ícones do Windows mantenha a imagem genérica de uma versão anterior.
+
 Somente quando a marca de origem mudar, instale o Pillow no ambiente de
 desenvolvimento e regenere o arquivo:
 
@@ -84,7 +88,7 @@ Use somente para validação interna:
 
 ```powershell
 .\scripts\build-windows-installer.ps1 `
-  -Version 1.1.1 `
+  -Version 1.2.0 `
   -UnsignedPrototype
 ```
 
@@ -92,7 +96,7 @@ O script exige a opção `-UnsignedPrototype`; ele não produz silenciosamente u
 executável que pareça assinado. A saída mostra um aviso claro e fica em:
 
 ```text
-build\windows\installer\PoolPetiscos-Setup-1.1.1.exe
+build\windows\installer\PoolPetiscos-Setup-1.2.0.exe
 ```
 
 Cache e stage são mantidos fora de pastas sincronizadas para evitar bloqueios
@@ -108,7 +112,7 @@ Para manter a árvore usada pelo Inno Setup e poder revisá-la:
 
 ```powershell
 .\scripts\build-windows-installer.ps1 `
-  -Version 1.1.1 `
+  -Version 1.2.0 `
   -UnsignedPrototype `
   -KeepStage
 ```
@@ -122,7 +126,7 @@ Exemplo com o repositório do usuário atual:
 
 ```powershell
 .\scripts\build-windows-installer.ps1 `
-  -Version 1.1.1 `
+  -Version 1.2.0 `
   -CertificateThumbprint '0123456789ABCDEF0123456789ABCDEF01234567' `
   -CertificateStoreLocation CurrentUser
 ```
@@ -131,7 +135,7 @@ Para um certificado instalado no repositório da máquina:
 
 ```powershell
 .\scripts\build-windows-installer.ps1 `
-  -Version 1.1.1 `
+  -Version 1.2.0 `
   -CertificateThumbprint '0123456789ABCDEF0123456789ABCDEF01234567' `
   -CertificateStoreLocation LocalMachine
 ```
@@ -156,7 +160,7 @@ Uma atualização é sempre explícita:
 
 ```powershell
 .\scripts\build-windows-installer.ps1 `
-  -Version 1.1.1 `
+  -Version 1.2.0 `
   -UnsignedPrototype `
   -RefreshDependencyLock
 ```

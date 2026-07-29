@@ -65,6 +65,9 @@ inteiro.
 - o instalador inclui as dependências de execução e preserva os dados ao
   atualizar;
 - os comandos de desenvolvimento funcionam no Windows.
+- comandas ficam persistidas em Aguardando, Em preparo, Pronto e Entregue;
+- vendas antigas entram no histórico sem reaparecer na fila de preparo;
+- atalhos do Windows apontam diretamente para o ícone versionado.
 
 ## Limites conhecidos
 
@@ -72,8 +75,6 @@ inteiro.
   pagamento;
 - operações ainda são associadas à abertura do caixa pelo horário, não por uma
   entidade imutável de sessão;
-- comandas em andamento ainda não são persistidas; somente vendas concluídas
-  entram no banco;
 - não há cancelamento, desconto, comandas por mesa, impressão fiscal ou níveis
   de permissão;
 - o nome “Elaine” representa a operadora validada para o protótipo; a versão

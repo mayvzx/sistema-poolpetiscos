@@ -1,4 +1,5 @@
 import {
+  ClipboardList,
   LayoutDashboard,
   Music2,
   Package,
@@ -27,6 +28,7 @@ export const productCategories = categories.slice(
 export const navigation = [
   { id: "inicio" as const, label: "Início", icon: LayoutDashboard },
   { id: "venda" as const, label: "Nova venda", icon: ShoppingCart },
+  { id: "comandas" as const, label: "Comandas", icon: ClipboardList },
   { id: "estoque" as const, label: "Estoque", icon: Package },
   { id: "financeiro" as const, label: "Financeiro", icon: WalletCards },
   { id: "musica" as const, label: "Músicas", icon: Music2 },

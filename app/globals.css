@@ -173,6 +173,17 @@ table td {
   }
 }
 
+@keyframes pool-card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 @keyframes pool-emphasis-pulse {
   0%,
   100% {
@@ -185,6 +196,10 @@ table td {
 
 .pool-view-enter {
   animation: pool-view-enter 380ms var(--pool-ease) both;
+}
+
+.pool-card-enter {
+  animation: pool-card-enter 300ms var(--pool-ease) both;
 }
 
 [role="dialog"] {
