@@ -5,7 +5,7 @@
   #error AppOutput não foi informado.
 #endif
 #ifndef AppVersion
-  #define AppVersion "1.1.0"
+  #define AppVersion "1.1.1"
 #endif
 #ifndef AppIcon
   #error AppIcon não foi informado.
@@ -48,13 +48,15 @@ Name: "brazilianportuguese"; MessagesFile: "compiler:Languages\BrazilianPortugue
 
 [Tasks]
 Name: "desktopicon"; Description: "Criar atalho na área de trabalho"; GroupDescription: "Atalhos adicionais:"; Flags: checkedonce
-Name: "startup"; Description: "Iniciar o Pool Petiscos automaticamente com o Windows"; GroupDescription: "Inicialização:"; Flags: checkedonce
+Name: "startup"; Description: "Iniciar o Pool Petiscos automaticamente com o Windows"; GroupDescription: "Inicialização:"
 
 [Files]
 Source: "{#AppStage}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\Pool Petiscos"; Filename: "{app}\PoolPetiscos.exe"; IconFilename: "{app}\PoolPetiscos.exe"
+Name: "{group}\Dados e backups"; Filename: "{app}\PoolPetiscos.exe"; Parameters: "--open-data-folder"; IconFilename: "{app}\PoolPetiscos.exe"
+Name: "{group}\Manual do sistema"; Filename: "{app}\manual\MANUAL-DO-OPERADOR.txt"
 Name: "{group}\Encerrar Pool Petiscos"; Filename: "{app}\PoolPetiscos.exe"; Parameters: "--shutdown"; IconFilename: "{app}\PoolPetiscos.exe"
 Name: "{autodesktop}\Pool Petiscos"; Filename: "{app}\PoolPetiscos.exe"; IconFilename: "{app}\PoolPetiscos.exe"; Tasks: desktopicon
 

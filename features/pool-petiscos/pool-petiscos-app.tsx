@@ -24,9 +24,9 @@ import {
   CircleDollarSign,
   Clock3,
   CreditCard,
+  DatabaseBackup,
   Download,
   FileAudio,
-  LayoutDashboard,
   ListMusic,
   LoaderCircle,
   Minus,
@@ -72,11 +72,7 @@ import {
   roundMoney,
   shortCurrency,
 } from "./domain";
-import {
-  createDemoExpenses,
-  createDemoSales,
-  DEMO_PRODUCTS,
-} from "./demo-data";
+import { DEMO_PRODUCTS } from "./demo-data";
 import {
   createBackup,
   parseBackup,
@@ -85,6 +81,7 @@ import {
   STORAGE_KEY,
 } from "./persistence";
 import {
+  downloadLocalDatabase,
   loadLocalPoolState,
   LocalStateConflictError,
   saveLocalPoolState,
@@ -97,6 +94,23 @@ import {
   queueTrackDownload,
   type MusicDownloadJob,
 } from "./music-companion";
+import {
+  categories,
+  createInitialPoolState,
+  createProductForm,
+  isCompleteWebUrl,
+  navigation,
+  parsePendingStateSync,
+  parseYoutubeSearchResults,
+  PENDING_SYNC_KEY,
+  productCategories,
+  readCompanionError,
+  viewFromLocation,
+  type PendingStateSync,
+  type ProductFormState,
+  type YoutubeSearchResult,
+  type YoutubeSearchStatus,
+} from "./pool-app-config";
 import type {
   CartItem,
   CashClosure,
@@ -112,192 +126,6 @@ import type {
   Transaction,
   View,
 } from "./types";
-
-const categories = [
-  "Todos",
-  "Hambúrgueres",
-  "Salgados",
-  "Petiscos",
-  "Sobremesas",
-  "Bebidas",
-  "Adicionais",
-] as const;
-
-const productCategories = categories.slice(1) as readonly Product["category"][];
-
-const navigation = [
-  { id: "inicio" as const, label: "Início", icon: LayoutDashboard },
-  { id: "venda" as const, label: "Nova venda", icon: ShoppingCart },
-  { id: "estoque" as const, label: "Estoque", icon: Package },
-  { id: "financeiro" as const, label: "Financeiro", icon: WalletCards },
-  { id: "musica" as const, label: "Músicas", icon: Music2 },
-];
-
-const views = new Set<View>(navigation.map((item) => item.id));
-const PENDING_SYNC_KEY = `${STORAGE_KEY}.pending-v1`;
-
-type PendingStateSync = {
-  state: PersistedPoolState;
-  expectedRevision: number | null;
-  savedAt: string;
-};
-
-type ProductFormState = {
-  id: string | null;
-  name: string;
-  category: Product["category"];
-  price: string;
-  stock: string;
-  minimum: string;
-  emoji: string;
-};
-
-type YoutubeSearchResult = {
-  id: string;
-  title: string;
-  channel: string;
-  duration: string;
-  thumbnail: string;
-  url: string;
-};
-
-type YoutubeSearchStatus = "idle" | "waiting" | "loading" | "success" | "error";
-
-function createProductForm(product?: Product): ProductFormState {
-  return {
-    id: product?.id ?? null,
-    name: product?.name ?? "",
-    category: product?.category ?? "Salgados",
-    price: product ? currency.format(product.price).replace("R$", "").trim() : "",
-    stock: String(product?.stock ?? 0),
-    minimum: String(product?.minimum ?? 0),
-    emoji: product?.emoji ?? "🍽️",
-  };
-}
-
-function isCompleteWebUrl(value: string) {
-  try {
-    const url = new URL(value.trim());
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
-}
-
-function parseYoutubeSearchResults(payload: unknown): YoutubeSearchResult[] {
-  const source =
-    Array.isArray(payload)
-      ? payload
-      : payload &&
-          typeof payload === "object" &&
-          "results" in payload &&
-          Array.isArray(payload.results)
-        ? payload.results
-        : [];
-
-  return source
-    .map((candidate): YoutubeSearchResult | null => {
-      if (!candidate || typeof candidate !== "object") return null;
-      const item = candidate as Record<string, unknown>;
-      const id =
-        typeof item.id === "string"
-          ? item.id
-          : typeof item.video_id === "string"
-            ? item.video_id
-            : "";
-      const title = typeof item.title === "string" ? item.title.trim() : "";
-      const channel =
-        typeof item.channel === "string"
-          ? item.channel.trim()
-          : typeof item.uploader === "string"
-            ? item.uploader.trim()
-            : "Canal do YouTube";
-      const duration =
-        typeof item.duration === "string"
-          ? item.duration
-          : typeof item.duration === "number" &&
-              Number.isFinite(item.duration) &&
-              item.duration >= 0
-            ? `${Math.floor(item.duration / 60)}:${String(
-                Math.floor(item.duration % 60),
-              ).padStart(2, "0")}`
-          : typeof item.duration_label === "string"
-            ? item.duration_label
-            : "";
-      const thumbnail =
-        typeof item.thumbnail === "string" ? item.thumbnail : "";
-      const url =
-        typeof item.url === "string"
-          ? item.url
-          : id
-            ? `https://www.youtube.com/watch?v=${encodeURIComponent(id)}`
-            : "";
-      if (!id || !title || !isCompleteWebUrl(url)) return null;
-      return { id, title, channel, duration, thumbnail, url };
-    })
-    .filter((item): item is YoutubeSearchResult => item !== null)
-    .slice(0, 5);
-}
-
-function readCompanionError(payload: unknown, fallback: string) {
-  if (
-    payload &&
-    typeof payload === "object" &&
-    "error" in payload &&
-    typeof payload.error === "string"
-  ) {
-    const message = payload.error.trim();
-    if (message && message.length <= 300) return message;
-  }
-  return fallback;
-}
-
-function parsePendingStateSync(value: string | null): PendingStateSync | null {
-  if (!value) return null;
-  try {
-    const candidate = JSON.parse(value) as {
-      state?: unknown;
-      expectedRevision?: unknown;
-      savedAt?: unknown;
-    };
-    const state = parsePoolState(candidate.state);
-    const expectedRevision =
-      candidate.expectedRevision === null ||
-      (Number.isInteger(candidate.expectedRevision) &&
-        Number(candidate.expectedRevision) >= 0)
-        ? (candidate.expectedRevision as number | null)
-        : undefined;
-    if (
-      !state ||
-      expectedRevision === undefined ||
-      typeof candidate.savedAt !== "string" ||
-      !Number.isFinite(Date.parse(candidate.savedAt))
-    ) {
-      return null;
-    }
-    return { state, expectedRevision, savedAt: candidate.savedAt };
-  } catch {
-    return null;
-  }
-}
-
-function viewFromLocation(): View | null {
-  const candidate = window.location.hash.replace(/^#/, "");
-  return views.has(candidate as View) ? (candidate as View) : null;
-}
-
-function createInitialPoolState(): PersistedPoolState {
-  return {
-    products: DEMO_PRODUCTS,
-    sales: createDemoSales(),
-    expenses: createDemoExpenses(),
-    cashOpen: true,
-    openingBalance: 100,
-    cashOpenedAt: Date.now() - 2 * 60 * 60_000,
-    cashMovements: [],
-    cashClosures: [],
-  };
-}
 
 export default function PoolPetiscosApp() {
   const [activeView, setActiveView] = useState<View>("inicio");
@@ -1787,6 +1615,26 @@ export default function PoolPetiscosApp() {
     showToast("Backup exportado. Guarde o arquivo no OneDrive.", "info");
   }
 
+  async function exportSqliteDatabase() {
+    if (!primaryStorageReadyRef.current) {
+      showToast(
+        "A cópia completa está disponível no aplicativo instalado no caixa.",
+        "warning",
+      );
+      return;
+    }
+    try {
+      const database = await downloadLocalDatabase();
+      downloadBlob(database, "pool-petiscos.db");
+      showToast("Cópia completa do banco baixada.", "info");
+    } catch {
+      showToast(
+        "Não foi possível preparar a cópia completa do banco.",
+        "warning",
+      );
+    }
+  }
+
   function currentPoolState(): PersistedPoolState {
     return {
       products,
@@ -1807,6 +1655,10 @@ export default function PoolPetiscosApp() {
     const blob = new Blob([JSON.stringify(backup, null, 2)], {
       type: "application/json",
     });
+    downloadBlob(blob, filename);
+  }
+
+  function downloadBlob(blob: Blob, filename: string) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -3144,8 +2996,8 @@ export default function PoolPetiscosApp() {
                 <div>
                   <h2 className="text-sm font-extrabold">Proteção dos dados</h2>
                   <p className="mt-1 max-w-2xl text-[9px] leading-4 text-[#776f6b]">
-                    Exporte uma cópia das vendas, estoque e caixa. O arquivo pode
-                    ser guardado no OneDrive e restaurado quando necessário.
+                    Guarde uma cópia simples para restauração ou baixe o banco
+                    completo para conferência e auditoria.
                   </p>
                 </div>
               </div>
@@ -3157,6 +3009,14 @@ export default function PoolPetiscosApp() {
                 >
                   <Download size={15} />
                   Exportar backup
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void exportSqliteDatabase()}
+                  className="flex min-h-11 items-center gap-2 rounded-xl border border-[#d9cfca] bg-white px-4 text-[9px] font-extrabold text-[#4f4743] transition hover:border-[#b9aca5] hover:bg-[#faf8f6]"
+                >
+                  <DatabaseBackup size={15} />
+                  Baixar banco completo
                 </button>
                 <label className="flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-[#ebe5e1] px-4 text-[9px] font-extrabold text-[#5f5753] focus-within:ring-2 focus-within:ring-[#d9202c] focus-within:ring-offset-2">
                   <Upload size={15} />

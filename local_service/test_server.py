@@ -11,11 +11,14 @@ from pathlib import Path
 
 from local_service.server import (
     MAX_STATE_BODY_BYTES,
+    PRODUCTION_ORIGIN,
+    SERVICE_VERSION,
     PoolCompanionHandler,
     PoolCompanionServer,
     find_downloaded_audio,
     human_size,
     is_allowed_origin,
+    is_local_origin,
     library_fingerprints,
     library_item,
     list_library,
@@ -30,16 +33,23 @@ from local_service.storage import (
 
 
 class CompanionRulesTest(unittest.TestCase):
+    def test_service_version_matches_package(self) -> None:
+        package_path = Path(__file__).resolve().parents[1] / "package.json"
+        package = json.loads(package_path.read_text(encoding="utf-8"))
+        self.assertEqual(SERVICE_VERSION, package["version"])
+
     def test_accepts_only_pool_and_loopback_origins(self) -> None:
         self.assertTrue(is_allowed_origin(None))
         self.assertTrue(is_allowed_origin("http://127.0.0.1:4173"))
         self.assertTrue(is_allowed_origin("http://localhost:5173"))
-        self.assertTrue(
+        self.assertFalse(
             is_allowed_origin(
                 "https://pool-petiscos-caixa.mayrom.chatgpt.site"
             )
         )
         self.assertFalse(is_allowed_origin("https://example.com"))
+        self.assertTrue(is_local_origin("http://127.0.0.1:4173"))
+        self.assertFalse(is_local_origin(PRODUCTION_ORIGIN))
 
     def test_rejects_local_or_non_http_media_urls(self) -> None:
         self.assertEqual(
@@ -263,6 +273,76 @@ class StateStorageTest(unittest.TestCase):
             self.assertEqual(revision, 2)
             self.assertEqual(history_count, 2)
 
+    def test_readable_views_and_exported_database_are_consistent(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            storage = self._storage(root)
+            storage.save(
+                {
+                    "products": [
+                        {
+                            "id": "P1",
+                            "name": "Batata frita",
+                            "category": "Petiscos",
+                            "price": 18.5,
+                            "stock": 7,
+                            "minimum": 3,
+                            "emoji": "🍟",
+                        }
+                    ],
+                    "sales": [
+                        {
+                            "id": "V1",
+                            "timestamp": 1_700_000_000_000,
+                            "total": 37,
+                            "payment": "Pix",
+                            "items": [
+                                {
+                                    "productId": "P1",
+                                    "name": "Batata frita",
+                                    "price": 18.5,
+                                    "quantity": 2,
+                                }
+                            ],
+                        }
+                    ],
+                    "expenses": [],
+                    "cashOpen": True,
+                    "openingBalance": 100,
+                    "cashOpenedAt": 1_700_000_000_000,
+                    "cashMovements": [],
+                    "cashClosures": [],
+                }
+            )
+
+            exported = root / "exported.db"
+            exported.write_bytes(storage.export_database())
+            with closing(sqlite3.connect(exported)) as connection:
+                self.assertEqual(
+                    connection.execute("PRAGMA integrity_check").fetchone()[0],
+                    "ok",
+                )
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT nome, preco, estoque_atual FROM vw_produtos"
+                    ).fetchone(),
+                    ("Batata frita", 18.5, 7),
+                )
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT forma_pagamento, quantidade_itens "
+                        "FROM vw_vendas"
+                    ).fetchone(),
+                    ("Pix", 2),
+                )
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT produto, quantidade, total_item "
+                        "FROM vw_itens_venda"
+                    ).fetchone(),
+                    ("Batata frita", 2, 37.0),
+                )
+
 
 class StateApiTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -356,6 +436,68 @@ class StateApiTest(unittest.TestCase):
         status, backup = self._request("POST", "/api/backups")
         self.assertEqual(status, 201)
         self.assertTrue(str(backup["filename"]).endswith(".db"))
+
+        connection = http.client.HTTPConnection(
+            "127.0.0.1",
+            self.server.server_port,
+            timeout=2,
+        )
+        connection.request(
+            "GET",
+            "/api/database/export",
+            headers={"Origin": "http://127.0.0.1:4173"},
+        )
+        response = connection.getresponse()
+        exported_database = response.read()
+        content_type = response.getheader("Content-Type")
+        connection.close()
+        self.assertEqual(response.status, 200)
+        self.assertEqual(content_type, "application/vnd.sqlite3")
+
+        downloaded = self.storage.database_path.parent / "downloaded.db"
+        downloaded.write_bytes(exported_database)
+        with closing(sqlite3.connect(downloaded)) as exported:
+            self.assertEqual(
+                exported.execute("PRAGMA integrity_check").fetchone()[0],
+                "ok",
+            )
+            self.assertEqual(
+                exported.execute(
+                    "SELECT COUNT(*) FROM state_history"
+                ).fetchone()[0],
+                2,
+            )
+
+    def test_public_demo_cannot_read_or_change_local_state(self) -> None:
+        for method, path, payload in (
+            ("GET", "/api/state", None),
+            ("GET", "/api/database/export", None),
+            ("POST", "/api/backups", None),
+            (
+                "PUT",
+                "/api/state",
+                {"state": {"cash": {"open": True}}, "expected_revision": 0},
+            ),
+        ):
+            connection = http.client.HTTPConnection(
+                "127.0.0.1",
+                self.server.server_port,
+                timeout=2,
+            )
+            body = json.dumps(payload) if payload is not None else None
+            connection.request(
+                method,
+                path,
+                body=body,
+                headers={
+                    "Origin": PRODUCTION_ORIGIN,
+                    "Content-Type": "application/json",
+                },
+            )
+            response = connection.getresponse()
+            response.read()
+            connection.close()
+            self.assertEqual(response.status, 403, f"{method} {path}")
 
     def test_state_api_rejects_body_above_the_ten_megabyte_limit(self) -> None:
         connection = http.client.HTTPConnection(

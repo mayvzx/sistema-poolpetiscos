@@ -7,28 +7,32 @@ inteiro.
 
 1. `features/pool-petiscos/types.ts`
    - mostra quais registros existem e quais campos cada um guarda;
-2. `features/pool-petiscos/domain.ts`
+2. `features/pool-petiscos/pool-app-config.ts`
+   - reúne navegação, categorias, formulários e parsers usados pela tela;
+3. `features/pool-petiscos/domain.ts`
    - contém as regras puras de valores, horário, saldo e gráfico;
-3. `features/pool-petiscos/persistence.ts`
+4. `features/pool-petiscos/persistence.ts`
    - valida dados locais e arquivos de backup;
-4. `features/pool-petiscos/demo-data.ts`
+5. `features/pool-petiscos/demo-data.ts`
    - reúne somente os dados fictícios da demonstração;
-5. `features/pool-petiscos/pool-petiscos-app.tsx`
+6. `features/pool-petiscos/pool-petiscos-app.tsx`
    - conecta as regras aos botões, formulários e telas;
-6. `features/pool-petiscos/music-companion.ts`
+7. `features/pool-petiscos/music-companion.ts`
    - faz somente a comunicação da tela com o serviço local de músicas;
-7. `features/pool-petiscos/local-storage-companion.ts`
+8. `features/pool-petiscos/local-storage-companion.ts`
    - faz a leitura e a gravação do estado principal pela API local;
-8. `local_service/storage.py`
-   - contém SQLite, histórico, conflitos de revisão e backups diários;
-9. `local_service/server.py`
+9. `local_service/storage.py`
+   - contém SQLite, consultas legíveis, histórico, revisões e backups;
+10. `local_service/server.py`
    - limita a API ao próprio computador, gerencia a biblioteca e chama o
      `yt-dlp`;
-10. `local_service/launcher.py` e `installer/`
+11. `local_service/launcher.py` e `installer/`
     - iniciam os serviços e definem o pacote instalado no Windows;
-11. `scripts/build-windows-installer.ps1`
+12. `scripts/inspect_database.py`
+    - mostra como o banco é acessado em modo somente leitura;
+13. `scripts/build-windows-installer.ps1`
     - baixa dependências verificadas, monta e compila o instalador;
-12. `tests/` e `local_service/test_server.py`
+14. `tests/` e `local_service/test_server.py`
    - registra os comportamentos que não podem voltar a quebrar.
 
 ## Correções desta revisão
@@ -55,6 +59,9 @@ inteiro.
 - dados são gravados em SQLite e mantêm as últimas 50 revisões;
 - alterações pendentes são recuperadas depois de um fechamento inesperado;
 - backups SQLite diários passam por verificação de integridade;
+- uma cópia íntegra do SQLite pode ser baixada sem interromper o caixa;
+- consultas `vw_*` tornam produtos, vendas e caixa legíveis fora do sistema;
+- a demonstração pública não pode acessar dados da instalação local;
 - o instalador inclui as dependências de execução e preserva os dados ao
   atualizar;
 - os comandos de desenvolvimento funcionam no Windows.

@@ -91,6 +91,23 @@ async function stateRequest(
   }
 }
 
+export async function downloadLocalDatabase(): Promise<Blob> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 15_000);
+  try {
+    const response = await fetch(`${LOCAL_SERVICE_URL}/api/database/export`, {
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new Error("Não foi possível baixar o banco local.");
+    }
+    return response.blob();
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
 export async function loadLocalPoolState(): Promise<LocalStateSnapshot> {
   const { response, payload } = await stateRequest();
   if (!response.ok) {

@@ -1,116 +1,62 @@
-# Pool Petiscos & Lanches — sistema de caixa
+<p align="center">
+  <img src="public/pool-logo-banner.jpg" alt="Pool Petiscos & Lanches" width="520">
+</p>
 
-Aplicação local e revisável para vendas, estoque, caixa, financeiro e música
-ambiente da **Pool Petiscos & Lanches**.
+<h1 align="center">Pool Petiscos — Caixa local</h1>
 
-Esta versão é um protótipo operacional para validação com os proprietários.
-Ela já funciona sem um servidor separado, mas ainda não emite documento fiscal
-nem confirma pagamentos diretamente com banco ou maquininha.
+<p align="center">
+  Vendas, estoque, financeiro e música em um sistema Windows pensado para a
+  rotina real da lanchonete.
+</p>
 
-## O que funciona
+<p align="center">
+  <img alt="Versão" src="https://img.shields.io/badge/vers%C3%A3o-1.1.1-d9202c">
+  <img alt="Plataforma Windows" src="https://img.shields.io/badge/plataforma-Windows-302b29">
+  <img alt="Banco SQLite" src="https://img.shields.io/badge/dados-SQLite-7458b4">
+  <img alt="Status protótipo operacional" src="https://img.shields.io/badge/status-prot%C3%B3tipo%20operacional-dc9b19">
+</p>
 
-- vendas em Pix, dinheiro ou cartão, com cálculo de troco;
-- cadastro, edição, exclusão, baixa e reposição de produtos no estoque;
-- despesas, sangria, suprimento, abertura e fechamento de caixa;
-- conferência entre saldo esperado e dinheiro contado;
-- indicadores financeiros calculados a partir dos registros;
-- notificações de estoque baixo;
-- SQLite como armazenamento principal, com histórico de 50 revisões;
-- recuperação de uma alteração pendente após fechamento inesperado;
-- backup SQLite diário no OneDrive, com retenção de 30 dias;
-- exportação e restauração manual de backup JSON;
-- busca de músicas no YouTube, biblioteca local e download de uma faixa por
-  link;
-- instalador Windows com Node.js, yt-dlp e FFmpeg incluídos;
-- atalho, inicialização automática com o Windows e atualização sem apagar os
-  dados.
+![Visão do produto](public/og.png)
 
-## Arquitetura local
+## Sobre
 
-```text
-Navegador do caixa
-  └─ Interface React em http://127.0.0.1:4173
-       └─ Serviço local em http://127.0.0.1:8765
-            ├─ SQLite
-            ├─ backups diários
-            └─ biblioteca de músicas
-```
+O Pool Petiscos funciona no próprio computador do caixa, sem exigir a compra de
+um servidor. O instalador inclui a interface React, o serviço local, SQLite,
+Node.js, yt-dlp e FFmpeg. As vendas continuam disponíveis sem internet; a rede
+é usada para músicas, sincronização do OneDrive e futuras integrações de
+pagamento.
 
-As duas portas aceitam apenas conexões do próprio computador. A internet é
-necessária para baixar faixas, sincronizar o OneDrive e, futuramente, processar
-pagamentos integrados. Vendas manuais e dados locais continuam disponíveis
-sem internet.
+Esta versão é um protótipo operacional para validação com os proprietários. Ela
+não emite documento fiscal e ainda não confirma Pix ou cartão diretamente com
+banco ou maquininha.
 
-## Estrutura do código
+## Funcionalidades
 
-```text
-app/
-  layout.tsx                      Metadados e estrutura HTML
-  page.tsx                        Entrada da aplicação
-  globals.css                     Tipografia e acessibilidade
-features/pool-petiscos/
-  pool-petiscos-app.tsx           Interface e coordenação das telas
-  demo-data.ts                    Dados usados na apresentação inicial
-  domain.ts                       Regras de dinheiro, caixa e relatórios
-  persistence.ts                  Validação do estado e backup JSON
-  local-storage-companion.ts      Cliente da persistência SQLite
-  music-companion.ts              Cliente da biblioteca de músicas
-  types.ts                        Tipos do negócio
-local_service/
-  server.py                       API restrita ao computador
-  youtube_search.py               Pesquisa segura no YouTube via yt-dlp
-  storage.py                      SQLite, revisões e backups diários
-  launcher.py                     Inicializador e supervisor dos serviços
-  test_server.py                  Testes do serviço e do banco
-  test_launcher.py                Testes dos modos normal e auto-início
-  test_youtube_search.py          Testes isolados da busca de músicas
-installer/
-  PoolPetiscos.iss                Definição do instalador Inno Setup
-  assets/pool-petiscos.ico        Ícone multirresolução do Windows
-  dependencies.lock.json          URLs e hashes das dependências incluídas
-  THIRD_PARTY_NOTICES.txt         Avisos de componentes redistribuídos
-scripts/
-  build-windows-installer.ps1     Geração reproduzível do instalador
-  generate-windows-icon.py        Regenera o ícone usando a marca existente
-  build.mjs                       Build da interface e do Sites
-  validate-artifact.mjs           Validação do pacote publicado
-tests/
-  domain.test.ts                  Regras de negócio e backup
-  rendered-html.test.mjs          Verificação da página gerada
-docs/
-  INSTALADOR-WINDOWS.md           Instalação, assinatura e suporte
-  INSTALACAO-E-PAGAMENTOS.md      Arquitetura e futura integração de pagamento
-  DECISOES-E-ROADMAP.md           Decisões e próximos marcos
-  GUIA-DE-REVISAO.md              Roteiro para revisar o código
-```
+- vendas em Pix, dinheiro ou cartão, com troco em destaque;
+- abertura, movimentação, conferência e fechamento de caixa;
+- cadastro, alteração, exclusão, reposição e alerta de estoque;
+- histórico de vendas preservado quando um produto muda;
+- despesas e indicadores financeiros calculados dos registros;
+- SQLite com controle de revisão e consultas legíveis para auditoria;
+- cópia completa do banco e backup de restauração pela interface;
+- backup diário verificado no OneDrive, com retenção de 30 dias;
+- busca de músicas no YouTube com até cinco resultados;
+- downloads locais com yt-dlp e conversão/reprodução com FFmpeg;
+- inicialização automática, ícone próprio e atualização sem apagar dados;
+- tipografia ampliada, alvos de toque e animações suaves.
 
-## Desenvolvimento
+## Instalar no Windows
 
-Requisitos para revisar a interface:
+Baixe o instalador mais recente em
+[Releases](https://github.com/mayvzx/sistema-poolpetiscos/releases/latest). O
+usuário final executa apenas `PoolPetiscos-Setup-1.1.1.exe`; as dependências já
+estão incluídas.
 
-- Node.js 22;
-- npm;
-- Python 3.10 ou superior para os testes do serviço.
+> O protótipo atual ainda não possui assinatura Authenticode. O Windows pode
+> exibir um aviso de origem desconhecida. A assinatura será adicionada antes da
+> implantação definitiva.
 
-```powershell
-npm ci
-npm run dev
-```
-
-O endereço padrão de desenvolvimento é exibido no terminal. Para executar toda
-a validação:
-
-```powershell
-npm run check
-```
-
-## Instalação no computador do caixa
-
-O usuário final deve executar somente `PoolPetiscos-Setup-1.1.0.exe`. O
-instalador prepara o aplicativo e oferece atalhos; Node.js, Python, yt-dlp e
-FFmpeg não precisam ser instalados separadamente.
-
-Os dados ficam fora da pasta do programa e são preservados em atualizações:
+Os dados ficam separados do programa e são preservados nas atualizações:
 
 ```text
 %LOCALAPPDATA%\PoolPetiscos\data\pool-petiscos.db
@@ -118,30 +64,82 @@ Os dados ficam fora da pasta do programa e são preservados em atualizações:
 %LOCALAPPDATA%\PoolPetiscos\logs
 ```
 
-Quando o OneDrive está configurado, o backup diário fica em:
+O manual completo está em
+[docs/operations/MANUAL-DO-OPERADOR.md](docs/operations/MANUAL-DO-OPERADOR.md).
 
-```text
-OneDrive\Pool Petiscos\Backups
+## Acessar o banco de dados
+
+No aplicativo, abra **Financeiro > Proteção dos dados > Baixar banco completo**.
+O menu Iniciar também oferece **Pool Petiscos > Dados e backups**.
+
+Para uma inspeção somente leitura pelo projeto:
+
+```powershell
+npm run database:inspect
+npm run database:inspect -- --view produtos
 ```
 
-Sem OneDrive, o sistema usa `%LOCALAPPDATA%\PoolPetiscos\backups`.
+Localização, consultas disponíveis e cuidados estão documentados em
+[docs/architecture/BANCO-DE-DADOS.md](docs/architecture/BANCO-DE-DADOS.md).
 
-As instruções de geração, assinatura, instalação silenciosa e diagnóstico estão
-em [docs/INSTALADOR-WINDOWS.md](docs/INSTALADOR-WINDOWS.md).
+## Arquitetura
 
-## Pagamentos integrados
+```text
+PoolPetiscos.exe
+  ├─ Interface React          http://127.0.0.1:4173
+  └─ Serviço local Python     http://127.0.0.1:8765
+       ├─ SQLite e revisões
+       ├─ backups verificados
+       └─ yt-dlp + FFmpeg + biblioteca local
+```
 
-As vendas atuais registram a forma escolhida pelo operador, sem controlar a
-maquininha. A integração real depende da marca/modelo do terminal, instituição
-do Pix, credenciais e processo de homologação. Nenhuma aprovação deve ser
-simulada: a venda só poderá ser concluída depois da confirmação do provedor.
+As portas aceitam apenas conexões da interface executada no próprio computador.
+A demonstração pública não acessa o serviço, o banco ou as músicas instaladas.
 
-As decisões necessárias e os fluxos sugeridos estão em
-[docs/INSTALACAO-E-PAGAMENTOS.md](docs/INSTALACAO-E-PAGAMENTOS.md).
+Leia [docs/architecture/ARQUITETURA.md](docs/architecture/ARQUITETURA.md) para o
+fluxo completo e [docs/README.md](docs/README.md) para o índice da documentação.
 
-## Publicação
+## Desenvolvimento
 
-`.openai/hosting.json` vincula este código ao projeto existente no Sites. A
-versão hospedada serve para apresentação e revisão; sem o serviço instalado no
-computador, ela usa uma cópia local do navegador e não disponibiliza SQLite nem
-downloads.
+Requisitos: Node.js 22, npm e Python 3.10 ou superior.
+
+```powershell
+npm ci
+npm run dev
+npm run check
+```
+
+O código está organizado por fronteira:
+
+```text
+app/                        entrada web e estilos
+features/pool-petiscos/     interface e regras do negócio
+local_service/              API, SQLite, músicas e launcher
+installer/                  instalador e ativos do Windows
+scripts/                    build e ferramentas de manutenção
+tests/                      validações da aplicação
+docs/                       produto, arquitetura e operação
+```
+
+Consulte o
+[guia de desenvolvimento](docs/development/DESENVOLVIMENTO.md), o
+[guia de revisão](docs/development/GUIA-DE-REVISAO.md) e o
+[histórico de versões](CHANGELOG.md).
+
+## Demonstração
+
+A versão web para apresentação está em
+[pool-petiscos-caixa.mayrom.chatgpt.site](https://pool-petiscos-caixa.mayrom.chatgpt.site).
+Sem o aplicativo local, ela usa somente o armazenamento do navegador e não
+oferece SQLite ou download de músicas.
+
+## Segurança e dados reais
+
+Banco, backups, logs e credenciais nunca devem ser enviados ao repositório
+público. Consulte [SECURITY.md](SECURITY.md) antes de compartilhar um
+diagnóstico.
+
+## Licenciamento
+
+O código está publicamente visível para avaliação, mas não possui licença de
+uso, cópia ou redistribuição. Consulte [LICENSE.md](LICENSE.md).

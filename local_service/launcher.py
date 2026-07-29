@@ -71,6 +71,21 @@ def installation_directory() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
+def open_data_directory() -> int:
+    """Open the user-owned data directory without starting the application."""
+
+    target = data_directory()
+    try:
+        target.mkdir(parents=True, exist_ok=True)
+        if os.name == "nt":
+            os.startfile(str(target))  # type: ignore[attr-defined]
+        else:
+            webbrowser.open(target.as_uri())
+    except OSError:
+        return 1
+    return 0
+
+
 def configure_logging(background: bool) -> logging.Logger:
     log_directory = data_directory() / "logs"
     log_directory.mkdir(parents=True, exist_ok=True)
@@ -507,6 +522,7 @@ def parse_arguments() -> argparse.Namespace:
     )
     parser.add_argument("--no-browser", action="store_true")
     parser.add_argument("--shutdown", action="store_true")
+    parser.add_argument("--open-data-folder", action="store_true")
     parser.add_argument("--self-test", action="store_true")
     parser.add_argument("--companion-child", action="store_true")
     parser.add_argument(
@@ -543,6 +559,8 @@ def main() -> int:
         return run_companion_child(arguments.companion_port)
     if arguments.shutdown:
         return 0 if send_shutdown_signal() else 1
+    if arguments.open_data_folder:
+        return open_data_directory()
     if arguments.self_test:
         errors = validate_installation()
         return 0 if not errors else 2

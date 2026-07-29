@@ -24,6 +24,14 @@ ONEDRIVE_ENVIRONMENT_KEYS = (
     "OneDriveConsumer",
     "OneDrive",
 )
+READABLE_VIEW_NAMES = (
+    "vw_produtos",
+    "vw_vendas",
+    "vw_itens_venda",
+    "vw_despesas",
+    "vw_movimentos_caixa",
+    "vw_fechamentos_caixa",
+)
 
 
 def _local_app_data(
@@ -99,7 +107,7 @@ class RevisionConflict(Exception):
 
 
 class StateStorage:
-    """Transactional state storage and daily SQLite snapshots."""
+    """Transactional state storage, readable views and verified SQLite copies."""
 
     def __init__(
         self,
@@ -169,7 +177,183 @@ class StateStorage:
                     )
                     """
                 )
+                self._create_readable_views(connection)
                 connection.execute("PRAGMA user_version = 1")
+
+    @staticmethod
+    def _create_readable_views(connection: sqlite3.Connection) -> None:
+        """Expose the current JSON state as read-only, spreadsheet-like views.
+
+        The application keeps one atomic JSON document so a sale and its stock
+        movement are always committed together. These views make the same data
+        understandable in SQLite viewers without duplicating or normalizing it.
+        """
+
+        for view_name in READABLE_VIEW_NAMES:
+            connection.execute(f'DROP VIEW IF EXISTS "{view_name}"')
+
+        connection.executescript(
+            """
+            CREATE VIEW vw_produtos AS
+            SELECT
+                json_extract(product.value, '$.id') AS id,
+                json_extract(product.value, '$.name') AS nome,
+                json_extract(product.value, '$.category') AS categoria,
+                CAST(json_extract(product.value, '$.price') AS REAL) AS preco,
+                CAST(json_extract(product.value, '$.stock') AS INTEGER)
+                    AS estoque_atual,
+                CAST(json_extract(product.value, '$.minimum') AS INTEGER)
+                    AS estoque_minimo
+            FROM app_state
+            JOIN json_each(
+                COALESCE(app_state.state_json, '{}'),
+                '$.products'
+            ) AS product
+            WHERE app_state.id = 1;
+
+            CREATE VIEW vw_vendas AS
+            SELECT
+                json_extract(sale.value, '$.id') AS id,
+                CAST(json_extract(sale.value, '$.timestamp') AS INTEGER)
+                    AS data_hora_ms,
+                datetime(
+                    CAST(json_extract(sale.value, '$.timestamp') AS INTEGER)
+                        / 1000,
+                    'unixepoch',
+                    'localtime'
+                ) AS data_hora,
+                CAST(json_extract(sale.value, '$.total') AS REAL) AS total,
+                json_extract(sale.value, '$.payment') AS forma_pagamento,
+                (
+                    SELECT COALESCE(
+                        SUM(
+                            CAST(
+                                json_extract(item.value, '$.quantity')
+                                AS INTEGER
+                            )
+                        ),
+                        0
+                    )
+                    FROM json_each(
+                        json_extract(sale.value, '$.items')
+                    ) AS item
+                ) AS quantidade_itens
+            FROM app_state
+            JOIN json_each(
+                COALESCE(app_state.state_json, '{}'),
+                '$.sales'
+            ) AS sale
+            WHERE app_state.id = 1;
+
+            CREATE VIEW vw_itens_venda AS
+            SELECT
+                json_extract(sale.value, '$.id') AS venda_id,
+                CAST(json_extract(sale.value, '$.timestamp') AS INTEGER)
+                    AS venda_data_hora_ms,
+                json_extract(item.value, '$.productId') AS produto_id,
+                json_extract(item.value, '$.name') AS produto,
+                CAST(json_extract(item.value, '$.price') AS REAL)
+                    AS preco_unitario,
+                CAST(json_extract(item.value, '$.quantity') AS INTEGER)
+                    AS quantidade,
+                ROUND(
+                    CAST(json_extract(item.value, '$.price') AS REAL)
+                        * CAST(
+                            json_extract(item.value, '$.quantity') AS INTEGER
+                        ),
+                    2
+                ) AS total_item
+            FROM app_state
+            JOIN json_each(
+                COALESCE(app_state.state_json, '{}'),
+                '$.sales'
+            ) AS sale
+            JOIN json_each(
+                json_extract(sale.value, '$.items')
+            ) AS item
+            WHERE app_state.id = 1;
+
+            CREATE VIEW vw_despesas AS
+            SELECT
+                json_extract(expense.value, '$.id') AS id,
+                CAST(json_extract(expense.value, '$.timestamp') AS INTEGER)
+                    AS data_hora_ms,
+                datetime(
+                    CAST(json_extract(expense.value, '$.timestamp') AS INTEGER)
+                        / 1000,
+                    'unixepoch',
+                    'localtime'
+                ) AS data_hora,
+                json_extract(expense.value, '$.description') AS descricao,
+                json_extract(expense.value, '$.category') AS categoria,
+                CAST(json_extract(expense.value, '$.amount') AS REAL) AS valor,
+                json_extract(expense.value, '$.payment') AS forma_pagamento
+            FROM app_state
+            JOIN json_each(
+                COALESCE(app_state.state_json, '{}'),
+                '$.expenses'
+            ) AS expense
+            WHERE app_state.id = 1;
+
+            CREATE VIEW vw_movimentos_caixa AS
+            SELECT
+                json_extract(movement.value, '$.id') AS id,
+                CAST(json_extract(movement.value, '$.timestamp') AS INTEGER)
+                    AS data_hora_ms,
+                datetime(
+                    CAST(json_extract(movement.value, '$.timestamp') AS INTEGER)
+                        / 1000,
+                    'unixepoch',
+                    'localtime'
+                ) AS data_hora,
+                json_extract(movement.value, '$.kind') AS tipo,
+                json_extract(movement.value, '$.description') AS descricao,
+                CAST(json_extract(movement.value, '$.amount') AS REAL) AS valor
+            FROM app_state
+            JOIN json_each(
+                COALESCE(app_state.state_json, '{}'),
+                '$.cashMovements'
+            ) AS movement
+            WHERE app_state.id = 1;
+
+            CREATE VIEW vw_fechamentos_caixa AS
+            SELECT
+                json_extract(closure.value, '$.id') AS id,
+                CAST(json_extract(closure.value, '$.openedAt') AS INTEGER)
+                    AS abertura_ms,
+                datetime(
+                    CAST(json_extract(closure.value, '$.openedAt') AS INTEGER)
+                        / 1000,
+                    'unixepoch',
+                    'localtime'
+                ) AS abertura,
+                CAST(json_extract(closure.value, '$.closedAt') AS INTEGER)
+                    AS fechamento_ms,
+                datetime(
+                    CAST(json_extract(closure.value, '$.closedAt') AS INTEGER)
+                        / 1000,
+                    'unixepoch',
+                    'localtime'
+                ) AS fechamento,
+                CAST(
+                    json_extract(closure.value, '$.openingBalance') AS REAL
+                ) AS saldo_inicial,
+                CAST(
+                    json_extract(closure.value, '$.expectedBalance') AS REAL
+                ) AS saldo_esperado,
+                CAST(
+                    json_extract(closure.value, '$.countedBalance') AS REAL
+                ) AS saldo_contado,
+                CAST(json_extract(closure.value, '$.difference') AS REAL)
+                    AS diferenca
+            FROM app_state
+            JOIN json_each(
+                COALESCE(app_state.state_json, '{}'),
+                '$.cashClosures'
+            ) AS closure
+            WHERE app_state.id = 1;
+            """
+        )
 
     @staticmethod
     def _decode_snapshot(row: sqlite3.Row | tuple[Any, ...]) -> StateSnapshot:
@@ -314,6 +498,44 @@ class StateStorage:
             / f"{BACKUP_PREFIX}{local_date.isoformat()}{BACKUP_SUFFIX}"
         )
 
+    def _write_verified_copy(self, destination: Path) -> None:
+        """Create an atomic SQLite copy and verify it before publication."""
+
+        temporary = destination.with_name(
+            f".{destination.name}.{uuid.uuid4().hex}.tmp"
+        )
+        source = self._connect()
+        target: sqlite3.Connection | None = None
+        try:
+            target = sqlite3.connect(temporary)
+            source.backup(target)
+            integrity = target.execute("PRAGMA integrity_check").fetchone()
+            if integrity is None or integrity[0] != "ok":
+                raise sqlite3.DatabaseError(
+                    "A verificação da cópia SQLite falhou."
+                )
+            target.close()
+            target = None
+            os.replace(temporary, destination)
+        finally:
+            source.close()
+            if target is not None:
+                target.close()
+            temporary.unlink(missing_ok=True)
+
+    def export_database(self) -> bytes:
+        """Return a verified snapshot suitable for a browser download."""
+
+        destination = self.database_path.parent / (
+            f".pool-petiscos-export-{uuid.uuid4().hex}.db"
+        )
+        with self._lock:
+            try:
+                self._write_verified_copy(destination)
+                return destination.read_bytes()
+            finally:
+                destination.unlink(missing_ok=True)
+
     def ensure_daily_backup(self, *, force: bool = False) -> Path:
         now = self._clock()
         destination = self._daily_backup_path(now)
@@ -324,29 +546,7 @@ class StateStorage:
                     self._last_backup_error = None
                     return destination
 
-                temporary = destination.with_name(
-                    f".{destination.name}.{uuid.uuid4().hex}.tmp"
-                )
-                source = self._connect()
-                target: sqlite3.Connection | None = None
-                try:
-                    target = sqlite3.connect(temporary)
-                    source.backup(target)
-                    integrity = target.execute(
-                        "PRAGMA integrity_check"
-                    ).fetchone()
-                    if integrity is None or integrity[0] != "ok":
-                        raise sqlite3.DatabaseError(
-                            "A verificação do backup SQLite falhou."
-                        )
-                    target.close()
-                    target = None
-                    os.replace(temporary, destination)
-                finally:
-                    source.close()
-                    if target is not None:
-                        target.close()
-                    temporary.unlink(missing_ok=True)
+                self._write_verified_copy(destination)
 
                 self._prune_daily_backups()
                 self._last_backup_error = None

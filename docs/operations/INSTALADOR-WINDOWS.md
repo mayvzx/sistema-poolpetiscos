@@ -33,12 +33,16 @@ os dados é necessária uma ação manual e consciente.
 - serviço local de dados e músicas em `127.0.0.1:8765`;
 - `yt-dlp` fixado pelo arquivo `local_service/requirements.txt`;
 - FFmpeg e ffprobe do projeto recomendado pelo `yt-dlp`;
+- manual do operador e guia de acesso ao banco;
 - textos de licença e manifesto das versões efetivamente incluídas.
 
 O launcher mantém uma única instância, grava logs rotativos, supervisiona os
 dois processos e reinicia um componente que encerre inesperadamente. O atalho
 normal abre o navegador. A inicialização automática aguarda os serviços locais
 e abre o caixa no navegador após o login do Windows.
+
+O grupo **Pool Petiscos** no menu Iniciar também oferece **Dados e backups**,
+**Manual do sistema** e **Encerrar Pool Petiscos**.
 
 O serviço iniciado em segundo plano também executa a política de backup do
 armazenamento. Quando o OneDrive está configurado no Windows, o serviço detecta
@@ -80,7 +84,7 @@ Use somente para validação interna:
 
 ```powershell
 .\scripts\build-windows-installer.ps1 `
-  -Version 1.1.0 `
+  -Version 1.1.1 `
   -UnsignedPrototype
 ```
 
@@ -88,7 +92,7 @@ O script exige a opção `-UnsignedPrototype`; ele não produz silenciosamente u
 executável que pareça assinado. A saída mostra um aviso claro e fica em:
 
 ```text
-build\windows\installer\PoolPetiscos-Setup-1.1.0.exe
+build\windows\installer\PoolPetiscos-Setup-1.1.1.exe
 ```
 
 Cache e stage são mantidos fora de pastas sincronizadas para evitar bloqueios
@@ -104,7 +108,7 @@ Para manter a árvore usada pelo Inno Setup e poder revisá-la:
 
 ```powershell
 .\scripts\build-windows-installer.ps1 `
-  -Version 1.1.0 `
+  -Version 1.1.1 `
   -UnsignedPrototype `
   -KeepStage
 ```
@@ -118,7 +122,7 @@ Exemplo com o repositório do usuário atual:
 
 ```powershell
 .\scripts\build-windows-installer.ps1 `
-  -Version 1.1.0 `
+  -Version 1.1.1 `
   -CertificateThumbprint '0123456789ABCDEF0123456789ABCDEF01234567' `
   -CertificateStoreLocation CurrentUser
 ```
@@ -127,7 +131,7 @@ Para um certificado instalado no repositório da máquina:
 
 ```powershell
 .\scripts\build-windows-installer.ps1 `
-  -Version 1.1.0 `
+  -Version 1.1.1 `
   -CertificateThumbprint '0123456789ABCDEF0123456789ABCDEF01234567' `
   -CertificateStoreLocation LocalMachine
 ```
@@ -152,7 +156,7 @@ Uma atualização é sempre explícita:
 
 ```powershell
 .\scripts\build-windows-installer.ps1 `
-  -Version 1.1.0 `
+  -Version 1.1.1 `
   -UnsignedPrototype `
   -RefreshDependencyLock
 ```
@@ -183,8 +187,8 @@ normais não existe atualização silenciosa de binários.
    desenvolvimento;
 5. cria um ambiente Python isolado e empacota launcher e `yt-dlp`;
 6. baixa e verifica Node e FFmpeg;
-7. monta o stage com aplicativo, apenas os arquivos de runtime necessários,
-   licenças e `BUILD-MANIFEST.json`;
+7. monta o stage com aplicativo, runtime necessário, manual, licenças e
+   `BUILD-MANIFEST.json`;
 8. testa o servidor standalone em uma porta loopback temporária;
 9. executa o self-test e um smoke test completo do launcher, com banco e portas
    temporários isolados;

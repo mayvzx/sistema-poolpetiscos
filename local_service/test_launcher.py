@@ -3,11 +3,18 @@ from __future__ import annotations
 import argparse
 import contextlib
 import io
+import os
 import sys
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
-from local_service.launcher import parse_arguments, should_open_browser
+from local_service.launcher import (
+    open_data_directory,
+    parse_arguments,
+    should_open_browser,
+)
 
 
 class LauncherModeTest(unittest.TestCase):
@@ -41,6 +48,25 @@ class LauncherModeTest(unittest.TestCase):
             with contextlib.redirect_stderr(io.StringIO()):
                 with self.assertRaises(SystemExit):
                     parse_arguments()
+
+    def test_data_shortcut_creates_and_opens_the_user_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "PoolPetiscos"
+            with (
+                patch.dict(
+                    os.environ,
+                    {"POOL_PETISCOS_HOME_DIR": str(target)},
+                ),
+                patch("local_service.launcher.os.name", "nt"),
+                patch(
+                    "local_service.launcher.os.startfile",
+                    create=True,
+                ) as start_file,
+            ):
+                self.assertEqual(open_data_directory(), 0)
+
+            self.assertTrue(target.is_dir())
+            start_file.assert_called_once_with(str(target.resolve()))
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-# Decisões e roadmap
+# Decisões do produto e roadmap
 
 ## Objetivo
 
@@ -61,6 +61,19 @@ vendas, estoque e controle gerencial da Pool Petiscos & Lanches.
 - a interface deixou de exibir nomes de bibliotecas, comandos de instalação e
   avisos técnicos ao operador;
 - textos operacionais foram ampliados para leitura confortável no balcão.
+
+### Revisão técnica de 28/07/2026
+
+- produtos podem ser criados, alterados e excluídos pela proprietária;
+- a busca de músicas mostra até cinco resultados do YouTube;
+- o launcher abre o navegador depois que os serviços ficam prontos no login;
+- o instalador e os atalhos usam um ícone próprio;
+- o banco completo pode ser baixado pela interface sem interromper o caixa;
+- consultas SQLite em português permitem revisar os dados sem ler o JSON
+  interno;
+- a demonstração hospedada foi impedida de ler ou alterar o banco local;
+- código, documentação e arquivos de distribuição foram separados por
+  responsabilidade.
 
 ## Itens bloqueados pela visita presencial
 

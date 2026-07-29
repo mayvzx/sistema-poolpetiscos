@@ -37,7 +37,7 @@ from local_service.youtube_search import (
     validate_youtube_search_query,
 )
 
-SERVICE_VERSION = "1.1.0"
+SERVICE_VERSION = "1.1.1"
 DEFAULT_PORT = 8765
 MAX_BODY_BYTES = 32 * 1024
 MAX_STATE_BODY_BYTES = 10 * 1024 * 1024
@@ -64,10 +64,8 @@ def default_music_directory() -> Path:
     return base / "PoolPetiscos" / "musicas"
 
 
-def is_allowed_origin(origin: str | None) -> bool:
+def is_local_origin(origin: str | None) -> bool:
     if not origin:
-        return True
-    if origin == PRODUCTION_ORIGIN:
         return True
     try:
         parsed = urlparse(origin)
@@ -77,6 +75,12 @@ def is_allowed_origin(origin: str | None) -> bool:
         parsed.scheme in {"http", "https"}
         and parsed.hostname in {"127.0.0.1", "localhost", "::1"}
     )
+
+
+def is_allowed_origin(origin: str | None) -> bool:
+    """Keep every installed companion capability inside the local interface."""
+
+    return is_local_origin(origin)
 
 
 def validate_media_url(candidate: object) -> str:
@@ -365,6 +369,44 @@ class PoolCompanionHandler(BaseHTTPRequestHandler):
         )
         return True
 
+    def _reject_sensitive_origin(self) -> bool:
+        if is_local_origin(self._origin()):
+            return False
+        self._send_json(
+            {
+                "error": (
+                    "Os dados do caixa só podem ser acessados pela instalação "
+                    "local."
+                )
+            },
+            HTTPStatus.FORBIDDEN,
+        )
+        return True
+
+    def _send_database(self) -> None:
+        try:
+            body = self.pool_server.storage.export_database()
+        except (OSError, sqlite3.Error) as error:
+            self.log_error("falha ao exportar banco local: %s", error)
+            self._send_json(
+                {"error": "Não foi possível preparar a cópia do banco."},
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+            )
+            return
+
+        self.send_response(HTTPStatus.OK)
+        self._set_cors_headers()
+        self.send_header("Content-Type", "application/vnd.sqlite3")
+        self.send_header(
+            "Content-Disposition",
+            'attachment; filename="pool-petiscos.db"',
+        )
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_OPTIONS(self) -> None:
         if self._reject_origin():
             return
@@ -494,7 +536,14 @@ class PoolCompanionHandler(BaseHTTPRequestHandler):
                 {"tracks": list_library(self.pool_server.music_directory)}
             )
             return
+        if parsed.path == "/api/database/export":
+            if self._reject_sensitive_origin():
+                return
+            self._send_database()
+            return
         if parsed.path == "/api/state":
+            if self._reject_sensitive_origin():
+                return
             try:
                 snapshot = self.pool_server.storage.read()
                 backup_info = self.pool_server.storage.backup_info()
@@ -536,6 +585,8 @@ class PoolCompanionHandler(BaseHTTPRequestHandler):
             return
         parsed = urlparse(self.path)
         if parsed.path == "/api/backups":
+            if self._reject_sensitive_origin():
+                return
             try:
                 backup_path = self.pool_server.storage.ensure_daily_backup(
                     force=True
@@ -601,6 +652,8 @@ class PoolCompanionHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path != "/api/state":
             self._send_json({"error": "Rota não encontrada."}, HTTPStatus.NOT_FOUND)
+            return
+        if self._reject_sensitive_origin():
             return
 
         try:

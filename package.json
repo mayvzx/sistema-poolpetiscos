@@ -1,6 +1,6 @@
 {
   "name": "pool-petiscos-caixa",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "private": true,
   "engines": {
     "node": ">=22.13.0"
@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit",
     "validate:artifact": "node scripts/validate-artifact.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
+    "database:inspect": "python scripts/inspect_database.py",
     "test:companion": "python -m unittest local_service.test_server local_service.test_youtube_search local_service.test_launcher && python -B -c \"import local_service.launcher\"",
     "build:windows:unsigned": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-windows-installer.ps1 -UnsignedPrototype",
     "check": "npm run typecheck && npm run lint && npm run test:companion && npm test"

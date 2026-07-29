@@ -36,7 +36,7 @@ Para a instalação física, também é recomendado:
 
 A internet é necessária para baixar faixas, sincronizar o backup em nuvem e
 processar futuros pagamentos integrados. O registro local continua disponível
-sem conexão. Consulte `docs/INSTALADOR-WINDOWS.md` para build, assinatura,
+sem conexão. Consulte `docs/operations/INSTALADOR-WINDOWS.md` para build, assinatura,
 instalação e diagnóstico.
 
 ## É possível integrar uma maquininha?

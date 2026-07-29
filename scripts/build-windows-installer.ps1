@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [ValidatePattern('^\d+\.\d+\.\d+(?:\.\d+)?$')]
-    [string]$Version = '1.1.0',
+    [string]$Version = '1.1.1',
     [string]$OutputDirectory = '',
     [string]$WorkDirectory = '',
     [string]$CertificateThumbprint = '',
@@ -813,6 +813,16 @@ New-Item -ItemType Directory -Path $licensesDirectory -Force | Out-Null
 Copy-Item `
     -LiteralPath (Join-Path $projectRoot 'installer\THIRD_PARTY_NOTICES.txt') `
     -Destination $licensesDirectory
+
+$manualDirectory = Join-Path $stageDirectory 'manual'
+New-Item -ItemType Directory -Path $manualDirectory -Force | Out-Null
+Copy-Item `
+    -LiteralPath (Join-Path $projectRoot 'docs\operations\MANUAL-DO-OPERADOR.md') `
+    -Destination (Join-Path $manualDirectory 'MANUAL-DO-OPERADOR.txt')
+Copy-Item `
+    -LiteralPath (Join-Path $projectRoot 'docs\architecture\BANCO-DE-DADOS.md') `
+    -Destination (Join-Path $manualDirectory 'BANCO-DE-DADOS.txt')
+
 $stagedNodeLicense = Join-Path $stagedNodeDirectory 'LICENSE'
 if (-not (Test-Path -LiteralPath $stagedNodeLicense -PathType Leaf)) {
     throw 'A licença do Node.js não foi encontrada no pacote oficial.'
