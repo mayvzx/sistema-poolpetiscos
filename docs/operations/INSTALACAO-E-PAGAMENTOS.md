@@ -5,8 +5,8 @@
 O computador do caixa pode executar todo o sistema sem um servidor separado.
 A versão local tem três camadas no mesmo Windows:
 
-1. interface do caixa em `http://127.0.0.1:4173`;
-2. serviço local em `http://127.0.0.1:8765`;
+1. interface do caixa em `http://127.0.0.1:14173`;
+2. serviço local em `http://127.0.0.1:18765`;
 3. SQLite e biblioteca de músicas no perfil do usuário.
 
 Os serviços escutam apenas no próprio computador. Outros equipamentos da rede

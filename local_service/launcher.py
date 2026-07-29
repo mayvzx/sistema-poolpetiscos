@@ -14,6 +14,7 @@ import logging
 import os
 import re
 import signal
+import socket
 import sqlite3
 import subprocess
 import sys
@@ -27,13 +28,51 @@ from pathlib import Path
 from typing import IO
 
 APP_NAME = "Pool Petiscos"
-DEFAULT_SITE_PORT = 4173
-DEFAULT_COMPANION_PORT = 8765
+DEFAULT_SITE_PORT = 14173
+DEFAULT_COMPANION_PORT = 18765
 MUTEX_NAME = r"Local\PoolPetiscosLauncher"
 SHUTDOWN_EVENT_NAME = r"Local\PoolPetiscosShutdown"
 ERROR_ALREADY_EXISTS = 183
 EVENT_MODIFY_STATE = 0x0002
 CREATE_NO_WINDOW = 0x08000000
+JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
+JOB_OBJECT_EXTENDED_LIMIT_INFORMATION = 9
+
+
+class _IoCounters(ctypes.Structure):
+    _fields_ = [
+        ("read_operation_count", ctypes.c_uint64),
+        ("write_operation_count", ctypes.c_uint64),
+        ("other_operation_count", ctypes.c_uint64),
+        ("read_transfer_count", ctypes.c_uint64),
+        ("write_transfer_count", ctypes.c_uint64),
+        ("other_transfer_count", ctypes.c_uint64),
+    ]
+
+
+class _JobObjectBasicLimitInformation(ctypes.Structure):
+    _fields_ = [
+        ("per_process_user_time_limit", ctypes.c_int64),
+        ("per_job_user_time_limit", ctypes.c_int64),
+        ("limit_flags", ctypes.c_uint32),
+        ("minimum_working_set_size", ctypes.c_size_t),
+        ("maximum_working_set_size", ctypes.c_size_t),
+        ("active_process_limit", ctypes.c_uint32),
+        ("affinity", ctypes.c_size_t),
+        ("priority_class", ctypes.c_uint32),
+        ("scheduling_class", ctypes.c_uint32),
+    ]
+
+
+class _JobObjectExtendedLimitInformation(ctypes.Structure):
+    _fields_ = [
+        ("basic_limit_information", _JobObjectBasicLimitInformation),
+        ("io_info", _IoCounters),
+        ("process_memory_limit", ctypes.c_size_t),
+        ("job_memory_limit", ctypes.c_size_t),
+        ("peak_process_memory_used", ctypes.c_size_t),
+        ("peak_job_memory_used", ctypes.c_size_t),
+    ]
 
 
 def instance_object_name(base_name: str) -> str:
@@ -115,6 +154,69 @@ def _kernel32() -> ctypes.WinDLL | None:
     if os.name != "nt":
         return None
     return ctypes.WinDLL("kernel32", use_last_error=True)
+
+
+class WindowsProcessJob:
+    """Keep child services tied to the launcher lifetime on Windows."""
+
+    def __init__(self) -> None:
+        self.handle: int | None = None
+        kernel32 = _kernel32()
+        if kernel32 is None:
+            return
+
+        kernel32.CreateJobObjectW.argtypes = (ctypes.c_void_p, ctypes.c_wchar_p)
+        kernel32.CreateJobObjectW.restype = ctypes.c_void_p
+        handle = kernel32.CreateJobObjectW(None, None)
+        if not handle:
+            raise ctypes.WinError(ctypes.get_last_error())
+
+        information = _JobObjectExtendedLimitInformation()
+        information.basic_limit_information.limit_flags = (
+            JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        )
+        kernel32.SetInformationJobObject.argtypes = (
+            ctypes.c_void_p,
+            ctypes.c_int,
+            ctypes.c_void_p,
+            ctypes.c_uint32,
+        )
+        kernel32.SetInformationJobObject.restype = ctypes.c_bool
+        configured = kernel32.SetInformationJobObject(
+            handle,
+            JOB_OBJECT_EXTENDED_LIMIT_INFORMATION,
+            ctypes.byref(information),
+            ctypes.sizeof(information),
+        )
+        if not configured:
+            error = ctypes.WinError(ctypes.get_last_error())
+            kernel32.CloseHandle(handle)
+            raise error
+        self.handle = int(handle)
+
+    def assign(self, process: subprocess.Popen[str]) -> None:
+        if self.handle is None:
+            return
+        kernel32 = _kernel32()
+        if kernel32 is None:
+            return
+        kernel32.AssignProcessToJobObject.argtypes = (
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+        )
+        kernel32.AssignProcessToJobObject.restype = ctypes.c_bool
+        process_handle = getattr(process, "_handle", None)
+        if process_handle is None or not kernel32.AssignProcessToJobObject(
+            self.handle,
+            process_handle,
+        ):
+            raise ctypes.WinError(ctypes.get_last_error())
+
+    def close(self) -> None:
+        if self.handle is None:
+            return
+        close_windows_handle(self.handle)
+        self.handle = None
 
 
 def acquire_single_instance() -> tuple[int | None, bool]:
@@ -315,6 +417,45 @@ def endpoint_ready(url: str, expected_service: str | None = None) -> bool:
         return False
 
 
+def port_available(port: int) -> bool:
+    """Detect listeners even when they accept and immediately reset HTTP."""
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as candidate:
+        try:
+            candidate.bind(("127.0.0.1", port))
+        except OSError:
+            return False
+    return True
+
+
+def services_ready(site_url: str, companion_url: str) -> bool:
+    return endpoint_ready(site_url) and endpoint_ready(
+        companion_url,
+        "Pool Petiscos Companion",
+    )
+
+
+def show_startup_error() -> None:
+    """Give a useful foreground response instead of failing invisibly."""
+
+    if os.name != "nt":
+        return
+    try:
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        user32.MessageBoxW(
+            None,
+            (
+                "Não foi possível iniciar o caixa.\n\n"
+                "Feche qualquer janela antiga do Pool Petiscos e tente novamente. "
+                "Se o problema continuar, reinicie o computador."
+            ),
+            APP_NAME,
+            0x00000010,
+        )
+    except OSError:
+        pass
+
+
 class ManagedChild:
     def __init__(
         self,
@@ -324,12 +465,14 @@ class ManagedChild:
         cwd: Path,
         environment: dict[str, str],
         logger: logging.Logger,
+        process_job: WindowsProcessJob,
     ) -> None:
         self.name = name
         self.command = command
         self.cwd = cwd
         self.environment = environment
         self.logger = logger
+        self.process_job = process_job
         self.process: subprocess.Popen[str] | None = None
         self.log_stream: IO[str] | None = None
         self.starts: deque[float] = deque()
@@ -356,6 +499,15 @@ class ManagedChild:
             text=True,
             creationflags=creation_flags,
         )
+        try:
+            self.process_job.assign(self.process)
+        except OSError:
+            self.process.terminate()
+            self.process.wait(timeout=5)
+            self.log_stream.close()
+            self.log_stream = None
+            self.process = None
+            raise
         self.logger.info("%s iniciado (PID %s).", self.name, self.process.pid)
 
     def stop(self) -> None:
@@ -399,9 +551,7 @@ def wait_for_services(
                 raise RuntimeError(
                     f"{child.name} encerrou durante a inicialização. Consulte os logs."
                 )
-        if endpoint_ready(site_url) and endpoint_ready(
-            companion_url, "Pool Petiscos Companion"
-        ):
+        if services_ready(site_url, companion_url):
             return
         time.sleep(0.5)
     raise RuntimeError("Os serviços locais não ficaram prontos dentro do prazo.")
@@ -421,9 +571,12 @@ def run_launcher(arguments: argparse.Namespace) -> int:
     if already_running:
         close_windows_handle(mutex_handle)
         site_url = f"http://127.0.0.1:{arguments.site_port}"
+        companion_url = (
+            f"http://127.0.0.1:{arguments.companion_port}/api/health"
+        )
         if should_open_browser(arguments):
-            for _ in range(20):
-                if endpoint_ready(site_url):
+            for _ in range(90):
+                if services_ready(site_url, companion_url):
                     webbrowser.open(site_url)
                     break
                 time.sleep(0.5)
@@ -450,18 +603,38 @@ def run_launcher(arguments: argparse.Namespace) -> int:
         f"http://127.0.0.1:{arguments.companion_port}/api/health"
     )
 
-    if endpoint_ready(site_url) or endpoint_ready(companion_url):
-        logger.error("Uma das portas locais já está em uso por outro processo.")
+    unavailable_ports = [
+        port
+        for port in (arguments.site_port, arguments.companion_port)
+        if not port_available(port)
+    ]
+    if unavailable_ports:
+        logger.error(
+            "Porta local indisponível: %s.",
+            ", ".join(str(port) for port in unavailable_ports),
+        )
+        if should_open_browser(arguments):
+            show_startup_error()
         close_windows_handle(shutdown_handle)
         close_windows_handle(mutex_handle)
         return 3
 
+    try:
+        process_job = WindowsProcessJob()
+    except OSError:
+        logger.exception("Não foi possível preparar a supervisão dos processos locais.")
+        if should_open_browser(arguments):
+            show_startup_error()
+        close_windows_handle(shutdown_handle)
+        close_windows_handle(mutex_handle)
+        return 1
     companion = ManagedChild(
         name="companion",
         command=companion_command(arguments.companion_port),
         cwd=paths["root"],
         environment=environment,
         logger=logger,
+        process_job=process_job,
     )
     site = ManagedChild(
         name="site",
@@ -469,6 +642,7 @@ def run_launcher(arguments: argparse.Namespace) -> int:
         cwd=paths["site_directory"],
         environment=environment,
         logger=logger,
+        process_job=process_job,
     )
     children = [companion, site]
 
@@ -498,10 +672,13 @@ def run_launcher(arguments: argparse.Namespace) -> int:
         return 0
     except Exception:
         logger.exception("Falha ao executar o aplicativo local.")
+        if should_open_browser(arguments):
+            show_startup_error()
         return 1
     finally:
         for child in reversed(children):
             child.stop()
+        process_job.close()
         close_windows_handle(shutdown_handle)
         close_windows_handle(mutex_handle)
         logger.info("Serviços locais encerrados.")

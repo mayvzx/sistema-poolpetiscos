@@ -1,6 +1,6 @@
 import type { PersistedPoolState } from "./types";
 
-const LOCAL_SERVICE_URL = "http://127.0.0.1:8765";
+const LOCAL_SERVICE_URL = "http://127.0.0.1:18765";
 const READ_TIMEOUT_MS = 2_000;
 const WRITE_TIMEOUT_MS = 8_000;
 
