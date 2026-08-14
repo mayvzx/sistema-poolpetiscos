@@ -29,6 +29,8 @@ import {
   FileAudio,
   ListMusic,
   LoaderCircle,
+  LogOut,
+  MessageSquareText,
   Minus,
   Music2,
   Package,
@@ -48,6 +50,7 @@ import {
   Trash2,
   Upload,
   UserRound,
+  UsersRound,
   Volume2,
   WalletCards,
   Wifi,
@@ -56,6 +59,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import { StartupScreen } from "./startup-screen";
+import { OperatorLogin } from "./operator-login";
 import {
   buildDailyRevenue,
   calculateCashBalance,
@@ -89,6 +93,13 @@ import {
   sortOrdersNewestFirst,
   sortOrdersOldestFirst,
 } from "./orders";
+import {
+  buildOperatorSalesSummary,
+  getOperatorProfile,
+  isOperatorId,
+  OPERATOR_PROFILES,
+  OPERATOR_SESSION_KEY,
+} from "./operators";
 import {
   downloadLocalDatabase,
   loadLocalPoolState,
@@ -126,6 +137,7 @@ import type {
   CashMovement,
   Expense,
   OrderStatus,
+  OperatorId,
   PaymentMethod,
   PersistedPoolState,
   Product,
@@ -198,6 +210,9 @@ export default function PoolPetiscosApp() {
   const [cashMovements, setCashMovements] = useState<CashMovement[]>([]);
   const [cashClosures, setCashClosures] = useState<CashClosure[]>([]);
   const [hydrated, setHydrated] = useState(false);
+  const [operatorSessionReady, setOperatorSessionReady] = useState(false);
+  const [activeOperatorId, setActiveOperatorId] =
+    useState<OperatorId | null>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [saleSearch, setSaleSearch] = useState("");
   const [category, setCategory] = useState<(typeof categories)[number]>("Todos");
@@ -281,6 +296,28 @@ export default function PoolPetiscosApp() {
   const localFallbackWritableRef = useRef(true);
   const youtubeSearchQueueRef = useRef<Promise<void>>(Promise.resolve());
   const youtubeSearchSequenceRef = useRef(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    window.queueMicrotask(() => {
+      if (cancelled) return;
+      try {
+        const storedOperator = window.sessionStorage.getItem(
+          OPERATOR_SESSION_KEY,
+        );
+        if (isOperatorId(storedOperator)) {
+          setActiveOperatorId(storedOperator);
+        }
+      } catch {
+        // A sessão continua utilizável mesmo se o navegador bloquear o storage.
+      } finally {
+        setOperatorSessionReady(true);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const rememberPendingSync = useCallback(
     (state: PersistedPoolState, expectedRevision: number | null) => {
@@ -968,6 +1005,13 @@ export default function PoolPetiscosApp() {
         : [],
     [sales, todayKey],
   );
+  const activeOperator = activeOperatorId
+    ? getOperatorProfile(activeOperatorId)
+    : null;
+  const operatorSalesSummary = useMemo(
+    () => buildOperatorSalesSummary(todaySales),
+    [todaySales],
+  );
   const activeOrders = useMemo(
     () => sortOrdersOldestFirst(sales.filter(isActiveOrder)),
     [sales],
@@ -1139,7 +1183,7 @@ export default function PoolPetiscosApp() {
           id: sale.id,
           timestamp: sale.timestamp,
           description: `Venda ${sale.id}`,
-          detail: `${sale.items.reduce((sum, item) => sum + item.quantity, 0)} item(ns) • ${sale.payment}`,
+          detail: `${sale.items.reduce((sum, item) => sum + item.quantity, 0)} item(ns) • ${sale.payment} • ${sale.operatorName}`,
           amount: sale.total,
           kind: "entrada" as const,
         })),
@@ -1221,9 +1265,9 @@ export default function PoolPetiscosApp() {
           aria: "Registrar entrada de estoque",
         },
         product: {
-          eyebrow: productForm.id ? "Editar cadastro" : "Novo cadastro",
-          title: productForm.id ? "Editar produto" : "Criar produto",
-          aria: productForm.id ? "Editar produto" : "Criar produto",
+          eyebrow: productForm.id ? "Cadastro e preço" : "Novo cadastro",
+          title: productForm.id ? "Editar produto e preço" : "Criar produto",
+          aria: productForm.id ? "Editar produto e preço" : "Criar produto",
         },
         "product-delete": {
           eyebrow: "Ação permanente",
@@ -1253,6 +1297,33 @@ export default function PoolPetiscosApp() {
       }[modal]
     : null;
 
+  function loginOperator(operatorId: OperatorId) {
+    setActiveOperatorId(operatorId);
+    try {
+      window.sessionStorage.setItem(OPERATOR_SESSION_KEY, operatorId);
+    } catch {
+      // A identificação continua válida enquanto esta página estiver aberta.
+    }
+  }
+
+  function changeOperator() {
+    if (cart.length > 0) {
+      navigateTo("venda");
+      showToast(
+        "Finalize a comanda atual antes de trocar de operador.",
+        "warning",
+      );
+      return;
+    }
+    try {
+      window.sessionStorage.removeItem(OPERATOR_SESSION_KEY);
+    } catch {
+      // Sem ação adicional: o estado em memória é suficiente para sair.
+    }
+    setNotificationsOpen(false);
+    setActiveOperatorId(null);
+  }
+
   function addToCart(product: Product) {
     if (!cashOpen) {
       showToast("Abra o caixa antes de iniciar uma venda.", "warning");
@@ -1272,7 +1343,10 @@ export default function PoolPetiscosApp() {
             : item,
         );
       }
-      return [...current, { productId: product.id, quantity: 1 }];
+      return [
+        ...current,
+        { productId: product.id, quantity: 1, observation: "" },
+      ];
     });
   }
 
@@ -1293,7 +1367,21 @@ export default function PoolPetiscosApp() {
     );
   }
 
+  function updateCartObservation(productId: string, observation: string) {
+    setCart((current) =>
+      current.map((item) =>
+        item.productId === productId
+          ? { ...item, observation: observation.slice(0, 180) }
+          : item,
+      ),
+    );
+  }
+
   function finishSale() {
+    if (!activeOperator) {
+      showToast("Escolha o operador antes de registrar a venda.", "warning");
+      return;
+    }
     if (!cashOpen) {
       showToast("O caixa está fechado.", "warning");
       return;
@@ -1331,6 +1419,9 @@ export default function PoolPetiscosApp() {
       name: item.product.name,
       price: item.product.price,
       quantity: item.quantity,
+      ...(item.observation.trim()
+        ? { observation: item.observation.trim() }
+        : {}),
     }));
     const timestamp = Date.now();
     const sale: Sale = {
@@ -1338,6 +1429,8 @@ export default function PoolPetiscosApp() {
       timestamp,
       total: cartTotal,
       payment: paymentMethod,
+      operatorId: activeOperator.id,
+      operatorName: activeOperator.name,
       items,
       customerName: orderCustomerName,
       orderStatus: "aguardando",
@@ -1433,16 +1526,25 @@ export default function PoolPetiscosApp() {
           </div>
 
           <div className="mt-4 space-y-2 rounded-xl bg-[#faf8f6] p-3">
-            {sale.items.map((item) => (
+            {sale.items.map((item, itemIndex) => (
               <div
-                key={`${sale.id}-${item.productId}`}
+                key={`${sale.id}-${item.productId}-${itemIndex}`}
                 className="flex items-start gap-2 text-sm"
               >
                 <strong className="min-w-7 text-[#d9202c]">
                   {item.quantity}×
                 </strong>
-                <span className="font-semibold leading-5 text-[#4f4743]">
-                  {item.name}
+                <span className="min-w-0 font-semibold leading-5 text-[#4f4743]">
+                  <span className="block">{item.name}</span>
+                  {item.observation && (
+                    <span className="mt-1 flex items-start gap-1.5 rounded-lg border border-[#f0d7b4] bg-[#fff8ec] px-2.5 py-2 text-[13px] font-bold leading-5 text-[#80561b]">
+                      <MessageSquareText
+                        size={15}
+                        className="mt-0.5 shrink-0"
+                      />
+                      {item.observation}
+                    </span>
+                  )}
                 </span>
               </div>
             ))}
@@ -1453,6 +1555,10 @@ export default function PoolPetiscosApp() {
               {itemCount} item(ns) • Pagamento: {sale.payment}
             </span>
             <strong className="text-base">{currency.format(sale.total)}</strong>
+          </div>
+          <div className="mt-2 flex items-center gap-2 text-xs font-bold text-[#8d8581]">
+            <UserRound size={14} />
+            Venda registrada por {sale.operatorName}
           </div>
         </div>
 
@@ -2061,8 +2167,12 @@ export default function PoolPetiscosApp() {
     selectTrack(next);
   }
 
-  if (!hydrated) {
+  if (!hydrated || !operatorSessionReady) {
     return <StartupScreen />;
+  }
+
+  if (!activeOperator) {
+    return <OperatorLogin onLogin={loginOperator} />;
   }
 
   return (
@@ -2115,17 +2225,23 @@ export default function PoolPetiscosApp() {
         </nav>
 
         <div className="flex-1" />
-        <div className="mt-2 flex items-center gap-3 border-t border-white/8 px-2 pt-4">
-          <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-white font-extrabold text-[#d9202c]">
-            E
+        <button
+          type="button"
+          onClick={changeOperator}
+          className="mt-2 flex min-h-14 items-center gap-3 rounded-2xl border-t border-white/8 px-2 pt-4 text-left hover:bg-white/5"
+          aria-label={`Trocar operador. Conectado como ${activeOperator.name}`}
+        >
+          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-white text-base font-extrabold text-[#d9202c]">
+            {activeOperator.initials}
           </span>
           <div className="min-w-0 flex-1">
-            <strong className="block text-[11px]">Elaine</strong>
-            <span className="block text-[9px] text-white/40">
-              Administradora
+            <strong className="block text-[11px]">{activeOperator.name}</strong>
+            <span className="block text-[9px] text-white/45">
+              {activeOperator.role}
             </span>
           </div>
-        </div>
+          <LogOut size={18} className="text-white/45" />
+        </button>
       </aside>
 
       <main
@@ -2253,17 +2369,27 @@ export default function PoolPetiscosApp() {
                 </section>
               )}
             </div>
-            <div className="hidden items-center gap-2 pl-1 md:flex">
+            <button
+              type="button"
+              onClick={changeOperator}
+              className="hidden min-h-11 items-center gap-2 rounded-xl pl-1 pr-2 text-left transition hover:bg-white md:flex"
+              aria-label={`Trocar operador. Conectado como ${activeOperator.name}`}
+            >
               <span className="grid size-9 place-items-center rounded-xl bg-[#302b29] text-white">
-                <UserRound size={17} />
+                <span className="text-sm font-black">
+                  {activeOperator.initials}
+                </span>
               </span>
               <div>
-                <strong className="block text-[10px]">Elaine</strong>
+                <strong className="block text-[10px]">
+                  {activeOperator.familiarName}
+                </strong>
                 <span className="block text-[8px] text-[#8d8581]">
-                  Proprietária
+                  Trocar operador
                 </span>
               </div>
-            </div>
+              <LogOut size={15} className="text-[#8d8581]" />
+            </button>
           </div>
         </header>
 
@@ -2277,7 +2403,7 @@ export default function PoolPetiscosApp() {
                   Tudo pronto por aqui
                 </span>
                 <h1 className="mt-2 text-3xl font-extrabold tracking-[-.04em] sm:text-[40px]">
-                  {getGreeting(recifeHour)}, Elaine!
+                  {getGreeting(recifeHour)}, {activeOperator.familiarName}!
                 </h1>
                 <p className="mt-2 max-w-[480px] text-xs leading-6 text-[#776f6b] sm:text-sm">
                   Acompanhe as vendas, o caixa e o estoque da Pool sem
@@ -2563,9 +2689,9 @@ export default function PoolPetiscosApp() {
                   Toque nos produtos para montar o pedido.
                 </p>
               </div>
-              <span className="flex items-center gap-2 self-start rounded-full bg-white px-3 py-2 text-[10px] font-bold text-[#776f6b] shadow-sm sm:self-auto">
-                <CheckCircle2 size={16} className="text-[#27865d]" />
-                Baixa automática por item
+              <span className="flex items-center gap-2 self-start rounded-full bg-white px-4 py-2 text-sm font-extrabold text-[#4f4743] shadow-sm sm:self-auto">
+                <UserRound size={17} className="text-[#d9202c]" />
+                Venda de {activeOperator.familiarName}
               </span>
             </div>
 
@@ -2705,46 +2831,71 @@ export default function PoolPetiscosApp() {
                     cartDetails.map((item) => (
                       <article
                         key={item.productId}
-                        className="flex items-center gap-2 rounded-xl border border-[#eee8e4] p-2"
+                        className="rounded-2xl border border-[#eee8e4] bg-white p-3"
                       >
-                        <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#fff7ec] text-lg">
-                          {item.product.emoji}
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <strong className="block truncate text-[10px]">
-                            {item.product.name}
-                          </strong>
-                          <span className="text-[9px] font-bold text-[#d9202c]">
-                            {currency.format(
-                              item.product.price * item.quantity,
-                            )}
+                        <div className="flex items-center gap-2">
+                          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#fff7ec] text-lg">
+                            {item.product.emoji}
                           </span>
+                          <div className="min-w-0 flex-1">
+                            <strong className="block truncate text-[10px]">
+                              {item.product.name}
+                            </strong>
+                            <span className="text-[9px] font-bold text-[#d9202c]">
+                              {currency.format(
+                                item.product.price * item.quantity,
+                              )}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                changeCartQuantity(item.productId, -1)
+                              }
+                              aria-label={`Diminuir ${item.product.name}`}
+                              className="grid size-11 place-items-center rounded-lg border border-[#ebe5e1] text-[#776f6b]"
+                            >
+                              <Minus size={13} />
+                            </button>
+                            <span className="min-w-5 text-center text-[10px] font-extrabold">
+                              {item.quantity}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                changeCartQuantity(item.productId, 1)
+                              }
+                              aria-label={`Aumentar ${item.product.name}`}
+                              className="grid size-11 place-items-center rounded-lg border border-[#ebe5e1] text-[#d9202c]"
+                            >
+                              <Plus size={13} />
+                            </button>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              changeCartQuantity(item.productId, -1)
-                            }
-                            aria-label={`Diminuir ${item.product.name}`}
-                            className="grid size-11 place-items-center rounded-lg border border-[#ebe5e1] text-[#776f6b]"
-                          >
-                            <Minus size={13} />
-                          </button>
-                          <span className="min-w-5 text-center text-[10px] font-extrabold">
-                            {item.quantity}
+
+                        <label className="mt-3 block border-t border-[#eee8e4] pt-3">
+                          <span className="mb-1.5 flex items-center gap-1.5 text-xs font-extrabold text-[#6d6561]">
+                            <MessageSquareText
+                              size={15}
+                              className="text-[#d9202c]"
+                            />
+                            Observação deste item
                           </span>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              changeCartQuantity(item.productId, 1)
+                          <textarea
+                            rows={2}
+                            maxLength={180}
+                            value={item.observation}
+                            onChange={(event) =>
+                              updateCartObservation(
+                                item.productId,
+                                event.target.value,
+                              )
                             }
-                            aria-label={`Aumentar ${item.product.name}`}
-                            className="grid size-11 place-items-center rounded-lg border border-[#ebe5e1] text-[#d9202c]"
-                          >
-                            <Plus size={13} />
-                          </button>
-                        </div>
+                            placeholder="Ex.: sem cebola, sem tomate"
+                            className="w-full resize-none rounded-xl border border-[#ded7d2] bg-[#fcfaf8] px-3 py-2 text-sm leading-5 outline-none transition focus:border-[#d9202c] focus:bg-white focus:ring-4 focus:ring-[#d9202c]/10"
+                          />
+                        </label>
                       </article>
                     ))
                   )}
@@ -3166,7 +3317,7 @@ export default function PoolPetiscosApp() {
                     <tr>
                       <th className="px-5 py-4">Produto</th>
                       <th className="px-4 py-4">Categoria</th>
-                      <th className="px-4 py-4">Preço</th>
+                      <th className="px-4 py-4">Preço atual</th>
                       <th className="px-4 py-4">Quantidade</th>
                       <th className="px-4 py-4">Estoque mínimo</th>
                       <th className="px-4 py-4">Situação</th>
@@ -3249,11 +3400,11 @@ export default function PoolPetiscosApp() {
                               <button
                                 type="button"
                                 onClick={() => openProductModal(product)}
-                                aria-label={`Editar ${product.name}`}
+                                aria-label={`Editar preço e cadastro de ${product.name}`}
                                 className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-[#e4ddd8] px-3 text-sm font-extrabold text-[#4b4542] transition hover:border-[#4b4542] hover:bg-[#f7f5f2]"
                               >
                                 <Pencil size={15} />
-                                Editar
+                                Editar preço
                               </button>
                               <button
                                 type="button"
@@ -3297,7 +3448,7 @@ export default function PoolPetiscosApp() {
                 </strong>
                 <p className="mt-1 text-sm leading-5 text-[#7b6129]">
                   Use <strong>Repor</strong> quando chegar mercadoria. Use{" "}
-                  <strong>Editar</strong> para corrigir preço, nome, quantidade
+                  <strong>Editar preço</strong> para corrigir valor, nome, quantidade
                   atual ou estoque mínimo.
                 </p>
               </div>
@@ -3412,6 +3563,72 @@ export default function PoolPetiscosApp() {
                   </article>
                 );
               })}
+            </section>
+
+            <section className="mt-4 rounded-[22px] border border-[#e5deda] bg-white p-5 shadow-sm sm:p-6">
+              <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
+                <div>
+                  <span className="text-xs font-extrabold uppercase tracking-[.12em] text-[#d9202c]">
+                    Vendas por login
+                  </span>
+                  <h2 className="mt-1 text-xl font-black tracking-[-.025em]">
+                    Quanto cada operador vendeu hoje
+                  </h2>
+                  <p className="mt-1 text-sm leading-6 text-[#6d6561]">
+                    Cada comanda é somada ao perfil conectado no momento da
+                    venda.
+                  </p>
+                </div>
+                <span className="inline-flex min-h-10 items-center gap-2 self-start rounded-full bg-[#f7f5f2] px-4 text-sm font-bold text-[#6d6561] sm:self-auto">
+                  <UsersRound size={17} className="text-[#d9202c]" />
+                  {todaySales.length} venda(s) hoje
+                </span>
+              </div>
+
+              <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {operatorSalesSummary.map((summary) => {
+                  const profile = OPERATOR_PROFILES.find(
+                    (operator) => operator.id === summary.id,
+                  );
+                  const isCurrent = summary.id === activeOperator.id;
+                  return (
+                    <article
+                      key={summary.id}
+                      className={`relative overflow-hidden rounded-2xl border p-5 ${
+                        isCurrent
+                          ? "border-[#f0b6bb] bg-[#fff7f7]"
+                          : "border-[#e9e2de] bg-[#fcfaf8]"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <span
+                          className="grid size-12 place-items-center rounded-2xl text-lg font-black"
+                          style={{
+                            backgroundColor: profile?.softAccent ?? "#eee9e5",
+                            color: profile?.accent ?? "#6d6561",
+                          }}
+                        >
+                          {profile?.initials ?? "?"}
+                        </span>
+                        {isCurrent && (
+                          <span className="rounded-full bg-[#d9202c] px-3 py-1.5 text-xs font-extrabold text-white">
+                            Login atual
+                          </span>
+                        )}
+                      </div>
+                      <strong className="mt-4 block text-lg font-black">
+                        {summary.name}
+                      </strong>
+                      <strong className="mt-1 block text-3xl font-black tracking-[-.04em] text-[#302b29]">
+                        {currency.format(summary.total)}
+                      </strong>
+                      <span className="mt-1 block text-sm font-semibold text-[#776f6b]">
+                        {summary.count} venda(s)
+                      </span>
+                    </article>
+                  );
+                })}
+              </div>
             </section>
 
             <section className="mt-4 flex flex-col gap-4 rounded-[20px] border border-[#ebe5e1] bg-white p-5 shadow-sm lg:flex-row lg:items-center lg:justify-between">

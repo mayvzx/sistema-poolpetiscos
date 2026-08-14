@@ -9,14 +9,26 @@ ou executar scripts.
 Se o Windows acabou de iniciar, aguarde alguns segundos. O Pool Petiscos inicia
 automaticamente quando essa opção permanece marcada no instalador.
 
+## Entrar no seu perfil
+
+Ao abrir o sistema, escolha **Elaine** ou **Poolblay (Pool)**. Todas as vendas
+feitas depois disso serão somadas ao perfil escolhido. Para trocar, use o nome
+do operador no topo ou no final do menu lateral.
+
+Se houver uma comanda sendo montada, finalize-a antes de trocar de operador.
+Em **Financeiro > Vendas por login**, Elaine e Pool podem conferir quantas
+vendas e qual valor cada perfil registrou no dia.
+
 ## Registrar uma venda
 
 1. Abra **Nova venda**.
 2. Escolha os produtos e confira as quantidades.
-3. Informe o nome da pessoa que fez o pedido.
-4. Selecione Pix, dinheiro ou cartão.
-5. Em dinheiro, informe o valor recebido e confira o **Troco**.
-6. Selecione **Finalizar e criar comanda**.
+3. Se necessário, escreva uma observação abaixo do item, como **sem cebola** ou
+   **sem tomate**.
+4. Informe o nome da pessoa que fez o pedido.
+5. Selecione Pix, dinheiro ou cartão.
+6. Em dinheiro, informe o valor recebido e confira o **Troco**.
+7. Selecione **Finalizar e criar comanda**.
 
 Pix e cartão são registrados como forma de pagamento, mas ainda precisam ser
 confirmados na maquininha. O sistema não deve considerar uma transação aprovada
@@ -33,7 +45,8 @@ automaticamente até a integração com o provedor ser contratada e homologada.
 As comandas entregues saem da fila principal, mas continuam disponíveis na aba
 **Concluídas**. Se uma etapa for marcada por engano, use **Voltar** ou
 **Reabrir**. A situação da comanda não altera novamente o estoque nem o valor
-registrado no financeiro.
+registrado no financeiro. As observações aparecem destacadas logo abaixo do
+respectivo item.
 
 ## Cuidar do estoque
 
@@ -44,7 +57,8 @@ Em **Estoque** é possível:
 - repor unidades;
 - excluir um produto que saiu do cardápio.
 
-Excluir um produto não altera vendas antigas. O histórico preserva o nome e o
+Use **Editar preço** na linha do produto quando o valor de venda mudar. Excluir
+ou editar um produto não altera vendas antigas: o histórico preserva o nome e o
 preço usados no momento da venda.
 
 ## Abrir, movimentar e fechar o caixa

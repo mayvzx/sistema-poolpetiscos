@@ -11,6 +11,7 @@ import {
   parseBackup,
   parsePoolState,
 } from "../features/pool-petiscos/persistence";
+import { buildOperatorSalesSummary } from "../features/pool-petiscos/operators";
 import type { PersistedPoolState } from "../features/pool-petiscos/types";
 
 function validState(): PersistedPoolState {
@@ -33,6 +34,8 @@ function validState(): PersistedPoolState {
         timestamp,
         total: 18,
         payment: "Dinheiro",
+        operatorId: "elaine",
+        operatorName: "Elaine",
         customerName: "Cliente teste",
         orderStatus: "entregue",
         statusUpdatedAt: timestamp,
@@ -42,6 +45,7 @@ function validState(): PersistedPoolState {
             name: "Pastel",
             price: 9,
             quantity: 2,
+            observation: "Sem cebola",
           },
         ],
       },
@@ -111,6 +115,27 @@ test("agrupa somente os valores reais do período", () => {
   );
 });
 
+test("separa quantidade e total das vendas por operador", () => {
+  const state = validState();
+  state.sales.push({
+    ...state.sales[0],
+    id: "PV-POOL",
+    total: 9,
+    operatorId: "poolblay",
+    operatorName: "Poolblay",
+    items: [{ ...state.sales[0].items[0], quantity: 1 }],
+  });
+
+  const summary = buildOperatorSalesSummary(state.sales);
+  assert.deepEqual(
+    summary.map(({ id, count, total }) => ({ id, count, total })),
+    [
+      { id: "elaine", count: 1, total: 18 },
+      { id: "poolblay", count: 1, total: 9 },
+    ],
+  );
+});
+
 test("valida estado e backup completos antes de restaurar", () => {
   const state = validState();
   assert.deepEqual(parsePoolState(state), state);
@@ -146,10 +171,15 @@ test("migra vendas antigas para o histórico de comandas", () => {
   delete legacy.sales[0].customerName;
   delete legacy.sales[0].orderStatus;
   delete legacy.sales[0].statusUpdatedAt;
+  delete legacy.sales[0].operatorId;
+  delete legacy.sales[0].operatorName;
 
   const parsed = parsePoolState(legacy);
   assert.ok(parsed);
   assert.equal(parsed.sales[0].customerName, "Cliente sem nome");
   assert.equal(parsed.sales[0].orderStatus, "entregue");
   assert.equal(parsed.sales[0].statusUpdatedAt, parsed.sales[0].timestamp);
+  assert.equal(parsed.sales[0].operatorId, "nao-identificado");
+  assert.equal(parsed.sales[0].operatorName, "Não identificado");
+  assert.equal(parsed.sales[0].items[0].observation, "Sem cebola");
 });

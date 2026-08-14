@@ -179,7 +179,7 @@ class StateStorage:
                     """
                 )
                 self._create_readable_views(connection)
-                connection.execute("PRAGMA user_version = 1")
+                connection.execute("PRAGMA user_version = 2")
 
     @staticmethod
     def _create_readable_views(connection: sqlite3.Connection) -> None:
@@ -225,6 +225,13 @@ class StateStorage:
                 ) AS data_hora,
                 CAST(json_extract(sale.value, '$.total') AS REAL) AS total,
                 json_extract(sale.value, '$.payment') AS forma_pagamento,
+                COALESCE(
+                    NULLIF(
+                        TRIM(json_extract(sale.value, '$.operatorName')),
+                        ''
+                    ),
+                    'Não identificado'
+                ) AS operador,
                 (
                     SELECT COALESCE(
                         SUM(
@@ -277,6 +284,13 @@ class StateStorage:
                 ) AS situacao_atualizada_em_ms,
                 CAST(json_extract(sale.value, '$.total') AS REAL) AS total,
                 json_extract(sale.value, '$.payment') AS forma_pagamento,
+                COALESCE(
+                    NULLIF(
+                        TRIM(json_extract(sale.value, '$.operatorName')),
+                        ''
+                    ),
+                    'Não identificado'
+                ) AS operador,
                 (
                     SELECT COALESCE(
                         SUM(
@@ -309,6 +323,10 @@ class StateStorage:
                     AS preco_unitario,
                 CAST(json_extract(item.value, '$.quantity') AS INTEGER)
                     AS quantidade,
+                NULLIF(
+                    TRIM(json_extract(item.value, '$.observation')),
+                    ''
+                ) AS observacao,
                 ROUND(
                     CAST(json_extract(item.value, '$.price') AS REAL)
                         * CAST(

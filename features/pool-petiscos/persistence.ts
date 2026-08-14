@@ -10,8 +10,10 @@ import type {
   ProductCategory,
   Sale,
   SaleItem,
+  SaleOperatorId,
 } from "./types";
 import { roundMoney } from "./domain";
+import { operatorNameForSale } from "./operators";
 
 export const STORAGE_KEY = "pool-caixa-prototype-v3-requisitos-confirmados";
 export const BACKUP_VERSION = 1;
@@ -22,6 +24,11 @@ const ORDER_STATUSES = new Set<OrderStatus>([
   "em-preparo",
   "pronto",
   "entregue",
+]);
+const SALE_OPERATOR_IDS = new Set<SaleOperatorId>([
+  "elaine",
+  "poolblay",
+  "nao-identificado",
 ]);
 const PRODUCT_CATEGORIES = new Set<ProductCategory>([
   "Hambúrgueres",
@@ -89,7 +96,22 @@ function parseSaleItem(value: unknown): SaleItem | null {
   ) {
     return null;
   }
-  return value as SaleItem;
+  const observationValue = value.observation;
+  if (
+    observationValue !== undefined &&
+    (typeof observationValue !== "string" || observationValue.length > 180)
+  ) {
+    return null;
+  }
+  const observation =
+    typeof observationValue === "string" ? observationValue.trim() : "";
+  return {
+    productId: value.productId.trim(),
+    name: value.name.trim(),
+    price: value.price,
+    quantity: value.quantity,
+    ...(observation ? { observation } : {}),
+  };
 }
 
 function parseSale(value: unknown): Sale | null {
@@ -129,6 +151,12 @@ function parseSale(value: unknown): Sale | null {
         ? value.statusUpdatedAt
         : null;
   if (statusUpdatedAt === null) return null;
+  const operatorId =
+    typeof value.operatorId === "string" &&
+    SALE_OPERATOR_IDS.has(value.operatorId as SaleOperatorId)
+      ? (value.operatorId as SaleOperatorId)
+      : "nao-identificado";
+  const operatorName = operatorNameForSale(operatorId);
   return {
     ...(value as Sale),
     total: itemTotal,
@@ -136,6 +164,8 @@ function parseSale(value: unknown): Sale | null {
     customerName,
     orderStatus,
     statusUpdatedAt,
+    operatorId,
+    operatorName,
   };
 }
 
