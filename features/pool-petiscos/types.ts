@@ -4,11 +4,24 @@ export type View =
   | "comandas"
   | "estoque"
   | "financeiro"
-  | "musica";
+  | "musica"
+  | "configuracoes";
 
 export type PaymentMethod = "Pix" | "Dinheiro" | "Cartão";
 
 export type OperatorId = "elaine" | "poolblay";
+
+export type OperatorCredential = {
+  algorithm: "PBKDF2-SHA-256";
+  iterations: number;
+  salt: string;
+  hash: string;
+  updatedAt: number;
+};
+
+export type OperatorCredentials = Partial<
+  Record<OperatorId, OperatorCredential>
+>;
 
 export type SaleOperatorId = OperatorId | "nao-identificado";
 
@@ -121,6 +134,7 @@ export type PersistedPoolState = {
   cashOpenedAt: number;
   cashMovements: CashMovement[];
   cashClosures: CashClosure[];
+  operatorCredentials: OperatorCredentials;
 };
 
 export type PoolBackup = {

@@ -38,9 +38,15 @@ botão **Baixar banco completo** gera o SQLite voltado à auditoria técnica.
 | `vw_despesas` | despesas registradas |
 | `vw_movimentos_caixa` | sangrias e suprimentos |
 | `vw_fechamentos_caixa` | saldos esperado, contado e diferença |
+| `vw_operadores` | perfis e situação de configuração do PIN, sem expor o verificador |
 
 As tabelas internas `app_state` e `state_history` garantem gravação atômica e
 recuperação de revisões. Para leitura comum, prefira as consultas `vw_*`.
+
+Os PINs nunca aparecem nessas consultas. O estado interno contém somente um
+verificador derivado com PBKDF2-SHA-256 e um sal aleatório por perfil, não o PIN
+em texto legível. Ainda assim, trate o banco e os backups como arquivos
+confidenciais.
 
 ## Inspeção pelo código
 

@@ -56,6 +56,7 @@ function validState(): PersistedPoolState {
     cashOpenedAt: timestamp - 60_000,
     cashMovements: [],
     cashClosures: [],
+    operatorCredentials: {},
   };
 }
 
@@ -173,6 +174,7 @@ test("migra vendas antigas para o histórico de comandas", () => {
   delete legacy.sales[0].statusUpdatedAt;
   delete legacy.sales[0].operatorId;
   delete legacy.sales[0].operatorName;
+  delete (legacy as { operatorCredentials?: unknown }).operatorCredentials;
 
   const parsed = parsePoolState(legacy);
   assert.ok(parsed);
@@ -182,4 +184,21 @@ test("migra vendas antigas para o histórico de comandas", () => {
   assert.equal(parsed.sales[0].operatorId, "nao-identificado");
   assert.equal(parsed.sales[0].operatorName, "Não identificado");
   assert.equal(parsed.sales[0].items[0].observation, "Sem cebola");
+  assert.deepEqual(parsed.operatorCredentials, {});
+});
+
+test("rejeita verificadores de PIN adulterados ao restaurar", () => {
+  const state = validState();
+  state.operatorCredentials.elaine = {
+    algorithm: "PBKDF2-SHA-256",
+    iterations: 210_000,
+    salt: btoa("1234567890abcdef"),
+    hash: btoa("12345678901234567890123456789012"),
+    updatedAt: Date.now(),
+  };
+  assert.deepEqual(parsePoolState(state), state);
+
+  const invalid = structuredClone(state);
+  invalid.operatorCredentials.elaine!.iterations = 10;
+  assert.equal(parsePoolState(invalid), null);
 });

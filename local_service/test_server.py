@@ -318,6 +318,17 @@ class StateStorageTest(unittest.TestCase):
                     "cashOpenedAt": 1_700_000_000_000,
                     "cashMovements": [],
                     "cashClosures": [],
+                    "operatorCredentials": {
+                        "elaine": {
+                            "algorithm": "PBKDF2-SHA-256",
+                            "iterations": 210000,
+                            "salt": "MTIzNDU2Nzg5MGFiY2RlZg==",
+                            "hash": (
+                                "MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTI="
+                            ),
+                            "updatedAt": 1_700_000_400_000,
+                        }
+                    },
                 }
             )
 
@@ -354,6 +365,13 @@ class StateStorageTest(unittest.TestCase):
                         "FROM vw_itens_venda"
                     ).fetchone(),
                     ("Batata frita", 2, "Sem sal", 37.0),
+                )
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT nome, pin_configurado "
+                        "FROM vw_operadores ORDER BY id"
+                    ).fetchall(),
+                    [("Elaine", 1), ("Poolblay", 0)],
                 )
 
 

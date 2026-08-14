@@ -60,6 +60,14 @@ import {
 import Image from "next/image";
 import { StartupScreen } from "./startup-screen";
 import { OperatorLogin } from "./operator-login";
+import { SettingsPanel } from "./settings-panel";
+import {
+  DEFAULT_DISPLAY_PREFERENCES,
+  loadDisplayPreferences,
+  resolveTheme,
+  saveDisplayPreferences,
+  type DisplayPreferences,
+} from "./display-preferences";
 import {
   buildDailyRevenue,
   calculateCashBalance,
@@ -138,6 +146,8 @@ import type {
   Expense,
   OrderStatus,
   OperatorId,
+  OperatorCredential,
+  OperatorCredentials,
   PaymentMethod,
   PersistedPoolState,
   Product,
@@ -209,6 +219,12 @@ export default function PoolPetiscosApp() {
   const [cashOpenedAt, setCashOpenedAt] = useState(() => Date.now() - 2 * 60 * 60_000);
   const [cashMovements, setCashMovements] = useState<CashMovement[]>([]);
   const [cashClosures, setCashClosures] = useState<CashClosure[]>([]);
+  const [operatorCredentials, setOperatorCredentials] =
+    useState<OperatorCredentials>({});
+  const [displayPreferences, setDisplayPreferences] =
+    useState<DisplayPreferences>(DEFAULT_DISPLAY_PREFERENCES);
+  const [displayPreferencesReady, setDisplayPreferencesReady] = useState(false);
+  const [systemPrefersDark, setSystemPrefersDark] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const [operatorSessionReady, setOperatorSessionReady] = useState(false);
   const [activeOperatorId, setActiveOperatorId] =
@@ -296,6 +312,43 @@ export default function PoolPetiscosApp() {
   const localFallbackWritableRef = useRef(true);
   const youtubeSearchQueueRef = useRef<Promise<void>>(Promise.resolve());
   const youtubeSearchSequenceRef = useRef(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const applySystemTheme = (matches: boolean) => setSystemPrefersDark(matches);
+    window.queueMicrotask(() => {
+      if (cancelled) return;
+      setDisplayPreferences(loadDisplayPreferences());
+      applySystemTheme(media.matches);
+      setDisplayPreferencesReady(true);
+    });
+    const onChange = (event: MediaQueryListEvent) =>
+      applySystemTheme(event.matches);
+    media.addEventListener("change", onChange);
+    return () => {
+      cancelled = true;
+      media.removeEventListener("change", onChange);
+    };
+  }, []);
+
+  const resolvedTheme = resolveTheme(
+    displayPreferences.themeMode,
+    systemPrefersDark,
+  );
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.dataset.poolTheme = resolvedTheme;
+    root.style.colorScheme = resolvedTheme;
+    root.style.setProperty(
+      "--pool-font-scale",
+      String(displayPreferences.fontScale / 100),
+    );
+    if (displayPreferencesReady) {
+      saveDisplayPreferences(displayPreferences);
+    }
+  }, [displayPreferences, displayPreferencesReady, resolvedTheme]);
 
   useEffect(() => {
     let cancelled = false;
@@ -417,6 +470,7 @@ export default function PoolPetiscosApp() {
     setCashOpenedAt(state.cashOpenedAt);
     setCashMovements(state.cashMovements);
     setCashClosures(state.cashClosures);
+    setOperatorCredentials(state.operatorCredentials);
     setCart([]);
     setCustomerName("");
     setCashReceived("");
@@ -703,6 +757,7 @@ export default function PoolPetiscosApp() {
       cashOpenedAt,
       cashMovements,
       cashClosures,
+      operatorCredentials,
     } satisfies PersistedPoolState;
     const serialized = JSON.stringify(state);
 
@@ -760,6 +815,7 @@ export default function PoolPetiscosApp() {
     expenses,
     hydrated,
     openingBalance,
+    operatorCredentials,
     products,
     sales,
     flushPrimaryState,
@@ -1304,6 +1360,16 @@ export default function PoolPetiscosApp() {
     } catch {
       // A identificação continua válida enquanto esta página estiver aberta.
     }
+  }
+
+  function updateOperatorCredential(
+    operatorId: OperatorId,
+    credential: OperatorCredential,
+  ) {
+    setOperatorCredentials((current) => ({
+      ...current,
+      [operatorId]: credential,
+    }));
   }
 
   function changeOperator() {
@@ -1973,6 +2039,7 @@ export default function PoolPetiscosApp() {
       cashOpenedAt,
       cashMovements,
       cashClosures,
+      operatorCredentials,
     };
   }
 
@@ -2172,7 +2239,13 @@ export default function PoolPetiscosApp() {
   }
 
   if (!activeOperator) {
-    return <OperatorLogin onLogin={loginOperator} />;
+    return (
+      <OperatorLogin
+        credentials={operatorCredentials}
+        onCredentialChange={updateOperatorCredential}
+        onLogin={loginOperator}
+      />
+    );
   }
 
   return (
@@ -4337,10 +4410,22 @@ export default function PoolPetiscosApp() {
             </div>
           </div>
         )}
+
+        {activeView === "configuracoes" && (
+          <SettingsPanel
+            activeOperatorId={activeOperator.id}
+            credentials={operatorCredentials}
+            displayPreferences={displayPreferences}
+            resolvedTheme={resolvedTheme}
+            onCredentialChange={updateOperatorCredential}
+            onDisplayPreferencesChange={setDisplayPreferences}
+            onMessage={showToast}
+          />
+        )}
       </main>
 
       <nav
-        className="fixed bottom-[max(.75rem,env(safe-area-inset-bottom))] left-3 right-3 z-40 grid grid-cols-6 rounded-2xl border border-white/10 bg-[#211e1d]/96 p-1.5 text-white shadow-2xl backdrop-blur-xl lg:hidden"
+        className="fixed bottom-[max(.75rem,env(safe-area-inset-bottom))] left-3 right-3 z-40 grid grid-cols-7 rounded-2xl border border-white/10 bg-[#211e1d]/96 p-1.5 text-white shadow-2xl backdrop-blur-xl lg:hidden"
         aria-label="Navegação móvel"
       >
         {navigation.map((item) => {
@@ -4357,7 +4442,11 @@ export default function PoolPetiscosApp() {
               }`}
             >
               <Icon size={18} />
-              {item.id === "venda" ? "Venda" : item.label}
+              {item.id === "venda"
+                ? "Venda"
+                : item.id === "configuracoes"
+                  ? "Ajustes"
+                  : item.label}
               {item.id === "comandas" && activeOrders.length > 0 && (
                 <span className="absolute right-1 top-1 grid min-h-4 min-w-4 place-items-center rounded-full bg-white px-1 text-[9px] font-black text-[#d9202c]">
                   {activeOrders.length}

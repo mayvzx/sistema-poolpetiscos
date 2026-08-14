@@ -17,7 +17,7 @@ export type OperatorSalesSummary = {
   total: number;
 };
 
-export const OPERATOR_SESSION_KEY = "pool-petiscos-operador-v1";
+export const OPERATOR_SESSION_KEY = "pool-petiscos-operador-v2";
 
 export const OPERATOR_PROFILES = [
   {

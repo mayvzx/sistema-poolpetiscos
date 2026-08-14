@@ -32,6 +32,7 @@ READABLE_VIEW_NAMES = (
     "vw_despesas",
     "vw_movimentos_caixa",
     "vw_fechamentos_caixa",
+    "vw_operadores",
 )
 
 
@@ -179,7 +180,7 @@ class StateStorage:
                     """
                 )
                 self._create_readable_views(connection)
-                connection.execute("PRAGMA user_version = 2")
+                connection.execute("PRAGMA user_version = 3")
 
     @staticmethod
     def _create_readable_views(connection: sqlite3.Connection) -> None:
@@ -422,6 +423,31 @@ class StateStorage:
                 COALESCE(app_state.state_json, '{}'),
                 '$.cashClosures'
             ) AS closure
+            WHERE app_state.id = 1;
+
+            CREATE VIEW vw_operadores AS
+            WITH perfis(id, nome) AS (
+                VALUES ('elaine', 'Elaine'), ('poolblay', 'Poolblay')
+            )
+            SELECT
+                perfis.id AS id,
+                perfis.nome AS nome,
+                CASE
+                    WHEN json_type(
+                        COALESCE(app_state.state_json, '{}'),
+                        '$.operatorCredentials.' || perfis.id
+                    ) = 'object'
+                    THEN 1
+                    ELSE 0
+                END AS pin_configurado,
+                CAST(
+                    json_extract(
+                        COALESCE(app_state.state_json, '{}'),
+                        '$.operatorCredentials.' || perfis.id || '.updatedAt'
+                    ) AS INTEGER
+                ) AS pin_atualizado_em_ms
+            FROM perfis
+            CROSS JOIN app_state
             WHERE app_state.id = 1;
             """
         )

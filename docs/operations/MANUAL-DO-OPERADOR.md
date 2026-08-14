@@ -11,13 +11,39 @@ automaticamente quando essa opção permanece marcada no instalador.
 
 ## Entrar no seu perfil
 
-Ao abrir o sistema, escolha **Elaine** ou **Poolblay (Pool)**. Todas as vendas
-feitas depois disso serão somadas ao perfil escolhido. Para trocar, use o nome
-do operador no topo ou no final do menu lateral.
+Ao abrir o sistema, escolha **Elaine** ou **Poolblay (Pool)**. No primeiro
+acesso de cada perfil, crie e repita um PIN de 6 números. Nos acessos seguintes,
+informe esse PIN para entrar. Todas as vendas feitas depois disso serão somadas
+ao perfil escolhido. Para trocar, use o nome do operador no topo ou no final do
+menu lateral.
 
 Se houver uma comanda sendo montada, finalize-a antes de trocar de operador.
 Em **Financeiro > Vendas por login**, Elaine e Pool podem conferir quantas
 vendas e qual valor cada perfil registrou no dia.
+
+### Escolher um bom PIN
+
+- use 6 números que não sejam uma data de nascimento nem o final do telefone;
+- evite sequências e repetições, como `123456`, `654321` ou `121212`;
+- Elaine e Pool devem usar PINs diferentes;
+- não compartilhe o PIN nem o deixe anotado perto do caixa.
+
+Para trocar seu PIN, entre no próprio perfil e abra **Configurações > PIN**.
+Informe o PIN atual, o novo PIN e a confirmação. O sistema guarda apenas um
+verificador protegido, nunca o PIN em texto legível.
+
+## Ajustar letras e aparência
+
+Abra **Configurações** para adaptar a tela sem reiniciar o sistema:
+
+- em **Tamanho das letras**, use o controle de 90% a 135% ou os botões de
+  diminuir, restaurar 100% e aumentar;
+- em **Aparência**, escolha **Automático**, **Claro** ou **Escuro**;
+- **Automático** acompanha o tema claro/escuro configurado no Windows e muda em
+  tempo real quando o tema do computador mudar.
+
+Essas preferências ficam salvas neste computador e não alteram o tamanho das
+letras em outros dispositivos.
 
 ## Registrar uma venda
 

@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img alt="Versão" src="https://img.shields.io/badge/vers%C3%A3o-1.3.0-d9202c">
+  <img alt="Versão" src="https://img.shields.io/badge/vers%C3%A3o-1.4.0-d9202c">
   <img alt="Plataforma Windows" src="https://img.shields.io/badge/plataforma-Windows-302b29">
   <img alt="Banco SQLite" src="https://img.shields.io/badge/dados-SQLite-7458b4">
   <img alt="Status protótipo operacional" src="https://img.shields.io/badge/status-prot%C3%B3tipo%20operacional-dc9b19">
@@ -34,6 +34,8 @@ banco ou maquininha.
 
 - vendas em Pix, dinheiro ou cartão, com troco em destaque;
 - acesso de Elaine e Poolblay, com totais de vendas separados por operador;
+- PIN individual protegido e alterável em Configurações;
+- tamanho das letras ajustável e temas automático, claro e escuro;
 - abertura, movimentação, conferência e fechamento de caixa;
 - cadastro, alteração, exclusão, reposição e alerta de estoque;
 - comandas em **Aguardando**, **Em preparo**, **Pronto** e histórico;
@@ -52,7 +54,7 @@ banco ou maquininha.
 
 Baixe o instalador mais recente em
 [Releases](https://github.com/mayvzx/sistema-poolpetiscos/releases/latest). O
-usuário final executa apenas `PoolPetiscos-Setup-1.3.0.exe`; as dependências já
+usuário final executa apenas `PoolPetiscos-Setup-1.4.0.exe`; as dependências já
 estão incluídas.
 
 > O protótipo atual ainda não possui assinatura Authenticode. O Windows pode

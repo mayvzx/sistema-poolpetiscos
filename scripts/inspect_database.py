@@ -24,6 +24,7 @@ READABLE_VIEWS = {
     "despesas": "vw_despesas",
     "movimentos-caixa": "vw_movimentos_caixa",
     "fechamentos-caixa": "vw_fechamentos_caixa",
+    "operadores": "vw_operadores",
 }
 
 
