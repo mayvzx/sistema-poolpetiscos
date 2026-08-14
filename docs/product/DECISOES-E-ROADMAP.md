@@ -34,6 +34,22 @@ vendas, estoque e controle gerencial da Pool Petiscos & Lanches.
 - instalador reproduzível com Node.js, yt-dlp e FFmpeg incluídos;
 - layout responsivo.
 
+### Revisão de requisitos de 14/08/2026
+
+- acesso inicial com dois perfis: Elaine e Poolblay (Pool);
+- cada venda guarda o operador conectado e o Financeiro mostra os totais
+  separados por login;
+- observações podem ser adicionadas a cada item da comanda e continuam visíveis
+  durante o preparo e no histórico;
+- a edição de produtos destaca a alteração de preço e preserva o preço original
+  das vendas antigas;
+- as consultas SQLite de vendas, comandas e itens mostram operador e
+  observações;
+- a maquininha atual foi identificada como Getnet tradicional, mas o modelo e a
+  habilitação para TEF ainda precisam ser confirmados pela etiqueta/contrato;
+- a troca para Mercado Pago está prevista para janeiro de 2027, com preferência
+  por um terminal Point oficialmente integrável.
+
 ### Revisão técnica de 25/07/2026
 
 - regras de dinheiro e troco isoladas e testadas;
@@ -86,7 +102,7 @@ Não implementar com dados inventados:
 - mesas, entrega, retirada e regras de cancelamento;
 - permissões para desconto e cancelamento;
 - modelo de comprovante e impressora térmica;
-- relatórios prioritários;
+- demais relatórios prioritários além das vendas por operador;
 - estoque inicial real;
 - valor habitual de abertura;
 - especificações do computador;
@@ -106,9 +122,12 @@ Não implementar com dados inventados:
 
 ## Pagamentos integrados
 
-- [ ] Confirmar a marca e o modelo da maquininha da lanchonete.
-- [ ] Escolher um primeiro provedor: Mercado Pago Point, PagBank PlugPag ou API
-      Pix da instituição recebedora.
+- [x] Confirmar a marca atual: Getnet.
+- [ ] Confirmar o modelo exato pela etiqueta traseira e a contratação de TEF.
+- [ ] Decidir se vale integrar a Getnet atual ou aguardar a mudança prevista
+      para Mercado Pago em janeiro de 2027.
+- [ ] Na troca, escolher um terminal Mercado Pago Point Smart/Pro compatível
+      com a API oficial.
 - [ ] Implementar estados pendente, aprovado, recusado e cancelado.
 - [ ] Baixar estoque apenas depois da confirmação do provedor.
 - [ ] Homologar estorno, queda de internet e retorno ao modo independente.

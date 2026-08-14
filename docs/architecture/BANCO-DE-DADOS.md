@@ -32,9 +32,9 @@ botão **Baixar banco completo** gera o SQLite voltado à auditoria técnica.
 | Consulta | Conteúdo |
 | --- | --- |
 | `vw_produtos` | nome, categoria, preço e estoque |
-| `vw_vendas` | data, total, forma de pagamento e quantidade de itens |
-| `vw_comandas` | cliente, situação do preparo, horários e pagamento |
-| `vw_itens_venda` | itens e valores de cada venda |
+| `vw_vendas` | data, operador, total, forma de pagamento e quantidade de itens |
+| `vw_comandas` | cliente, operador, situação do preparo, horários e pagamento |
+| `vw_itens_venda` | itens, observações e valores de cada venda |
 | `vw_despesas` | despesas registradas |
 | `vw_movimentos_caixa` | sangrias e suprimentos |
 | `vw_fechamentos_caixa` | saldos esperado, contado e diferença |

@@ -296,6 +296,8 @@ class StateStorageTest(unittest.TestCase):
                             "timestamp": 1_700_000_000_000,
                             "total": 37,
                             "payment": "Pix",
+                            "operatorId": "elaine",
+                            "operatorName": "Elaine",
                             "customerName": "Ana",
                             "orderStatus": "em-preparo",
                             "statusUpdatedAt": 1_700_000_300_000,
@@ -305,6 +307,7 @@ class StateStorageTest(unittest.TestCase):
                                     "name": "Batata frita",
                                     "price": 18.5,
                                     "quantity": 2,
+                                    "observation": "Sem sal",
                                 }
                             ],
                         }
@@ -333,24 +336,24 @@ class StateStorageTest(unittest.TestCase):
                 )
                 self.assertEqual(
                     connection.execute(
-                        "SELECT forma_pagamento, quantidade_itens "
+                        "SELECT forma_pagamento, operador, quantidade_itens "
                         "FROM vw_vendas"
                     ).fetchone(),
-                    ("Pix", 2),
+                    ("Pix", "Elaine", 2),
                 )
                 self.assertEqual(
                     connection.execute(
-                        "SELECT cliente, situacao, quantidade_itens "
+                        "SELECT cliente, situacao, operador, quantidade_itens "
                         "FROM vw_comandas"
                     ).fetchone(),
-                    ("Ana", "em-preparo", 2),
+                    ("Ana", "em-preparo", "Elaine", 2),
                 )
                 self.assertEqual(
                     connection.execute(
-                        "SELECT produto, quantidade, total_item "
+                        "SELECT produto, quantidade, observacao, total_item "
                         "FROM vw_itens_venda"
                     ).fetchone(),
-                    ("Batata frita", 2, 37.0),
+                    ("Batata frita", 2, "Sem sal", 37.0),
                 )
 
 

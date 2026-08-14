@@ -8,6 +8,10 @@ export type View =
 
 export type PaymentMethod = "Pix" | "Dinheiro" | "Cartão";
 
+export type OperatorId = "elaine" | "poolblay";
+
+export type SaleOperatorId = OperatorId | "nao-identificado";
+
 export type ProductCategory =
   | "Hambúrgueres"
   | "Salgados"
@@ -29,6 +33,7 @@ export type Product = {
 export type CartItem = {
   productId: string;
   quantity: number;
+  observation: string;
 };
 
 export type SaleItem = {
@@ -36,6 +41,7 @@ export type SaleItem = {
   name: string;
   price: number;
   quantity: number;
+  observation?: string;
 };
 
 export type OrderStatus =
@@ -49,6 +55,8 @@ export type Sale = {
   timestamp: number;
   total: number;
   payment: PaymentMethod;
+  operatorId: SaleOperatorId;
+  operatorName: string;
   items: SaleItem[];
   customerName: string;
   orderStatus: OrderStatus;

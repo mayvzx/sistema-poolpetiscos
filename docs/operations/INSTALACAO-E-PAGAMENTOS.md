@@ -58,35 +58,45 @@ O número do cartão, senha e demais dados sensíveis devem permanecer sempre na
 maquininha. O sistema armazena somente identificadores, bandeira, forma, valor,
 status e comprovante retornados pelo provedor.
 
-### Opção 1 — Mercado Pago Point
+### Situação atual — maquininha Getnet
+
+A foto recebida mostra um terminal Getnet tradicional, com teclado físico e
+bobina. Ela não mostra a etiqueta traseira, então ainda não permite confirmar o
+modelo nem se o contrato possui TEF. Para esse tipo de equipamento, o caminho
+mais provável é a **Solução TEF Getnet**, contratada para integrar a automação
+comercial ao sistema de frente de caixa.
+
+Isso é diferente do Get Smart: nos terminais Android Get Smart, a Getnet exige
+aplicativo compatível com seus SDKs, submissão na Get Store e certificação. Não
+devemos escolher esse caminho sem confirmar que o terminal é realmente um Get
+Smart.
+
+Documentação oficial:
+
+- https://site.getnet.com.br/tef/solucao-tef/
+- https://getstore.getnet.com.br/docs/
+- https://getstore.getnet.com.br/docs/iniciando-integracao/requisitos-desenvolvimento/
+
+Enquanto o modelo e o contrato não forem confirmados, Pix e cartão continuam
+com confirmação manual na maquininha. O sistema não exibirá QR Code fictício
+nem marcará uma venda como aprovada por uma integração inexistente.
+
+### Mudança prevista para janeiro de 2027 — Mercado Pago Point
 
 A API Point permite enviar uma `order` do caixa para um terminal Point, receber
 cartão, QR Code ou Pix e consultar o resultado para conciliação automática. A
 documentação atual lista terminais Point Smart e Point Pro compatíveis.
 
-É uma boa escolha quando a lanchonete ainda pode escolher ou trocar a
-maquininha. Exige conta Mercado Pago, aplicação cadastrada, credenciais de
-produção e internet. O token deve ficar no serviço local, nunca no navegador.
+É a opção recomendada para a troca planejada para janeiro de 2027, desde que a
+Pool escolha um modelo Point Smart ou Point Pro listado como compatível. Exige
+conta Mercado Pago, aplicação cadastrada, credenciais de produção e internet. O
+token deve ficar no serviço local, nunca no navegador.
 
 Documentação oficial:
 
 - https://www.mercadopago.com.br/developers/pt/docs/mp-point/overview
 - https://www.mercadopago.com.br/developers/pt/reference/in-person-payments/point/overview
-
-### Opção 2 — PagBank PlugPag
-
-O PlugPag integra automação Windows ao terminal PagBank por Bluetooth. O caixa
-envia valor, crédito/débito, parcelamento e código da venda; a maquininha
-processa a transação usando sua própria conexão com o PagBank.
-
-É uma opção direta quando o estabelecimento já usa uma Moderninha compatível.
-A documentação informa que não existe ambiente simulado para PlugPag: a
-homologação depende do terminal e do relacionamento comercial.
-
-Documentação oficial:
-
-- https://developer.pagbank.com.br/docs/plugpag
-- https://developer.pagbank.com.br/docs/estrutura-da-aplicacao
+- https://www.mercadopago.com.br/developers/pt/docs/qr-code/overview
 
 ### Pix sem depender da maquininha
 
@@ -109,15 +119,17 @@ Documentação oficial:
 
 ## Decisão necessária antes da integração
 
-Registrar:
+Registrar antes da integração Getnet:
 
-- marca e modelo exatos da maquininha;
+- foto legível da etiqueta traseira com o modelo exato;
+- confirmação com a Getnet de que o contrato possui ou aceita TEF;
 - instituição onde a Pool recebe o Pix;
 - CNPJ/MEI titular da conta;
 - necessidade de débito, crédito, parcelamento e vale-alimentação;
 - comportamento desejado quando a internet cair;
 - impressora e formato do comprovante.
 
-Com esses dados, deve ser implementado apenas um adaptador de pagamento
-inicial. A recomendação é começar com Pix dinâmico e uma maquininha em modo de
-teste/homologação, antes de liberar transações reais.
+Com esses dados, deve ser implementado apenas um adaptador de pagamento por
+vez. Para a mudança de 2027, a recomendação é validar antecipadamente um
+terminal Mercado Pago Point compatível, Pix dinâmico, notificações de status e
+uma conta de teste antes de liberar transações reais.

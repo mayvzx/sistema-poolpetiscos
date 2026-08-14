@@ -23,6 +23,8 @@ test("mantém a fila na ordem de chegada", () => {
     timestamp: 200,
     total: 10,
     payment: "Pix",
+    operatorId: "elaine",
+    operatorName: "Elaine",
     customerName: "Ana",
     orderStatus: "aguardando",
     statusUpdatedAt: 200,

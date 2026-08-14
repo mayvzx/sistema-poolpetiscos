@@ -2,6 +2,28 @@
 
 Todas as mudanças relevantes do Pool Petiscos são registradas neste arquivo.
 
+## 1.3.0 — 2026-08-14
+
+### Operadores e comandas
+
+- adiciona a etapa inicial para escolher Elaine ou Poolblay (Pool);
+- atribui cada venda ao perfil conectado e mostra quantidade e total por
+  operador no Financeiro;
+- permite registrar observações em cada item do pedido e as destaca nas
+  comandas em andamento e concluídas;
+- migra vendas anteriores sem inventar autoria, classificando-as como **Não
+  identificado**.
+
+### Estoque, banco e pagamentos
+
+- deixa a ação de alteração de preço explícita no Estoque e preserva o valor
+  registrado nas vendas antigas;
+- inclui operador e observação nas consultas legíveis do SQLite;
+- documenta a maquininha Getnet atual, o provável caminho por TEF e a mudança
+  planejada para Mercado Pago Point em janeiro de 2027;
+- mantém Pix e cartão em confirmação manual até existir integração real e
+  homologada, sem QR Code ou aprovação simulados.
+
 ## 1.2.1 — 2026-07-29
 
 ### Alterado
