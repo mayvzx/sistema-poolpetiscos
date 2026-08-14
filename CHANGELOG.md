@@ -2,6 +2,27 @@
 
 Todas as mudanças relevantes do Pool Petiscos são registradas neste arquivo.
 
+## 1.4.0 — 2026-08-14
+
+### Segurança e identificação
+
+- cada perfil cria um PIN individual de 6 números no primeiro acesso;
+- adiciona troca do PIN atual pela nova aba **Configurações**;
+- rejeita PINs comuns, sequenciais e repetitivos e mostra orientações claras;
+- armazena somente verificadores PBKDF2-SHA-256 com sal aleatório, nunca o PIN
+  legível;
+- adiciona a consulta SQLite `vw_operadores`, que mostra apenas se o PIN está
+  configurado e quando foi alterado.
+
+### Acessibilidade e aparência
+
+- permite ajustar as letras de 90% a 135%, com resultado imediato em toda a
+  interface;
+- adiciona os temas **Automático**, **Claro** e **Escuro**;
+- detecta o tema padrão do Windows e acompanha mudanças enquanto o sistema está
+  aberto;
+- salva as preferências visuais somente no computador em uso.
+
 ## 1.3.0 — 2026-08-14
 
 ### Operadores e comandas

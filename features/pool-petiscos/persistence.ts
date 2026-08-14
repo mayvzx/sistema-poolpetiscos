@@ -4,6 +4,8 @@ import type {
   Expense,
   OrderStatus,
   PaymentMethod,
+  OperatorCredential,
+  OperatorCredentials,
   PersistedPoolState,
   PoolBackup,
   Product,
@@ -218,6 +220,49 @@ function parseCashClosure(value: unknown): CashClosure | null {
   return { ...(value as CashClosure), difference };
 }
 
+function isBase64(value: unknown, minimumBytes: number) {
+  if (typeof value !== "string" || !/^[A-Za-z0-9+/]+={0,2}$/.test(value)) {
+    return false;
+  }
+  try {
+    return atob(value).length >= minimumBytes;
+  } catch {
+    return false;
+  }
+}
+
+function parseOperatorCredential(value: unknown): OperatorCredential | null {
+  if (
+    !isRecord(value) ||
+    value.algorithm !== "PBKDF2-SHA-256" ||
+    typeof value.iterations !== "number" ||
+    !Number.isInteger(value.iterations) ||
+    value.iterations < 100_000 ||
+    value.iterations > 1_000_000 ||
+    !isBase64(value.salt, 16) ||
+    !isBase64(value.hash, 32) ||
+    !isTimestamp(value.updatedAt)
+  ) {
+    return null;
+  }
+  return value as OperatorCredential;
+}
+
+function parseOperatorCredentials(value: unknown): OperatorCredentials | null {
+  if (value === undefined) return {};
+  if (!isRecord(value)) return null;
+  const allowed = new Set(["elaine", "poolblay"]);
+  if (Object.keys(value).some((key) => !allowed.has(key))) return null;
+  const credentials: OperatorCredentials = {};
+  for (const operatorId of allowed) {
+    if (value[operatorId] === undefined) continue;
+    const credential = parseOperatorCredential(value[operatorId]);
+    if (!credential) return null;
+    credentials[operatorId as keyof OperatorCredentials] = credential;
+  }
+  return credentials;
+}
+
 function parseList<T>(
   value: unknown,
   parser: (item: unknown) => T | null,
@@ -234,6 +279,9 @@ export function parsePoolState(value: unknown): PersistedPoolState | null {
   const expenses = parseList(value.expenses, parseExpense);
   const cashMovements = parseList(value.cashMovements, parseCashMovement);
   const cashClosures = parseList(value.cashClosures, parseCashClosure);
+  const operatorCredentials = parseOperatorCredentials(
+    value.operatorCredentials,
+  );
   if (
     products === null ||
     sales === null ||
@@ -242,7 +290,8 @@ export function parsePoolState(value: unknown): PersistedPoolState | null {
     !isNonNegativeMoney(value.openingBalance) ||
     !isTimestamp(value.cashOpenedAt) ||
     cashMovements === null ||
-    cashClosures === null
+    cashClosures === null ||
+    operatorCredentials === null
   ) {
     return null;
   }
@@ -258,6 +307,7 @@ export function parsePoolState(value: unknown): PersistedPoolState | null {
     cashOpenedAt: value.cashOpenedAt,
     cashMovements,
     cashClosures,
+    operatorCredentials,
   };
 }
 

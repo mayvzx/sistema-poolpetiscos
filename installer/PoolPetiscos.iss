@@ -5,7 +5,7 @@
   #error AppOutput não foi informado.
 #endif
 #ifndef AppVersion
-  #define AppVersion "1.3.0"
+  #define AppVersion "1.4.0"
 #endif
 #ifndef AppIcon
   #error AppIcon não foi informado.

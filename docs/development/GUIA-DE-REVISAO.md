@@ -15,24 +15,28 @@ inteiro.
    - valida dados locais e arquivos de backup;
 5. `features/pool-petiscos/demo-data.ts`
    - reúne somente os dados fictícios da demonstração;
-6. `features/pool-petiscos/pool-petiscos-app.tsx`
+6. `features/pool-petiscos/operator-security.ts` e `operator-login.tsx`
+   - validam os PINs, derivam os verificadores e controlam a entrada nos perfis;
+7. `features/pool-petiscos/display-preferences.ts` e `settings-panel.tsx`
+   - isolam tema, escala de fonte e a tela de Configurações;
+8. `features/pool-petiscos/pool-petiscos-app.tsx`
    - conecta as regras aos botões, formulários e telas;
-7. `features/pool-petiscos/music-companion.ts`
+9. `features/pool-petiscos/music-companion.ts`
    - faz somente a comunicação da tela com o serviço local de músicas;
-8. `features/pool-petiscos/local-storage-companion.ts`
+10. `features/pool-petiscos/local-storage-companion.ts`
    - faz a leitura e a gravação do estado principal pela API local;
-9. `local_service/storage.py`
+11. `local_service/storage.py`
    - contém SQLite, consultas legíveis, histórico, revisões e backups;
-10. `local_service/server.py`
+12. `local_service/server.py`
    - limita a API ao próprio computador, gerencia a biblioteca e chama o
      `yt-dlp`;
-11. `local_service/launcher.py` e `installer/`
+13. `local_service/launcher.py` e `installer/`
     - iniciam os serviços e definem o pacote instalado no Windows;
-12. `scripts/inspect_database.py`
+14. `scripts/inspect_database.py`
     - mostra como o banco é acessado em modo somente leitura;
-13. `scripts/build-windows-installer.ps1`
+15. `scripts/build-windows-installer.ps1`
     - baixa dependências verificadas, monta e compila o instalador;
-14. `tests/` e `local_service/test_server.py`
+16. `tests/` e `local_service/test_server.py`
    - registra os comportamentos que não podem voltar a quebrar.
 
 ## Correções desta revisão
@@ -68,6 +72,11 @@ inteiro.
 - comandas ficam persistidas em Aguardando, Em preparo, Pronto e Entregue;
 - vendas antigas entram no histórico sem reaparecer na fila de preparo;
 - atalhos do Windows apontam diretamente para o ícone versionado.
+- perfis exigem PIN de 6 números, sem armazenar o segredo em texto legível;
+- PINs comuns, sequenciais e repetitivos são rejeitados;
+- fonte muda em tempo real e permanece entre acessos neste computador;
+- modo Automático acompanha `prefers-color-scheme` e reage à mudança do Windows;
+- tema escuro cobre superfícies, formulários, tabelas e janelas do sistema.
 
 ## Limites conhecidos
 
@@ -77,8 +86,8 @@ inteiro.
   entidade imutável de sessão;
 - não há cancelamento, desconto, comandas por mesa, impressão fiscal ou níveis
   de permissão;
-- o nome “Elaine” representa a operadora validada para o protótipo; a versão
-  instalada deverá ter operador/PIN se isso for confirmado presencialmente;
+- o PIN local melhora a identificação de quem operou o caixa, mas não substitui
+  controle de acesso do Windows, criptografia do disco ou autenticação online;
 - o componente visual principal ainda pode ser dividido em componentes menores
   por tela numa próxima refatoração.
 

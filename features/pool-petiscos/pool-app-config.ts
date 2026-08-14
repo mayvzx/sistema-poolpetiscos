@@ -3,6 +3,7 @@ import {
   LayoutDashboard,
   Music2,
   Package,
+  Settings,
   ShoppingCart,
   WalletCards,
 } from "lucide-react";
@@ -32,6 +33,7 @@ export const navigation = [
   { id: "estoque" as const, label: "Estoque", icon: Package },
   { id: "financeiro" as const, label: "Financeiro", icon: WalletCards },
   { id: "musica" as const, label: "Músicas", icon: Music2 },
+  { id: "configuracoes" as const, label: "Configurações", icon: Settings },
 ];
 
 const views = new Set<View>(navigation.map((item) => item.id));
@@ -207,5 +209,6 @@ export function createInitialPoolState(): PersistedPoolState {
     cashOpenedAt: Date.now() - 2 * 60 * 60_000,
     cashMovements: [],
     cashClosures: [],
+    operatorCredentials: {},
   };
 }

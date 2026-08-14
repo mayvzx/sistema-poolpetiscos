@@ -46,7 +46,7 @@ de gravar apenas metade de uma operação. As últimas 50 revisões ficam em
 
 Para leitura humana, o banco cria consultas SQLite somente leitura:
 `vw_produtos`, `vw_vendas`, `vw_itens_venda`, `vw_despesas`,
-`vw_movimentos_caixa` e `vw_fechamentos_caixa`.
+`vw_movimentos_caixa`, `vw_fechamentos_caixa` e `vw_operadores`.
 
 O navegador também mantém uma cópia de recuperação em `localStorage`. No
 computador instalado, SQLite é a fonte principal. A cópia do navegador serve
@@ -61,8 +61,16 @@ momento errado.
   instaladas;
 - downloads rejeitam endereços de rede local;
 - os estados recebidos têm limite de tamanho e validação integral;
+- cada PIN é transformado no navegador em um verificador PBKDF2-SHA-256 com sal
+  aleatório antes de ser persistido; o PIN legível não é gravado;
+- o PIN serve para identificar o operador local e não substitui a proteção da
+  conta do Windows nem a criptografia do computador;
 - nenhuma credencial de banco, maquininha ou certificado fica no frontend ou no
   repositório.
+
+As preferências de tema e tamanho das letras são específicas do dispositivo e
+ficam no armazenamento do navegador. Elas não são dados do negócio e, por isso,
+não entram no SQLite nem nos backups do caixa.
 
 ## Aplicação hospedada
 

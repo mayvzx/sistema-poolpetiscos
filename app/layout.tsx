@@ -6,6 +6,7 @@ const title = "Pool Petiscos & Lanches | Caixa, estoque e financeiro";
 const description =
   "Gestão de comandas, vendas, estoque, caixa, finanças e música ambiente da Pool Petiscos & Lanches.";
 const productionOrigin = "https://pool-petiscos-caixa.mayrom.chatgpt.site";
+const appearanceBootstrap = `(()=>{try{const key="pool-petiscos-preferencias-visuais-v1";const saved=JSON.parse(localStorage.getItem(key)||"null");const allowed=[90,95,100,105,110,115,120,125,130,135];const scale=allowed.includes(saved?.fontScale)?saved.fontScale:100;const mode=["system","light","dark"].includes(saved?.themeMode)?saved.themeMode:"system";const dark=mode==="dark"||(mode==="system"&&matchMedia("(prefers-color-scheme: dark)").matches);const theme=dark?"dark":"light";document.documentElement.dataset.poolTheme=theme;document.documentElement.style.colorScheme=theme;document.documentElement.style.setProperty("--pool-font-scale",String(scale/100));}catch{}})();`;
 
 export async function generateMetadata(): Promise<Metadata> {
   const requestHeaders = await headers();
@@ -73,7 +74,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="pt-BR">
+    <html lang="pt-BR" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: appearanceBootstrap }} />
+      </head>
       <body className="antialiased">{children}</body>
     </html>
   );

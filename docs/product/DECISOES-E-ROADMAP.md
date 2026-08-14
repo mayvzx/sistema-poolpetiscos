@@ -33,6 +33,10 @@ vendas, estoque e controle gerencial da Pool Petiscos & Lanches.
 - inicialização automática com o Windows;
 - instalador reproduzível com Node.js, yt-dlp e FFmpeg incluídos;
 - layout responsivo.
+- PIN individual para Elaine e Poolblay, criado no primeiro acesso e alterável
+  em Configurações;
+- escala de fonte ajustável em tempo real entre 90% e 135%;
+- temas automático, claro e escuro, com detecção do padrão do Windows;
 
 ### Revisão de requisitos de 14/08/2026
 
@@ -49,6 +53,12 @@ vendas, estoque e controle gerencial da Pool Petiscos & Lanches.
   habilitação para TEF ainda precisam ser confirmados pela etiqueta/contrato;
 - a troca para Mercado Pago está prevista para janeiro de 2027, com preferência
   por um terminal Point oficialmente integrável.
+- cada perfil tem um PIN próprio; o banco recebe somente o verificador derivado
+  com PBKDF2-SHA-256 e sal aleatório, sem PIN legível;
+- Configurações concentra a troca do PIN, a escala de fonte e o tema da
+  interface;
+- preferências visuais são locais ao dispositivo e o modo Automático acompanha
+  alterações no tema do Windows.
 
 ### Revisão técnica de 25/07/2026
 
