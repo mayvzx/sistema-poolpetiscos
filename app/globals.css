@@ -325,6 +325,20 @@ html[data-pool-theme="dark"] .pool-preview {
   background-color: #272321 !important;
 }
 
+html[data-pool-theme="dark"] .pool-low-stock-card {
+  border-color: #584b44 !important;
+  background-color: #302824 !important;
+  box-shadow: inset 3px 0 0 rgba(215, 104, 34, 0.78);
+}
+
+html[data-pool-theme="dark"] .pool-low-stock-icon {
+  background-color: #463126 !important;
+}
+
+html[data-pool-theme="dark"] .pool-low-stock-track {
+  background-color: #54443c !important;
+}
+
 html[data-pool-theme="dark"] .pool-settings-hero {
   border: 1px solid #4a423e;
 }

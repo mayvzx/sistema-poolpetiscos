@@ -2703,23 +2703,23 @@ export default function PoolPetiscosApp() {
                   {lowStock.slice(0, 4).map((product) => (
                     <article
                       key={product.id}
-                      className="flex items-center gap-3 rounded-xl border border-[#f0e9e5] bg-[#fdfcfb] p-2.5"
+                      className="pool-low-stock-card flex items-center gap-3 rounded-xl border border-[#f0e9e5] bg-[#fdfcfb] p-3"
                     >
-                      <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#fff2e8] text-lg">
+                      <span className="pool-low-stock-icon grid size-10 shrink-0 place-items-center rounded-xl bg-[#fff2e8] text-lg">
                         {product.emoji}
                       </span>
                       <div className="min-w-0 flex-1">
-                        <div className="flex justify-between gap-2">
-                          <strong className="truncate text-[10px]">
+                        <div className="flex items-baseline justify-between gap-3">
+                          <strong className="truncate text-sm text-[#302b29]">
                             {product.name}
                           </strong>
-                          <span className="shrink-0 text-[8px] font-bold text-[#d76822]">
+                          <span className="shrink-0 text-xs font-extrabold text-[#d76822]">
                             {product.stock} un.
                           </span>
                         </div>
-                        <div className="mt-2 h-1 overflow-hidden rounded-full bg-[#f1e8e2]">
+                        <div className="pool-low-stock-track mt-2.5 h-1.5 overflow-hidden rounded-full bg-[#f1e8e2]">
                           <i
-                            className="block h-full rounded-full bg-[#d76822]"
+                            className="block h-full rounded-full bg-[#d76822] transition-[width] duration-300"
                             style={{
                               width: `${Math.min(
                                 100,
