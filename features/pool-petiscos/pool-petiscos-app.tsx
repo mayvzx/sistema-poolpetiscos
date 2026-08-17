@@ -3188,7 +3188,7 @@ export default function PoolPetiscosApp() {
                       <section
                         key={status}
                         aria-labelledby={`orders-${status}`}
-                        className="overflow-hidden rounded-[22px] border border-[#e5deda] bg-[#f4f1ee] shadow-[0_12px_34px_rgba(66,45,37,.05)]"
+                        className="pool-order-lane overflow-hidden rounded-[22px] border border-[#e5deda] bg-[#f4f1ee] shadow-[0_12px_34px_rgba(66,45,37,.05)]"
                       >
                         <header className="border-b border-[#e5deda] bg-white p-4">
                           <div className="flex items-center justify-between gap-3">
@@ -3212,7 +3212,7 @@ export default function PoolPetiscosApp() {
                           {stageOrders.length > 0 ? (
                             stageOrders.map(renderOrderCard)
                           ) : (
-                            <div className="grid min-h-32 place-items-center rounded-2xl border border-dashed border-[#d9d2ce] bg-white/70 p-5 text-center">
+                            <div className="pool-order-empty grid min-h-32 place-items-center rounded-2xl border border-dashed border-[#d9d2ce] bg-white/70 p-5 text-center">
                               <div>
                                 <CheckCircle2
                                   size={26}

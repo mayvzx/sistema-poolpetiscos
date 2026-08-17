@@ -296,6 +296,7 @@ html[data-pool-theme="dark"] [class*="text-[#302b29]"] {
   color: #f7f3f0 !important;
 }
 
+html[data-pool-theme="dark"] [class*="text-[#4b4542]"],
 html[data-pool-theme="dark"] [class*="text-[#4f4743]"],
 html[data-pool-theme="dark"] [class*="text-[#5f5753]"],
 html[data-pool-theme="dark"] [class*="text-[#6d6561]"],
@@ -337,6 +338,17 @@ html[data-pool-theme="dark"] .pool-low-stock-icon {
 
 html[data-pool-theme="dark"] .pool-low-stock-track {
   background-color: #54443c !important;
+}
+
+html[data-pool-theme="dark"] .pool-order-lane {
+  border-color: #504844 !important;
+  background-color: #211e1d !important;
+}
+
+html[data-pool-theme="dark"] .pool-order-empty {
+  border-color: #5b514c !important;
+  background-color: #292422 !important;
+  color: #d9d1cc !important;
 }
 
 html[data-pool-theme="dark"] .pool-settings-hero {
