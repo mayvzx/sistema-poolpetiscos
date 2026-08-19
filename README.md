@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img alt="Versão" src="https://img.shields.io/badge/vers%C3%A3o-1.4.0-d9202c">
+  <img alt="Versão" src="https://img.shields.io/badge/vers%C3%A3o-1.5.0-d9202c">
   <img alt="Plataforma Windows" src="https://img.shields.io/badge/plataforma-Windows-302b29">
   <img alt="Banco SQLite" src="https://img.shields.io/badge/dados-SQLite-7458b4">
   <img alt="Status protótipo operacional" src="https://img.shields.io/badge/status-prot%C3%B3tipo%20operacional-dc9b19">
@@ -23,7 +23,7 @@
 O Pool Petiscos funciona no próprio computador do caixa, sem exigir a compra de
 um servidor. O instalador inclui a interface React, o serviço local, SQLite,
 Node.js, yt-dlp e FFmpeg. As vendas continuam disponíveis sem internet; a rede
-é usada para músicas, sincronização do OneDrive e futuras integrações de
+é usada para músicas, sincronização do Google Drive e futuras integrações de
 pagamento.
 
 Esta versão é um protótipo operacional para validação com os proprietários. Ela
@@ -34,7 +34,7 @@ banco ou maquininha.
 
 - vendas em Pix, dinheiro ou cartão, com troco em destaque;
 - acesso de Elaine e Poolblay, com totais de vendas separados por operador;
-- PIN individual protegido e alterável em Configurações;
+- PIN individual protegido, chave de recuperação e redefinição segura;
 - tamanho das letras ajustável e temas automático, claro e escuro;
 - abertura, movimentação, conferência e fechamento de caixa;
 - cadastro, alteração, exclusão, reposição e alerta de estoque;
@@ -44,7 +44,9 @@ banco ou maquininha.
 - despesas e indicadores financeiros calculados dos registros;
 - SQLite com controle de revisão e consultas legíveis para auditoria;
 - cópia completa do banco e backup de restauração pela interface;
-- backup diário verificado no OneDrive, com retenção de 30 dias;
+- backups SQLite diários, semanais e mensais, com restauração validada;
+- conexão opcional com Google Drive usando acesso somente aos arquivos criados
+  pelo Pool Petiscos;
 - busca de músicas no YouTube com até cinco resultados;
 - downloads locais com yt-dlp e conversão/reprodução com FFmpeg;
 - inicialização automática, ícone próprio e atualização sem apagar dados;
@@ -54,7 +56,7 @@ banco ou maquininha.
 
 Baixe o instalador mais recente em
 [Releases](https://github.com/mayvzx/sistema-poolpetiscos/releases/latest). O
-usuário final executa apenas `PoolPetiscos-Setup-1.4.0.exe`; as dependências já
+usuário final executa apenas `PoolPetiscos-Setup-1.5.0.exe`; as dependências já
 estão incluídas.
 
 > O protótipo atual ainda não possui assinatura Authenticode. O Windows pode
@@ -68,6 +70,10 @@ Os dados ficam separados do programa e são preservados nas atualizações:
 %LOCALAPPDATA%\PoolPetiscos\musicas
 %LOCALAPPDATA%\PoolPetiscos\logs
 ```
+
+Na desinstalação, o assistente pergunta se esses dados também devem ser
+apagados. A opção padrão os preserva; para uma máquina usada somente em teste,
+selecione a remoção completa.
 
 O manual completo está em
 [docs/operations/MANUAL-DO-OPERADOR.md](docs/operations/MANUAL-DO-OPERADOR.md).

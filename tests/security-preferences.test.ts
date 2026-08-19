@@ -7,9 +7,13 @@ import {
 } from "../features/pool-petiscos/display-preferences";
 import {
   createOperatorCredential,
+  createPinRecoveryCredential,
+  isCompleteRecoveryKey,
+  normalizeRecoveryKey,
   sanitizePin,
   validateOperatorPin,
   verifyOperatorPin,
+  verifyPinRecoveryKey,
 } from "../features/pool-petiscos/operator-security";
 
 test("aceita um PIN de seis dígitos e bloqueia padrões previsíveis", () => {
@@ -30,6 +34,19 @@ test("guarda somente um verificador com sal e confirma o PIN correto", async () 
   assert.equal(await verifyOperatorPin("482907", first), true);
   assert.equal(await verifyOperatorPin("482908", first), false);
   assert.equal(JSON.stringify(first).includes("482907"), false);
+});
+
+test("gera e valida uma chave de recuperação sem guardar o segredo", async () => {
+  const recovery = await createPinRecoveryCredential();
+  assert.equal(recovery.key.split("-").length, 4);
+  assert.equal(isCompleteRecoveryKey(recovery.key), true);
+  assert.equal(normalizeRecoveryKey(` ${recovery.key.toLowerCase()} `), recovery.key);
+  assert.equal(await verifyPinRecoveryKey(recovery.key, recovery.credential), true);
+  assert.equal(
+    await verifyPinRecoveryKey("AAAA-BBBB-CCCC-DDDD", recovery.credential),
+    false,
+  );
+  assert.equal(JSON.stringify(recovery.credential).includes(recovery.key), false);
 });
 
 test("valida preferências visuais locais e resolve o tema automático", () => {
@@ -53,4 +70,3 @@ test("valida preferências visuais locais e resolve o tema automático", () => {
   assert.equal(resolveTheme("system", false), "light");
   assert.equal(resolveTheme("light", true), "light");
 });
-

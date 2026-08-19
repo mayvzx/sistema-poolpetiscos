@@ -20,9 +20,10 @@ Os dados operacionais ficam separados da instalação:
 %LOCALAPPDATA%\PoolPetiscos\logs
 ```
 
-Atualizar ou desinstalar o programa não remove esses diretórios. Essa separação
-é intencional para preservar banco, backups, músicas e diagnóstico. Para apagar
-os dados é necessária uma ação manual e consciente.
+Atualizar preserva esses diretórios. Ao desinstalar, o assistente pergunta se o
+usuário deseja manter os dados ou remover banco, músicas, PINs, configurações,
+logs, backups locais e tokens. A preservação é a opção padrão; a remoção
+completa é apropriada para uma máquina usada apenas na apresentação.
 
 ## O que é empacotado
 
@@ -42,13 +43,41 @@ normal abre o navegador. A inicialização automática aguarda os serviços loca
 e abre o caixa no navegador após o login do Windows.
 
 O grupo **Pool Petiscos** no menu Iniciar também oferece **Dados e backups**,
-**Manual do sistema** e **Encerrar Pool Petiscos**.
+**Manual do sistema**, **Encerrar Pool Petiscos** e **Desinstalar Pool
+Petiscos**.
 
 O serviço iniciado em segundo plano também executa a política de backup do
 armazenamento. Quando o OneDrive está configurado no Windows, o serviço detecta
 automaticamente a pasta corporativa ou pessoal e usa `Pool Petiscos\Backups`.
 Sem OneDrive, ele mantém uma cópia local. O instalador não solicita nem
 armazena credenciais do OneDrive.
+
+Além desse destino local, o operador pode conectar uma conta Google em
+**Configurações > Backups automáticos**. A sincronização usa somente o escopo
+`drive.file`, limitado aos arquivos criados pelo aplicativo, e guarda o token
+de atualização protegido pela DPAPI do usuário Windows.
+
+## Configurar o Google Drive no build
+
+Antes de entregar a função de conexão, crie no Google Cloud um cliente OAuth do
+tipo **Aplicativo para computador**, habilite a Google Drive API e use o escopo
+`https://www.googleapis.com/auth/drive.file` na tela de consentimento. Baixe o
+JSON e mantenha-o fora do Git.
+
+O build procura automaticamente `config\google-drive-oauth.json`, que está no
+`.gitignore`, ou aceita um caminho explícito:
+
+```powershell
+.\scripts\build-windows-installer.ps1 `
+  -Version 1.5.0 `
+  -UnsignedPrototype `
+  -GoogleDriveOAuthConfig "C:\Credenciais\pool-petiscos-desktop.json"
+```
+
+`config\google-drive-oauth.example.json` documenta o formato. Sem a credencial,
+o instalador continua funcional e mantém os backups locais, mas o botão de
+conectar o Google Drive fica desabilitado. O `BUILD-MANIFEST.json` registra
+somente se a credencial foi incluída, nunca os valores dela.
 
 ## Dependências para construir o instalador
 
@@ -88,7 +117,7 @@ Use somente para validação interna:
 
 ```powershell
 .\scripts\build-windows-installer.ps1 `
-  -Version 1.4.0 `
+  -Version 1.5.0 `
   -UnsignedPrototype
 ```
 
@@ -96,8 +125,17 @@ O script exige a opção `-UnsignedPrototype`; ele não produz silenciosamente u
 executável que pareça assinado. A saída mostra um aviso claro e fica em:
 
 ```text
-build\windows\installer\PoolPetiscos-Setup-1.4.0.exe
+build\windows\installer\PoolPetiscos-Setup-1.5.0.exe
 ```
+
+Se o Windows ou o OneDrive bloquear a cópia do `.exe` para o projeto, o build
+preserva o resultado automaticamente em:
+
+```text
+%LOCALAPPDATA%\PoolPetiscos\artifacts\installer
+```
+
+O caminho efetivamente usado e o SHA-256 são exibidos no final do build.
 
 Cache e stage são mantidos fora de pastas sincronizadas para evitar bloqueios
 do OneDrive durante o empacotamento:
@@ -112,7 +150,7 @@ Para manter a árvore usada pelo Inno Setup e poder revisá-la:
 
 ```powershell
 .\scripts\build-windows-installer.ps1 `
-  -Version 1.4.0 `
+  -Version 1.5.0 `
   -UnsignedPrototype `
   -KeepStage
 ```
@@ -126,7 +164,7 @@ Exemplo com o repositório do usuário atual:
 
 ```powershell
 .\scripts\build-windows-installer.ps1 `
-  -Version 1.4.0 `
+  -Version 1.5.0 `
   -CertificateThumbprint '0123456789ABCDEF0123456789ABCDEF01234567' `
   -CertificateStoreLocation CurrentUser
 ```
@@ -135,7 +173,7 @@ Para um certificado instalado no repositório da máquina:
 
 ```powershell
 .\scripts\build-windows-installer.ps1 `
-  -Version 1.4.0 `
+  -Version 1.5.0 `
   -CertificateThumbprint '0123456789ABCDEF0123456789ABCDEF01234567' `
   -CertificateStoreLocation LocalMachine
 ```
@@ -160,7 +198,7 @@ Uma atualização é sempre explícita:
 
 ```powershell
 .\scripts\build-windows-installer.ps1 `
-  -Version 1.4.0 `
+  -Version 1.5.0 `
   -UnsignedPrototype `
   -RefreshDependencyLock
 ```
@@ -189,7 +227,8 @@ normais não existe atualização silenciosa de binários.
 3. executa `npm run check`, incluindo testes, lint, typecheck e build;
 4. gera a saída standalone do vinext, sem copiar os 660 MB de dependências de
    desenvolvimento;
-5. cria um ambiente Python isolado e empacota launcher e `yt-dlp`;
+5. cria um ambiente Python isolado e empacota launcher e `yt-dlp` com bytecode
+   otimizado, sem adicionar SDKs pesados para o Google Drive;
 6. baixa e verifica Node e FFmpeg;
 7. monta o stage com aplicativo, runtime necessário, manual, licenças e
    `BUILD-MANIFEST.json`;
@@ -208,9 +247,11 @@ normais não existe atualização silenciosa de binários.
 4. manter marcadas as opções de atalho e inicialização automática;
 5. abrir o sistema pelo atalho “Pool Petiscos”;
 6. confirmar que o navegador mostra `http://127.0.0.1:14173`;
-7. configurar e testar o destino de backup no OneDrive;
+7. conectar o Google Drive e executar um backup manual de teste;
 8. usar um nobreak para computador, roteador e equipamentos de pagamento;
-9. realizar uma restauração de teste antes de colocar o caixa em produção.
+9. restaurar uma cópia de teste antes de colocar o caixa em produção;
+10. ao final de uma apresentação, usar o atalho **Desinstalar Pool Petiscos** e
+    escolher se os dados de teste também devem ser removidos.
 
 O item “Encerrar Pool Petiscos” no menu Iniciar envia um sinal ao launcher e
 encerra os processos supervisionados. Durante uma atualização, feche o sistema

@@ -11,7 +11,8 @@ flowchart LR
     O["Operadora no navegador"] --> UI["Interface React<br/>127.0.0.1:14173"]
     UI --> API["Serviço local Python<br/>127.0.0.1:18765"]
     API --> DB[("SQLite<br/>pool-petiscos.db")]
-    API --> BK["Backups verificados<br/>OneDrive ou pasta local"]
+    API --> BK["Backups verificados<br/>diário, semanal e mensal"]
+    BK --> GD["Google Drive<br/>OAuth drive.file"]
     API --> YT["yt-dlp"]
     YT --> FF["FFmpeg"]
     FF --> MU["Biblioteca local<br/>de músicas"]
@@ -63,6 +64,9 @@ momento errado.
 - os estados recebidos têm limite de tamanho e validação integral;
 - cada PIN é transformado no navegador em um verificador PBKDF2-SHA-256 com sal
   aleatório antes de ser persistido; o PIN legível não é gravado;
+- a chave de recuperação do PIN segue a mesma regra e aparece apenas na criação;
+- o Google Drive usa o escopo limitado `drive.file`; o token de atualização é
+  protegido pela DPAPI do usuário Windows e nunca vai para o navegador;
 - o PIN serve para identificar o operador local e não substitui a proteção da
   conta do Windows nem a criptografia do computador;
 - nenhuma credencial de banco, maquininha ou certificado fica no frontend ou no

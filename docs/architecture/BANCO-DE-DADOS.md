@@ -84,8 +84,15 @@ Sem OneDrive:
 %LOCALAPPDATA%\PoolPetiscos\backups
 ```
 
-O sistema mantém 30 cópias diárias verificadas. Atualizar ou desinstalar o
-programa não apaga o banco, músicas ou backups.
+O sistema mantém 30 cópias diárias, 12 semanais e 12 mensais, todas verificadas
+pelo SQLite. A interface também pode sincronizá-las com a pasta visível **Pool
+Petiscos - Backups** no Google Drive.
+
+Uma restauração aceita somente um banco íntegro que contenha as tabelas
+`app_state` e `state_history` e um estado válido. Antes da substituição, o banco
+atual recebe uma cópia `pool-petiscos-antes-restauracao-...db`. Atualizações
+preservam os dados; na desinstalação, o usuário escolhe entre preservar ou
+apagar os dados locais.
 
 ## Privacidade
 

@@ -198,7 +198,20 @@ test("rejeita verificadores de PIN adulterados ao restaurar", () => {
   };
   assert.deepEqual(parsePoolState(state), state);
 
+  state.pinRecoveryCredential = {
+    algorithm: "PBKDF2-SHA-256",
+    iterations: 310_000,
+    salt: btoa("abcdefghijklmnop"),
+    hash: btoa("abcdefghijklmnopqrstuvwxyz123456"),
+    updatedAt: Date.now(),
+  };
+  assert.deepEqual(parsePoolState(state), state);
+
   const invalid = structuredClone(state);
   invalid.operatorCredentials.elaine!.iterations = 10;
   assert.equal(parsePoolState(invalid), null);
+
+  const invalidRecovery = structuredClone(state);
+  invalidRecovery.pinRecoveryCredential!.hash = "not-base64";
+  assert.equal(parsePoolState(invalidRecovery), null);
 });

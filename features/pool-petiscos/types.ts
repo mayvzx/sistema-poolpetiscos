@@ -135,6 +135,7 @@ export type PersistedPoolState = {
   cashMovements: CashMovement[];
   cashClosures: CashClosure[];
   operatorCredentials: OperatorCredentials;
+  pinRecoveryCredential?: OperatorCredential;
 };
 
 export type PoolBackup = {

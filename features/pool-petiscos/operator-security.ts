@@ -2,6 +2,11 @@ import type { OperatorCredential } from "./types";
 
 export const PIN_LENGTH = 6;
 export const PIN_ITERATIONS = 210_000;
+export const RECOVERY_KEY_GROUPS = 4;
+export const RECOVERY_KEY_GROUP_LENGTH = 4;
+export const RECOVERY_KEY_ITERATIONS = 310_000;
+
+const RECOVERY_KEY_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 const COMMON_PINS = new Set([
   "000000",
@@ -31,13 +36,13 @@ function base64ToBytes(value: string) {
 }
 
 async function derivePinHash(
-  pin: string,
+  secret: string,
   salt: Uint8Array,
   iterations: number,
 ) {
   const key = await crypto.subtle.importKey(
     "raw",
-    new TextEncoder().encode(pin),
+    new TextEncoder().encode(secret),
     "PBKDF2",
     false,
     ["deriveBits"],
@@ -113,3 +118,77 @@ export async function verifyOperatorPin(
   }
 }
 
+export function normalizeRecoveryKey(value: string) {
+  const compact = value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const maximumLength = RECOVERY_KEY_GROUPS * RECOVERY_KEY_GROUP_LENGTH;
+  return compact
+    .slice(0, maximumLength)
+    .match(new RegExp(`.{1,${RECOVERY_KEY_GROUP_LENGTH}}`, "g"))
+    ?.join("-") ?? "";
+}
+
+function compactRecoveryKey(value: string) {
+  return normalizeRecoveryKey(value).replaceAll("-", "");
+}
+
+export function isCompleteRecoveryKey(value: string) {
+  return (
+    compactRecoveryKey(value).length ===
+    RECOVERY_KEY_GROUPS * RECOVERY_KEY_GROUP_LENGTH
+  );
+}
+
+export async function createPinRecoveryCredential(): Promise<{
+  key: string;
+  credential: OperatorCredential;
+}> {
+  const random = crypto.getRandomValues(
+    new Uint8Array(RECOVERY_KEY_GROUPS * RECOVERY_KEY_GROUP_LENGTH),
+  );
+  const compact = Array.from(
+    random,
+    (value) => RECOVERY_KEY_ALPHABET[value % RECOVERY_KEY_ALPHABET.length],
+  ).join("");
+  const key = normalizeRecoveryKey(compact);
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const hash = await derivePinHash(compact, salt, RECOVERY_KEY_ITERATIONS);
+  return {
+    key,
+    credential: {
+      algorithm: "PBKDF2-SHA-256",
+      iterations: RECOVERY_KEY_ITERATIONS,
+      salt: bytesToBase64(salt),
+      hash: bytesToBase64(hash),
+      updatedAt: Date.now(),
+    },
+  };
+}
+
+export async function verifyPinRecoveryKey(
+  key: string,
+  credential: OperatorCredential,
+) {
+  const compact = compactRecoveryKey(key);
+  if (
+    compact.length !==
+    RECOVERY_KEY_GROUPS * RECOVERY_KEY_GROUP_LENGTH
+  ) {
+    return false;
+  }
+  try {
+    const actual = await derivePinHash(
+      compact,
+      base64ToBytes(credential.salt),
+      credential.iterations,
+    );
+    const expected = base64ToBytes(credential.hash);
+    if (actual.length !== expected.length) return false;
+    let difference = 0;
+    for (let index = 0; index < actual.length; index += 1) {
+      difference |= actual[index] ^ expected[index];
+    }
+    return difference === 0;
+  } catch {
+    return false;
+  }
+}

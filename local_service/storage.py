@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import math
 import os
+import shutil
 import sqlite3
 import threading
 import uuid
@@ -18,6 +20,9 @@ BACKUP_DIRECTORY_ENVIRONMENT_KEY = "POOL_PETISCOS_BACKUP_DIR"
 BACKUP_PREFIX = "pool-petiscos-"
 BACKUP_SUFFIX = ".db"
 BACKUP_RETENTION_DAYS = 30
+BACKUP_RETENTION_WEEKS = 12
+BACKUP_RETENTION_MONTHS = 12
+PRE_RESTORE_BACKUP_RETENTION = 10
 STATE_HISTORY_RETENTION = 50
 ONEDRIVE_ENVIRONMENT_KEYS = (
     "OneDriveCommercial",
@@ -95,11 +100,85 @@ def _utc_iso(value: datetime) -> str:
     )
 
 
+def _is_finite_number(value: object, *, non_negative: bool = False) -> bool:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    number = float(value)
+    return math.isfinite(number) and (not non_negative or number >= 0)
+
+
+def _is_credential(value: object) -> bool:
+    if not isinstance(value, dict):
+        return False
+    return (
+        value.get("algorithm") == "PBKDF2-SHA-256"
+        and isinstance(value.get("iterations"), int)
+        and not isinstance(value.get("iterations"), bool)
+        and 100_000 <= value["iterations"] <= 1_000_000
+        and isinstance(value.get("salt"), str)
+        and bool(value["salt"])
+        and isinstance(value.get("hash"), str)
+        and bool(value["hash"])
+        and _is_finite_number(value.get("updatedAt"))
+        and float(value["updatedAt"]) > 0
+    )
+
+
+def _is_pool_state(value: object) -> bool:
+    if not isinstance(value, dict):
+        return False
+    for key in (
+        "products",
+        "sales",
+        "expenses",
+        "cashMovements",
+        "cashClosures",
+    ):
+        if not isinstance(value.get(key), list):
+            return False
+        if any(not isinstance(item, dict) for item in value[key]):
+            return False
+    if (
+        not isinstance(value.get("cashOpen"), bool)
+        or not _is_finite_number(value.get("openingBalance"), non_negative=True)
+        or not _is_finite_number(value.get("cashOpenedAt"))
+        or float(value["cashOpenedAt"]) <= 0
+    ):
+        return False
+    credentials = value.get("operatorCredentials")
+    if not isinstance(credentials, dict) or any(
+        key not in {"elaine", "poolblay"} or not _is_credential(credential)
+        for key, credential in credentials.items()
+    ):
+        return False
+    recovery = value.get("pinRecoveryCredential")
+    return recovery is None or _is_credential(recovery)
+
+
 @dataclass(frozen=True)
 class StateSnapshot:
     state: dict[str, Any] | None
     revision: int
     saved_at: str | None
+
+
+@dataclass(frozen=True)
+class BackupRecord:
+    filename: str
+    tier: str
+    period: str
+    created_at: str
+    size_bytes: int
+    path: Path
+
+    def public_dict(self) -> dict[str, str | int]:
+        return {
+            "filename": self.filename,
+            "tier": self.tier,
+            "period": self.period,
+            "created_at": self.created_at,
+            "size_bytes": self.size_bytes,
+        }
 
 
 class RevisionConflict(Exception):
@@ -118,6 +197,8 @@ class StateStorage:
         *,
         clock: Callable[[], datetime] | None = None,
         backup_retention: int = BACKUP_RETENTION_DAYS,
+        weekly_backup_retention: int = BACKUP_RETENTION_WEEKS,
+        monthly_backup_retention: int = BACKUP_RETENTION_MONTHS,
         history_retention: int = STATE_HISTORY_RETENTION,
     ) -> None:
         self.database_path = (
@@ -132,6 +213,8 @@ class StateStorage:
         self.backup_directory.mkdir(parents=True, exist_ok=True)
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         self._backup_retention = max(1, backup_retention)
+        self._weekly_backup_retention = max(1, weekly_backup_retention)
+        self._monthly_backup_retention = max(1, monthly_backup_retention)
         self._history_retention = max(1, history_retention)
         self._last_backup_error: str | None = None
         self._lock = threading.RLock()
@@ -577,23 +660,41 @@ class StateStorage:
                 saved_at=saved_at,
             )
             try:
-                self.ensure_daily_backup(force=True)
+                self.ensure_automatic_backups()
             except (OSError, sqlite3.Error):
                 # O estado já foi confirmado. A falha de backup é informada
                 # separadamente para não induzir o cliente a repetir a venda.
                 pass
             return snapshot
 
+    @staticmethod
+    def _local_date(now: datetime):
+        return now.astimezone().date() if now.tzinfo is not None else now.date()
+
+    def _backup_period(self, tier: str, now: datetime) -> str:
+        local_date = self._local_date(now)
+        if tier == "daily":
+            return local_date.isoformat()
+        if tier == "weekly":
+            iso_year, iso_week, _ = local_date.isocalendar()
+            return f"{iso_year}-W{iso_week:02d}"
+        if tier == "monthly":
+            return f"{local_date.year:04d}-{local_date.month:02d}"
+        raise ValueError(f"Categoria de backup desconhecida: {tier}")
+
+    def _backup_path(self, tier: str, now: datetime) -> Path:
+        labels = {
+            "daily": "diario",
+            "weekly": "semanal",
+            "monthly": "mensal",
+        }
+        period = self._backup_period(tier, now)
+        return self.backup_directory / (
+            f"{BACKUP_PREFIX}{labels[tier]}-{period}{BACKUP_SUFFIX}"
+        )
+
     def _daily_backup_path(self, now: datetime) -> Path:
-        local_date = (
-            now.astimezone().date()
-            if now.tzinfo is not None
-            else now.date()
-        )
-        return (
-            self.backup_directory
-            / f"{BACKUP_PREFIX}{local_date.isoformat()}{BACKUP_SUFFIX}"
-        )
+        return self._backup_path("daily", now)
 
     def _write_verified_copy(self, destination: Path) -> None:
         """Create an atomic SQLite copy and verify it before publication."""
@@ -634,42 +735,200 @@ class StateStorage:
                 destination.unlink(missing_ok=True)
 
     def ensure_daily_backup(self, *, force: bool = False) -> Path:
+        return next(
+            record.path
+            for record in self.ensure_automatic_backups(force=force)
+            if record.tier == "daily"
+        )
+
+    def ensure_automatic_backups(
+        self, *, force: bool = False
+    ) -> list[BackupRecord]:
         now = self._clock()
-        destination = self._daily_backup_path(now)
+        created: list[BackupRecord] = []
         with self._lock:
             try:
-                if destination.is_file() and not force:
-                    self._prune_daily_backups()
-                    self._last_backup_error = None
-                    return destination
-
-                self._write_verified_copy(destination)
-
-                self._prune_daily_backups()
+                for tier in ("daily", "weekly", "monthly"):
+                    destination = self._backup_path(tier, now)
+                    if force or not destination.is_file():
+                        self._write_verified_copy(destination)
+                    created.append(self._backup_record(destination, tier))
+                self._prune_automatic_backups()
                 self._last_backup_error = None
-                return destination
+                return created
             except (OSError, sqlite3.Error) as error:
                 self._last_backup_error = str(error)
                 raise
 
+    def _backup_record(self, path: Path, tier: str) -> BackupRecord:
+        stat = path.stat()
+        name = path.name
+        prefixes = {
+            "daily": f"{BACKUP_PREFIX}diario-",
+            "weekly": f"{BACKUP_PREFIX}semanal-",
+            "monthly": f"{BACKUP_PREFIX}mensal-",
+        }
+        if name.startswith(prefixes[tier]):
+            period = name.removeprefix(prefixes[tier]).removesuffix(BACKUP_SUFFIX)
+        else:
+            period = name.removeprefix(BACKUP_PREFIX).removesuffix(BACKUP_SUFFIX)
+        return BackupRecord(
+            filename=name,
+            tier=tier,
+            period=period,
+            created_at=_utc_iso(
+                datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
+            ),
+            size_bytes=stat.st_size,
+            path=path,
+        )
+
     def _daily_backups(self) -> list[Path]:
-        backups = [
+        current = [
+            path
+            for path in self.backup_directory.glob(
+                f"{BACKUP_PREFIX}diario-????-??-??{BACKUP_SUFFIX}"
+            )
+            if path.is_file()
+        ]
+        legacy = [
             path
             for path in self.backup_directory.glob(
                 f"{BACKUP_PREFIX}????-??-??{BACKUP_SUFFIX}"
             )
             if path.is_file()
         ]
+        backups = current + legacy
         backups.sort(key=lambda path: path.name, reverse=True)
         return backups
 
-    def _prune_daily_backups(self) -> None:
-        for expired in self._daily_backups()[self._backup_retention :]:
-            expired.unlink(missing_ok=True)
+    def _tier_backups(self, tier: str) -> list[Path]:
+        if tier == "daily":
+            return self._daily_backups()
+        label = "semanal" if tier == "weekly" else "mensal"
+        backups = [
+            path
+            for path in self.backup_directory.glob(
+                f"{BACKUP_PREFIX}{label}-*{BACKUP_SUFFIX}"
+            )
+            if path.is_file()
+        ]
+        backups.sort(key=lambda path: path.name, reverse=True)
+        return backups
+
+    def _prune_automatic_backups(self) -> None:
+        policies = {
+            "daily": self._backup_retention,
+            "weekly": self._weekly_backup_retention,
+            "monthly": self._monthly_backup_retention,
+        }
+        for tier, retention in policies.items():
+            for expired in self._tier_backups(tier)[retention:]:
+                expired.unlink(missing_ok=True)
+
+    def list_backups(self) -> list[BackupRecord]:
+        with self._lock:
+            records = [
+                self._backup_record(path, tier)
+                for tier in ("daily", "weekly", "monthly")
+                for path in self._tier_backups(tier)
+            ]
+        records.sort(key=lambda item: item.created_at, reverse=True)
+        return records
+
+    def backup_path(self, filename: str) -> Path:
+        if not filename or Path(filename).name != filename:
+            raise ValueError("Nome de backup inválido.")
+        allowed = {record.filename: record.path for record in self.list_backups()}
+        try:
+            return allowed[filename]
+        except KeyError as error:
+            raise FileNotFoundError("Backup não encontrado.") from error
+
+    @staticmethod
+    def _validate_database(path: Path) -> StateSnapshot:
+        if not path.is_file():
+            raise FileNotFoundError("O arquivo de backup não foi encontrado.")
+        with closing(sqlite3.connect(path)) as connection:
+            integrity = connection.execute("PRAGMA integrity_check").fetchone()
+            if integrity is None or integrity[0] != "ok":
+                raise sqlite3.DatabaseError("O arquivo SQLite está corrompido.")
+            required = {"app_state", "state_history"}
+            tables = {
+                row[0]
+                for row in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                )
+            }
+            if not required.issubset(tables):
+                raise sqlite3.DatabaseError(
+                    "O arquivo não é um backup do Pool Petiscos."
+                )
+            row = connection.execute(
+                "SELECT state_json, revision, saved_at FROM app_state WHERE id = 1"
+            ).fetchone()
+            if row is None:
+                raise sqlite3.DatabaseError("O backup não contém o estado do caixa.")
+            snapshot = StateStorage._decode_snapshot(row)
+            if snapshot.state is None:
+                raise sqlite3.DatabaseError("O backup está vazio.")
+            if not _is_pool_state(snapshot.state):
+                raise sqlite3.DatabaseError(
+                    "O backup não contém um estado válido do Pool Petiscos."
+                )
+            return snapshot
+
+    def restore_database(self, source: Path) -> StateSnapshot:
+        source = source.expanduser().resolve()
+        self._validate_database(source)
+        with self._lock:
+            timestamp = self._clock().astimezone(timezone.utc).strftime(
+                "%Y%m%dT%H%M%SZ"
+            )
+            safety = self.backup_directory / (
+                f"{BACKUP_PREFIX}antes-restauracao-{timestamp}-{uuid.uuid4().hex[:8]}"
+                f"{BACKUP_SUFFIX}"
+            )
+            self._write_verified_copy(safety)
+            temporary = self.database_path.with_name(
+                f".{self.database_path.name}.{uuid.uuid4().hex}.restore"
+            )
+            database_replaced = False
+            try:
+                shutil.copyfile(source, temporary)
+                self._validate_database(temporary)
+                with closing(self._connect()) as connection:
+                    connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                os.replace(temporary, self.database_path)
+                database_replaced = True
+                for suffix in ("-wal", "-shm"):
+                    Path(f"{self.database_path}{suffix}").unlink(missing_ok=True)
+                self._initialize()
+                restored = self.read()
+                self.ensure_automatic_backups(force=True)
+            except Exception:
+                if database_replaced and safety.is_file():
+                    shutil.copyfile(safety, self.database_path)
+                    for suffix in ("-wal", "-shm"):
+                        Path(f"{self.database_path}{suffix}").unlink(missing_ok=True)
+                    self._initialize()
+                raise
+            finally:
+                temporary.unlink(missing_ok=True)
+            safety_backups = sorted(
+                self.backup_directory.glob(
+                    f"{BACKUP_PREFIX}antes-restauracao-*{BACKUP_SUFFIX}"
+                ),
+                key=lambda path: path.name,
+                reverse=True,
+            )
+            for expired in safety_backups[PRE_RESTORE_BACKUP_RETENTION:]:
+                expired.unlink(missing_ok=True)
+            return restored
 
     def last_backup_at(self) -> str | None:
         with self._lock:
-            backups = self._daily_backups()
+            backups = [record.path for record in self.list_backups()]
             if not backups:
                 return None
             newest = max(backups, key=lambda path: path.stat().st_mtime)

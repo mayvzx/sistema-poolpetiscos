@@ -10,7 +10,8 @@ vendas, estoque e controle gerencial da Pool Petiscos & Lanches.
 - Cardápio e preços foram cadastrados a partir das fotos fornecidas.
 - Funcionamento: quinta a domingo, das 16h às 23h.
 - O caixa deve continuar operando quando a internet cair.
-- O OneDrive é a preferência para as cópias automáticas.
+- O Google Drive conectado pela proprietária é o destino principal na nuvem;
+  OneDrive permanece como destino local sincronizado opcional.
 - O módulo musical deve usar arquivos próprios ou legalmente obtidos.
 
 ## Entregue no protótipo
@@ -29,7 +30,7 @@ vendas, estoque e controle gerencial da Pool Petiscos & Lanches.
 - reprodução de áudios locais;
 - biblioteca musical persistente com download de uma faixa por vez;
 - dados principais em SQLite, com revisão e histórico;
-- backup diário automático no OneDrive, com retenção de 30 dias;
+- backups automáticos diário, semanal e mensal, com conexão ao Google Drive;
 - inicialização automática com o Windows;
 - instalador reproduzível com Node.js, yt-dlp e FFmpeg incluídos;
 - layout responsivo.
@@ -59,6 +60,20 @@ vendas, estoque e controle gerencial da Pool Petiscos & Lanches.
   interface;
 - preferências visuais são locais ao dispositivo e o modo Automático acompanha
   alterações no tema do Windows.
+
+### Revisão de requisitos de 19/08/2026
+
+- uma chave de recuperação redefine o PIN esquecido sem armazenar o PIN
+  original;
+- a chave aparece somente na criação, pode ser regenerada após confirmar o PIN
+  atual e faz parte dos backups restauráveis apenas como verificador;
+- backups locais têm retenção de 30 diários, 12 semanais e 12 mensais;
+- o Google Drive usa OAuth de aplicativo desktop, escopo `drive.file` e token
+  protegido pelo Windows;
+- toda restauração SQLite valida integridade e esquema e cria uma cópia do banco
+  atual antes de substituí-lo;
+- o desinstalador oferece preservação padrão ou remoção completa dos dados
+  locais para apresentações e testes.
 
 ### Revisão técnica de 25/07/2026
 
@@ -125,7 +140,8 @@ Não implementar com dados inventados:
 - [x] Scripts de instalação, início e encerramento no Windows.
 - [x] Empacotar interface, serviço, Node.js, `yt-dlp` e FFmpeg em um instalador.
 - [x] Usar SQLite como armazenamento principal.
-- [x] Automatizar backup diário e testar a restauração.
+- [x] Automatizar backups diário, semanal e mensal e testar a restauração.
+- [x] Implementar conexão OAuth e sincronização com Google Drive.
 - [x] Persistir comandas e organizar a fila de preparo por etapa.
 - [ ] Assinar executável, instalador e desinstalador com certificado
       Authenticode emitido para o responsável pela distribuição.
@@ -163,7 +179,7 @@ Não implementar com dados inventados:
 ### 3. Aplicativo Windows
 
 - instalar o protótipo no computador que será usado na apresentação;
-- confirmar a sincronização da pasta de backups no OneDrive;
+- conectar o Google Drive e confirmar uma sincronização e restauração;
 - assinar o pacote após a aquisição do certificado;
 - testar instalação e restauração no computador da lanchonete.
 

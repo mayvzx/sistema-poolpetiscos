@@ -5,7 +5,7 @@
   #error AppOutput não foi informado.
 #endif
 #ifndef AppVersion
-  #define AppVersion "1.4.0"
+  #define AppVersion "1.5.0"
 #endif
 #ifndef AppIcon
   #error AppIcon não foi informado.
@@ -59,6 +59,7 @@ Name: "{group}\Pool Petiscos"; Filename: "{app}\PoolPetiscos.exe"; IconFilename:
 Name: "{group}\Dados e backups"; Filename: "{app}\PoolPetiscos.exe"; Parameters: "--open-data-folder"; IconFilename: "{app}\PoolPetiscos-{#AppVersion}.ico"; IconIndex: 0
 Name: "{group}\Manual do sistema"; Filename: "{app}\manual\MANUAL-DO-OPERADOR.txt"
 Name: "{group}\Encerrar Pool Petiscos"; Filename: "{app}\PoolPetiscos.exe"; Parameters: "--shutdown"; IconFilename: "{app}\PoolPetiscos-{#AppVersion}.ico"; IconIndex: 0
+Name: "{group}\Desinstalar Pool Petiscos"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\Pool Petiscos"; Filename: "{app}\PoolPetiscos.exe"; IconFilename: "{app}\PoolPetiscos-{#AppVersion}.ico"; IconIndex: 0; Tasks: desktopicon
 
 [Registry]
@@ -71,8 +72,58 @@ Filename: "{app}\PoolPetiscos.exe"; Description: "Abrir Pool Petiscos"; Flags: n
 
 [UninstallRun]
 Filename: "{app}\PoolPetiscos.exe"; Parameters: "--shutdown"; Flags: runhidden waituntilterminated skipifdoesntexist; RunOnceId: "StopPoolPetiscos"
+Filename: "{app}\PoolPetiscos.exe"; Parameters: "--disconnect-google-drive"; Flags: runhidden waituntilterminated skipifdoesntexist; RunOnceId: "DisconnectPoolPetiscosDrive"; Check: ShouldRemoveUserData
+
+[UninstallDelete]
+Type: filesandordirs; Name: "{localappdata}\PoolPetiscos"; Check: ShouldRemoveUserData
 
 [Code]
+var
+  RemoveUserData: Boolean;
+
+function HasCommandLineParameter(const Expected: String): Boolean;
+var
+  Index: Integer;
+begin
+  Result := False;
+  for Index := 1 to ParamCount do
+  begin
+    if CompareText(ParamStr(Index), Expected) = 0 then
+    begin
+      Result := True;
+      Exit;
+    end;
+  end;
+end;
+
+function InitializeUninstall(): Boolean;
+begin
+  Result := True;
+  if HasCommandLineParameter('/PURGEUSERDATA') then
+  begin
+    RemoveUserData := True;
+  end
+  else if UninstallSilent then
+  begin
+    RemoveUserData := False;
+  end
+  else
+  begin
+    RemoveUserData := MsgBox(
+      'Deseja remover também todos os dados deste computador?' + #13#10 + #13#10 +
+      'Isso apaga o banco local, músicas, configurações, PINs, logs e backups locais. ' +
+      'Os arquivos já enviados ao Google Drive ou OneDrive serão preservados.',
+      mbConfirmation,
+      MB_YESNO or MB_DEFBUTTON2
+    ) = IDYES;
+  end;
+end;
+
+function ShouldRemoveUserData(): Boolean;
+begin
+  Result := RemoveUserData;
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then

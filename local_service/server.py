@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import html
 import importlib.util
 import ipaddress
 import json
@@ -11,6 +12,7 @@ import re
 import shutil
 import sqlite3
 import threading
+import tempfile
 import uuid
 from collections.abc import Callable
 from http import HTTPStatus
@@ -19,6 +21,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
+from local_service.backups import BackupManager
+from local_service.google_drive import GoogleDriveError
 from local_service.storage import (
     RevisionConflict,
     StateStorage,
@@ -37,10 +41,11 @@ from local_service.youtube_search import (
     validate_youtube_search_query,
 )
 
-SERVICE_VERSION = "1.4.0"
+SERVICE_VERSION = "1.5.0"
 DEFAULT_PORT = 18765
 MAX_BODY_BYTES = 32 * 1024
 MAX_STATE_BODY_BYTES = 10 * 1024 * 1024
+MAX_DATABASE_BODY_BYTES = 250 * 1024 * 1024
 SUPPORTED_AUDIO_SUFFIXES = {
     ".aac",
     ".flac",
@@ -313,6 +318,7 @@ class PoolCompanionServer(ThreadingHTTPServer):
         handler_class: type[BaseHTTPRequestHandler],
         music_directory: Path,
         storage: StateStorage | None = None,
+        backup_manager: BackupManager | None = None,
         youtube_searcher: (
             Callable[[str, int], list[dict[str, Any]]] | None
         ) = None,
@@ -321,6 +327,12 @@ class PoolCompanionServer(ThreadingHTTPServer):
         super().__init__(server_address, handler_class)
         self.music_directory = music_directory
         self.storage = storage or StateStorage()
+        home_directory = self.storage.database_path.parent.parent
+        self.backup_manager = backup_manager or BackupManager(
+            self.storage,
+            home_directory,
+            Path.cwd(),
+        )
         self.youtube_searcher = youtube_searcher or search_youtube
         self.youtube_search_timeout_seconds = youtube_search_timeout_seconds
         self.youtube_search_slots = threading.BoundedSemaphore(
@@ -359,6 +371,36 @@ class PoolCompanionHandler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
+
+    def _send_html(
+        self, content: str, status: HTTPStatus = HTTPStatus.OK
+    ) -> None:
+        body = content.encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _read_body(self, maximum: int) -> bytes:
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError as error:
+            raise ValueError("Conteúdo inválido.") from error
+        if length <= 0 or length > maximum:
+            raise ValueError("Conteúdo inválido ou muito grande.")
+        return self.rfile.read(length)
+
+    def _read_json_body(self, maximum: int = MAX_BODY_BYTES) -> dict[str, Any]:
+        try:
+            payload = json.loads(self._read_body(maximum).decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as error:
+            raise ValueError("O corpo deve conter JSON válido.") from error
+        if not isinstance(payload, dict):
+            raise ValueError("O conteúdo deve ser um objeto.")
+        return payload
 
     def _reject_origin(self) -> bool:
         if is_allowed_origin(self._origin()):
@@ -541,6 +583,56 @@ class PoolCompanionHandler(BaseHTTPRequestHandler):
                 return
             self._send_database()
             return
+        if parsed.path == "/api/backups/status":
+            if self._reject_sensitive_origin():
+                return
+            try:
+                self._send_json(self.pool_server.backup_manager.status())
+            except (OSError, sqlite3.Error, GoogleDriveError) as error:
+                self._send_json(
+                    {"error": str(error)}, HTTPStatus.INTERNAL_SERVER_ERROR
+                )
+            return
+        if parsed.path == "/api/backups/google":
+            if self._reject_sensitive_origin():
+                return
+            try:
+                backups = self.pool_server.backup_manager.list_google_backups()
+                self._send_json({"backups": backups})
+            except GoogleDriveError as error:
+                self._send_json({"error": str(error)}, HTTPStatus.BAD_GATEWAY)
+            return
+        if parsed.path == "/api/google-drive/oauth/callback":
+            parameters = parse_qs(parsed.query, keep_blank_values=True)
+            state = parameters.get("state", [""])[0]
+            code = parameters.get("code", [""])[0]
+            oauth_error = parameters.get("error", [""])[0]
+            try:
+                if oauth_error:
+                    raise GoogleDriveError("A conexão foi cancelada no Google.")
+                if not state or not code:
+                    raise GoogleDriveError("A resposta do Google está incompleta.")
+                self.pool_server.backup_manager.complete_google_connection(
+                    state, code
+                )
+            except GoogleDriveError as error:
+                self._send_html(
+                    "<!doctype html><meta charset='utf-8'><title>Google Drive</title>"
+                    "<main style='font:16px system-ui;max-width:620px;margin:80px auto'>"
+                    "<h1>Não foi possível conectar</h1>"
+                    f"<p>{html.escape(str(error))}</p><p>Feche esta janela e tente novamente.</p>"
+                    "</main>",
+                    HTTPStatus.BAD_REQUEST,
+                )
+                return
+            self._send_html(
+                "<!doctype html><meta charset='utf-8'><title>Google Drive conectado</title>"
+                "<main style='font:16px system-ui;max-width:620px;margin:80px auto'>"
+                "<h1>Google Drive conectado</h1>"
+                "<p>Os backups serão enviados automaticamente. Você já pode fechar esta janela.</p>"
+                "</main>"
+            )
+            return
         if parsed.path == "/api/state":
             if self._reject_sensitive_origin():
                 return
@@ -584,14 +676,113 @@ class PoolCompanionHandler(BaseHTTPRequestHandler):
         if self._reject_origin():
             return
         parsed = urlparse(self.path)
+        if parsed.path == "/api/google-drive/connect":
+            if self._reject_sensitive_origin():
+                return
+            redirect_uri = (
+                f"http://127.0.0.1:{self.server.server_port}"
+                "/api/google-drive/oauth/callback"
+            )
+            try:
+                authorization_url = (
+                    self.pool_server.backup_manager.begin_google_connection(
+                        redirect_uri
+                    )
+                )
+            except GoogleDriveError as error:
+                self._send_json({"error": str(error)}, HTTPStatus.BAD_REQUEST)
+                return
+            self._send_json({"authorization_url": authorization_url})
+            return
+        if parsed.path == "/api/google-drive/disconnect":
+            if self._reject_sensitive_origin():
+                return
+            try:
+                self.pool_server.backup_manager.disconnect_google()
+            except GoogleDriveError as error:
+                self._send_json({"error": str(error)}, HTTPStatus.BAD_GATEWAY)
+                return
+            self._send_json({"disconnected": True})
+            return
+        if parsed.path == "/api/backups/run":
+            if self._reject_sensitive_origin():
+                return
+            try:
+                result = self.pool_server.backup_manager.run(force=True)
+            except (OSError, sqlite3.Error, GoogleDriveError) as error:
+                self._send_json({"error": str(error)}, HTTPStatus.BAD_GATEWAY)
+                return
+            self._send_json(result, HTTPStatus.CREATED)
+            return
+        if parsed.path == "/api/backups/restore":
+            if self._reject_sensitive_origin():
+                return
+            try:
+                payload = self._read_json_body()
+                source = payload.get("source")
+                if source == "local":
+                    identifier = str(payload.get("filename", ""))
+                    snapshot = self.pool_server.backup_manager.restore_local(
+                        identifier
+                    )
+                elif source == "google":
+                    identifier = str(payload.get("file_id", ""))
+                    snapshot = self.pool_server.backup_manager.restore_google(
+                        identifier
+                    )
+                else:
+                    raise ValueError("Origem de backup inválida.")
+            except (ValueError, FileNotFoundError, sqlite3.Error) as error:
+                self._send_json({"error": str(error)}, HTTPStatus.BAD_REQUEST)
+                return
+            except (OSError, GoogleDriveError) as error:
+                self._send_json({"error": str(error)}, HTTPStatus.BAD_GATEWAY)
+                return
+            self._send_json(
+                {
+                    "restored": True,
+                    "revision": snapshot.revision,
+                    "saved_at": snapshot.saved_at,
+                }
+            )
+            return
+        if parsed.path == "/api/database/restore":
+            if self._reject_sensitive_origin():
+                return
+            temporary_path: Path | None = None
+            try:
+                body = self._read_body(MAX_DATABASE_BODY_BYTES)
+                with tempfile.NamedTemporaryFile(
+                    prefix="pool-petiscos-upload-",
+                    suffix=".db",
+                    dir=self.pool_server.storage.database_path.parent,
+                    delete=False,
+                ) as temporary:
+                    temporary.write(body)
+                    temporary_path = Path(temporary.name)
+                snapshot = self.pool_server.storage.restore_database(
+                    temporary_path
+                )
+            except (ValueError, OSError, sqlite3.Error) as error:
+                self._send_json({"error": str(error)}, HTTPStatus.BAD_REQUEST)
+                return
+            finally:
+                if temporary_path is not None:
+                    temporary_path.unlink(missing_ok=True)
+            self._send_json(
+                {
+                    "restored": True,
+                    "revision": snapshot.revision,
+                    "saved_at": snapshot.saved_at,
+                }
+            )
+            return
         if parsed.path == "/api/backups":
             if self._reject_sensitive_origin():
                 return
             try:
-                backup_path = self.pool_server.storage.ensure_daily_backup(
-                    force=True
-                )
-            except (OSError, sqlite3.Error) as error:
+                result = self.pool_server.backup_manager.run(force=True)
+            except (OSError, sqlite3.Error, GoogleDriveError) as error:
                 self.log_error("falha ao criar backup manual: %s", error)
                 self._send_json(
                     {"error": "Não foi possível criar o backup local."},
@@ -600,7 +791,7 @@ class PoolCompanionHandler(BaseHTTPRequestHandler):
                 return
             self._send_json(
                 {
-                    "filename": backup_path.name,
+                    "filename": result["created"][0]["filename"],
                     "storage": "sqlite",
                     **self.pool_server.storage.backup_info(),
                 },
@@ -839,6 +1030,7 @@ def main() -> None:
         music_directory,
         storage,
     )
+    server.backup_manager.start()
     print(
         f"Pool Companion em http://127.0.0.1:{arguments.port} "
         f"• biblioteca: {music_directory}"
@@ -848,6 +1040,7 @@ def main() -> None:
     except KeyboardInterrupt:
         pass
     finally:
+        server.backup_manager.stop()
         server.server_close()
 
 

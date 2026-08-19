@@ -47,3 +47,4 @@ tsconfig.tsbuildinfo
 /build/
 /.playwright-cli/
 /work/
+/config/google-drive-oauth.json
