@@ -7,7 +7,7 @@ import {
   ShoppingCart,
   WalletCards,
 } from "lucide-react";
-import { createDemoExpenses, createDemoSales, DEMO_PRODUCTS } from "./demo-data";
+import { INITIAL_PRODUCTS } from "./catalog-data";
 import { currency } from "./domain";
 import { parsePoolState, STORAGE_KEY } from "./persistence";
 import type { PersistedPoolState, Product, View } from "./types";
@@ -201,12 +201,12 @@ export function viewFromLocation(): View | null {
 
 export function createInitialPoolState(): PersistedPoolState {
   return {
-    products: DEMO_PRODUCTS,
-    sales: createDemoSales(),
-    expenses: createDemoExpenses(),
-    cashOpen: true,
-    openingBalance: 100,
-    cashOpenedAt: Date.now() - 2 * 60 * 60_000,
+    products: INITIAL_PRODUCTS.map((product) => ({ ...product })),
+    sales: [],
+    expenses: [],
+    cashOpen: false,
+    openingBalance: 0,
+    cashOpenedAt: Date.now(),
     cashMovements: [],
     cashClosures: [],
     operatorCredentials: {},

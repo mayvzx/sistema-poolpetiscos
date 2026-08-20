@@ -2,6 +2,20 @@
 
 Todas as mudanças relevantes do Pool Petiscos são registradas neste arquivo.
 
+## 1.5.1 — 2026-08-20
+
+### Entrega limpa
+
+- novas instalações deixam de criar vendas, despesas, comandas, movimentos e
+  fechamentos fictícios;
+- mantém o cardápio e os preços cadastrados, mas inicia estoque e estoque mínimo
+  em zero para que a proprietária informe as quantidades reais;
+- inicia o caixa fechado, sem saldo presumido, e exige que o operador informe o
+  dinheiro real disponível para troco ao abrir uma nova sessão;
+- remove nomes de clientes e movimentações demonstrativas do estado inicial;
+- preserva normalmente os dados de instalações anteriores durante a atualização,
+  evitando apagar qualquer registro real sem confirmação do usuário.
+
 ## 1.5.0 — 2026-08-19
 
 ### Recuperação e segurança

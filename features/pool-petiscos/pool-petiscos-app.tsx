@@ -84,7 +84,7 @@ import {
   roundMoney,
   shortCurrency,
 } from "./domain";
-import { DEMO_PRODUCTS } from "./demo-data";
+import { INITIAL_PRODUCTS } from "./catalog-data";
 import {
   createBackup,
   parseBackup,
@@ -211,12 +211,12 @@ const ACTIVE_ORDER_COLUMNS: Array<
 export default function PoolPetiscosApp() {
   const [activeView, setActiveView] = useState<View>("inicio");
   const [now, setNow] = useState<Date | null>(null);
-  const [products, setProducts] = useState<Product[]>(DEMO_PRODUCTS);
+  const [products, setProducts] = useState<Product[]>(INITIAL_PRODUCTS);
   const [sales, setSales] = useState<Sale[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [cashOpen, setCashOpen] = useState(true);
-  const [openingBalance, setOpeningBalance] = useState(100);
-  const [cashOpenedAt, setCashOpenedAt] = useState(() => Date.now() - 2 * 60 * 60_000);
+  const [cashOpen, setCashOpen] = useState(false);
+  const [openingBalance, setOpeningBalance] = useState(0);
+  const [cashOpenedAt, setCashOpenedAt] = useState(() => Date.now());
   const [cashMovements, setCashMovements] = useState<CashMovement[]>([]);
   const [cashClosures, setCashClosures] = useState<CashClosure[]>([]);
   const [operatorCredentials, setOperatorCredentials] =
@@ -255,8 +255,8 @@ export default function PoolPetiscosApp() {
     | null
   >(null);
   const [stockForm, setStockForm] = useState({
-    productId: DEMO_PRODUCTS[0].id,
-    quantity: "10",
+    productId: INITIAL_PRODUCTS[0].id,
+    quantity: "",
     cost: "",
     payment: "Dinheiro" as PaymentMethod,
   });
@@ -270,7 +270,7 @@ export default function PoolPetiscosApp() {
     amount: "",
     payment: "Dinheiro" as PaymentMethod,
   });
-  const [cashOpenForm, setCashOpenForm] = useState("100");
+  const [cashOpenForm, setCashOpenForm] = useState("");
   const [cashCloseForm, setCashCloseForm] = useState("");
   const [cashMovementForm, setCashMovementForm] = useState({
     kind: "sangria" as CashMovement["kind"],
@@ -1908,7 +1908,7 @@ export default function PoolPetiscosApp() {
       setModal("cash-close");
       return;
     }
-    setCashOpenForm(String(openingBalance));
+    setCashOpenForm("");
     setModal("cash-open");
   }
 

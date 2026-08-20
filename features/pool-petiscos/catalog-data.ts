@@ -1,13 +1,15 @@
-import type { Expense, Product, Sale } from "./types";
+import type { Product } from "./types";
 
-export const DEMO_PRODUCTS: Product[] = [
+// Catálogo inicial confirmado; não contém histórico operacional.
+
+const CATALOG_PRODUCTS: Product[] = [
   {
     id: "hamb-trad",
     name: "Hambúrguer tradicional",
     category: "Hambúrgueres",
     price: 9.99,
-    stock: 32,
-    minimum: 12,
+    stock: 0,
+    minimum: 0,
     emoji: "🍔",
   },
   {
@@ -15,8 +17,8 @@ export const DEMO_PRODUCTS: Product[] = [
     name: "Hambúrguer artesanal",
     category: "Hambúrgueres",
     price: 14.99,
-    stock: 18,
-    minimum: 10,
+    stock: 0,
+    minimum: 0,
     emoji: "🍔",
   },
   {
@@ -24,8 +26,8 @@ export const DEMO_PRODUCTS: Product[] = [
     name: "X-Bacon tradicional",
     category: "Hambúrgueres",
     price: 14.99,
-    stock: 14,
-    minimum: 8,
+    stock: 0,
+    minimum: 0,
     emoji: "🥓",
   },
   {
@@ -33,8 +35,8 @@ export const DEMO_PRODUCTS: Product[] = [
     name: "X-Bacon artesanal",
     category: "Hambúrgueres",
     price: 19.99,
-    stock: 11,
-    minimum: 8,
+    stock: 0,
+    minimum: 0,
     emoji: "🥓",
   },
   {
@@ -42,8 +44,8 @@ export const DEMO_PRODUCTS: Product[] = [
     name: "X-Calabresa tradicional",
     category: "Hambúrgueres",
     price: 14.99,
-    stock: 17,
-    minimum: 8,
+    stock: 0,
+    minimum: 0,
     emoji: "🌭",
   },
   {
@@ -51,8 +53,8 @@ export const DEMO_PRODUCTS: Product[] = [
     name: "X-Calabresa artesanal",
     category: "Hambúrgueres",
     price: 19.99,
-    stock: 13,
-    minimum: 8,
+    stock: 0,
+    minimum: 0,
     emoji: "🌭",
   },
   {
@@ -60,8 +62,8 @@ export const DEMO_PRODUCTS: Product[] = [
     name: "X-Cheddar tradicional",
     category: "Hambúrgueres",
     price: 14.99,
-    stock: 11,
-    minimum: 8,
+    stock: 0,
+    minimum: 0,
     emoji: "🧀",
   },
   {
@@ -69,8 +71,8 @@ export const DEMO_PRODUCTS: Product[] = [
     name: "X-Cheddar artesanal",
     category: "Hambúrgueres",
     price: 19.99,
-    stock: 10,
-    minimum: 8,
+    stock: 0,
+    minimum: 0,
     emoji: "🧀",
   },
   {
@@ -78,8 +80,8 @@ export const DEMO_PRODUCTS: Product[] = [
     name: "X-Tudo tradicional",
     category: "Hambúrgueres",
     price: 19.99,
-    stock: 9,
-    minimum: 8,
+    stock: 0,
+    minimum: 0,
     emoji: "🍔",
   },
   {
@@ -87,8 +89,8 @@ export const DEMO_PRODUCTS: Product[] = [
     name: "X-Tudo artesanal",
     category: "Hambúrgueres",
     price: 24.99,
-    stock: 8,
-    minimum: 8,
+    stock: 0,
+    minimum: 0,
     emoji: "🍔",
   },
   {
@@ -96,8 +98,8 @@ export const DEMO_PRODUCTS: Product[] = [
     name: "Pastel",
     category: "Salgados",
     price: 9,
-    stock: 28,
-    minimum: 10,
+    stock: 0,
+    minimum: 0,
     emoji: "🥟",
   },
   {
@@ -105,8 +107,8 @@ export const DEMO_PRODUCTS: Product[] = [
     name: "Coxinha",
     category: "Salgados",
     price: 5,
-    stock: 22,
-    minimum: 12,
+    stock: 0,
+    minimum: 0,
     emoji: "🍗",
   },
   {
@@ -114,8 +116,8 @@ export const DEMO_PRODUCTS: Product[] = [
     name: "Cachorro-quente",
     category: "Salgados",
     price: 7,
-    stock: 16,
-    minimum: 8,
+    stock: 0,
+    minimum: 0,
     emoji: "🌭",
   },
   {
@@ -123,8 +125,8 @@ export const DEMO_PRODUCTS: Product[] = [
     name: "Bolo",
     category: "Sobremesas",
     price: 7,
-    stock: 12,
-    minimum: 5,
+    stock: 0,
+    minimum: 0,
     emoji: "🍰",
   },
   {
@@ -132,8 +134,8 @@ export const DEMO_PRODUCTS: Product[] = [
     name: "Batata frita 400 g",
     category: "Petiscos",
     price: 10,
-    stock: 19,
-    minimum: 8,
+    stock: 0,
+    minimum: 0,
     emoji: "🍟",
   },
   {
@@ -141,8 +143,8 @@ export const DEMO_PRODUCTS: Product[] = [
     name: "Batata cheddar e bacon",
     category: "Petiscos",
     price: 13,
-    stock: 12,
-    minimum: 6,
+    stock: 0,
+    minimum: 0,
     emoji: "🍟",
   },
   {
@@ -150,8 +152,8 @@ export const DEMO_PRODUCTS: Product[] = [
     name: "Carne com fritas",
     category: "Petiscos",
     price: 35,
-    stock: 8,
-    minimum: 5,
+    stock: 0,
+    minimum: 0,
     emoji: "🥩",
   },
   {
@@ -159,8 +161,8 @@ export const DEMO_PRODUCTS: Product[] = [
     name: "Camarão com fritas",
     category: "Petiscos",
     price: 35,
-    stock: 7,
-    minimum: 5,
+    stock: 0,
+    minimum: 0,
     emoji: "🍤",
   },
   {
@@ -168,8 +170,8 @@ export const DEMO_PRODUCTS: Product[] = [
     name: "Picolé gourmet",
     category: "Sobremesas",
     price: 3,
-    stock: 24,
-    minimum: 10,
+    stock: 0,
+    minimum: 0,
     emoji: "🍦",
   },
   {
@@ -177,8 +179,8 @@ export const DEMO_PRODUCTS: Product[] = [
     name: "Sobremesa gelada 200 g",
     category: "Sobremesas",
     price: 5,
-    stock: 18,
-    minimum: 8,
+    stock: 0,
+    minimum: 0,
     emoji: "🍧",
   },
   {
@@ -186,8 +188,8 @@ export const DEMO_PRODUCTS: Product[] = [
     name: "Sobremesa gelada 500 g",
     category: "Sobremesas",
     price: 11,
-    stock: 12,
-    minimum: 6,
+    stock: 0,
+    minimum: 0,
     emoji: "🍧",
   },
   {
@@ -195,8 +197,8 @@ export const DEMO_PRODUCTS: Product[] = [
     name: "Moreninha",
     category: "Sobremesas",
     price: 4,
-    stock: 16,
-    minimum: 8,
+    stock: 0,
+    minimum: 0,
     emoji: "🍫",
   },
   {
@@ -204,8 +206,8 @@ export const DEMO_PRODUCTS: Product[] = [
     name: "Sundae",
     category: "Sobremesas",
     price: 5,
-    stock: 14,
-    minimum: 6,
+    stock: 0,
+    minimum: 0,
     emoji: "🍨",
   },
   {
@@ -213,8 +215,8 @@ export const DEMO_PRODUCTS: Product[] = [
     name: "Guaraçaí / Guaraná do Amazonas 500 ml",
     category: "Sobremesas",
     price: 8,
-    stock: 12,
-    minimum: 6,
+    stock: 0,
+    minimum: 0,
     emoji: "🥤",
   },
   {
@@ -222,8 +224,8 @@ export const DEMO_PRODUCTS: Product[] = [
     name: "Suco da polpa",
     category: "Bebidas",
     price: 6,
-    stock: 14,
-    minimum: 8,
+    stock: 0,
+    minimum: 0,
     emoji: "🥤",
   },
   {
@@ -231,8 +233,8 @@ export const DEMO_PRODUCTS: Product[] = [
     name: "Coca-Cola lata",
     category: "Bebidas",
     price: 6,
-    stock: 6,
-    minimum: 10,
+    stock: 0,
+    minimum: 0,
     emoji: "🥤",
   },
   {
@@ -240,8 +242,8 @@ export const DEMO_PRODUCTS: Product[] = [
     name: "Refrigerante lata",
     category: "Bebidas",
     price: 5,
-    stock: 9,
-    minimum: 10,
+    stock: 0,
+    minimum: 0,
     emoji: "🥤",
   },
   {
@@ -249,8 +251,8 @@ export const DEMO_PRODUCTS: Product[] = [
     name: "Água mineral",
     category: "Bebidas",
     price: 2,
-    stock: 18,
-    minimum: 10,
+    stock: 0,
+    minimum: 0,
     emoji: "💧",
   },
   {
@@ -258,8 +260,8 @@ export const DEMO_PRODUCTS: Product[] = [
     name: "Coca-Cola LS 1L",
     category: "Bebidas",
     price: 8.5,
-    stock: 8,
-    minimum: 6,
+    stock: 0,
+    minimum: 0,
     emoji: "🍶",
   },
   {
@@ -267,8 +269,8 @@ export const DEMO_PRODUCTS: Product[] = [
     name: "Guaraná 1 L",
     category: "Bebidas",
     price: 8,
-    stock: 7,
-    minimum: 8,
+    stock: 0,
+    minimum: 0,
     emoji: "🍶",
   },
   {
@@ -276,8 +278,8 @@ export const DEMO_PRODUCTS: Product[] = [
     name: "Brahma litrão",
     category: "Bebidas",
     price: 10,
-    stock: 10,
-    minimum: 6,
+    stock: 0,
+    minimum: 0,
     emoji: "🍺",
   },
   {
@@ -285,8 +287,8 @@ export const DEMO_PRODUCTS: Product[] = [
     name: "Schin litrão",
     category: "Bebidas",
     price: 7,
-    stock: 10,
-    minimum: 6,
+    stock: 0,
+    minimum: 0,
     emoji: "🍺",
   },
   {
@@ -294,8 +296,8 @@ export const DEMO_PRODUCTS: Product[] = [
     name: "Guaraná caçulinha",
     category: "Bebidas",
     price: 2,
-    stock: 18,
-    minimum: 10,
+    stock: 0,
+    minimum: 0,
     emoji: "🥤",
   },
   {
@@ -303,128 +305,16 @@ export const DEMO_PRODUCTS: Product[] = [
     name: "Embalagem para viagem",
     category: "Adicionais",
     price: 1,
-    stock: 40,
-    minimum: 15,
+    stock: 0,
+    minimum: 0,
     emoji: "🥡",
   },
 ];
 
-export function createDemoSales(): Sale[] {
-  const now = Date.now();
-  return [
-    {
-      id: "PV-1048",
-      timestamp: now - 14 * 60_000,
-      total: 29.98,
-      payment: "Pix",
-      operatorId: "elaine",
-      operatorName: "Elaine",
-      customerName: "Carlos",
-      orderStatus: "aguardando",
-      statusUpdatedAt: now - 14 * 60_000,
-      items: [
-        {
-          productId: "xbacon-trad",
-          name: "X-Bacon tradicional",
-          price: 14.99,
-          quantity: 2,
-          observation: "Sem cebola e sem tomate",
-        },
-      ],
-    },
-    {
-      id: "PV-1047",
-      timestamp: now - 33 * 60_000,
-      total: 31,
-      payment: "Dinheiro",
-      operatorId: "poolblay",
-      operatorName: "Poolblay",
-      customerName: "Ana",
-      orderStatus: "em-preparo",
-      statusUpdatedAt: now - 8 * 60_000,
-      items: [
-        {
-          productId: "pastel",
-          name: "Pastel",
-          price: 9,
-          quantity: 1,
-        },
-        {
-          productId: "batata",
-          name: "Batata frita 400 g",
-          price: 10,
-          quantity: 1,
-        },
-        {
-          productId: "coca-lata",
-          name: "Coca-Cola lata",
-          price: 6,
-          quantity: 2,
-        },
-      ],
-    },
-    {
-      id: "PV-1046",
-      timestamp: now - 57 * 60_000,
-      total: 41,
-      payment: "Cartão",
-      operatorId: "elaine",
-      operatorName: "Elaine",
-      customerName: "Luiz",
-      orderStatus: "pronto",
-      statusUpdatedAt: now - 3 * 60_000,
-      items: [
-        {
-          productId: "carne-fritas",
-          name: "Carne com fritas",
-          price: 35,
-          quantity: 1,
-        },
-        {
-          productId: "suco",
-          name: "Suco da polpa",
-          price: 6,
-          quantity: 1,
-        },
-      ],
-    },
-    {
-      id: "PV-1045",
-      timestamp: now - 91 * 60_000,
-      total: 24.99,
-      payment: "Pix",
-      operatorId: "poolblay",
-      operatorName: "Poolblay",
-      customerName: "Marina",
-      orderStatus: "entregue",
-      statusUpdatedAt: now - 62 * 60_000,
-      items: [
-        {
-          productId: "xtudo-trad",
-          name: "X-Tudo tradicional",
-          price: 19.99,
-          quantity: 1,
-        },
-        {
-          productId: "refri-lata",
-          name: "Refrigerante lata",
-          price: 5,
-          quantity: 1,
-        },
-      ],
-    },
-  ];
-}
-
-export function createDemoExpenses(): Expense[] {
-  return [
-    {
-      id: "DS-204",
-      timestamp: Date.now() - 73 * 60_000,
-      description: "Compra de pão e verduras",
-      category: "Matéria-prima",
-      amount: 38,
-      payment: "Dinheiro",
-    },
-  ];
-}
+// O cardápio e os preços vieram das referências fornecidas. Quantidades e
+// limites de estoque só podem ser informados pela proprietária no primeiro uso.
+export const INITIAL_PRODUCTS: Product[] = CATALOG_PRODUCTS.map((product) => ({
+  ...product,
+  stock: 0,
+  minimum: 0,
+}));

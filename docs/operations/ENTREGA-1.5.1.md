@@ -1,8 +1,8 @@
-# Entrega da versão 1.5.0
+# Entrega da versão 1.5.1
 
 ## Finalidade desta versão
 
-A versão 1.5.0 está preparada para ser instalada no computador da Pool
+A versão 1.5.1 está preparada para ser instalada no computador da Pool
 Petiscos e avaliada por Elaine e Poolblay em uso assistido. Ela reúne o caixa,
 as comandas, o estoque, o financeiro, os perfis protegidos por PIN e os backups
 em um único aplicativo Windows.
@@ -29,9 +29,21 @@ presencial dos fluxos e equipamentos descritos neste documento.
 - desinstalação com escolha entre preservar os dados ou fazer uma remoção
   completa da máquina de teste.
 
+Uma instalação nova começa sem vendas, despesas, comandas ou valores de caixa.
+O cardápio e os preços permanecem pré-cadastrados, mas estoque e estoque mínimo
+começam em zero. O dinheiro real para troco é informado pela proprietária ao
+abrir o caixa pela primeira vez. Atualizar uma instalação existente preserva os
+dados já registrados.
+
+Se uma versão anterior já tiver sido aberta na máquina de teste, ela poderá ter
+salvo o estado demonstrativo antigo. Nesse caso, primeiro exporte qualquer dado
+que precise ser preservado, faça a desinstalação com **remoção completa dos
+dados locais** e só então instale a 1.5.1. Não faça essa limpeza em uma máquina
+que já contenha registros reais sem criar e conferir um backup.
+
 ## Instalação e primeiro teste
 
-1. Feche programas desnecessários e execute `PoolPetiscos-Setup-1.5.0.exe`.
+1. Feche programas desnecessários e execute `PoolPetiscos-Setup-1.5.1.exe`.
 2. Como o instalador ainda não possui certificado Authenticode, o Windows pode
    exibir um aviso do SmartScreen. Confirme que o arquivo veio do pacote de
    entrega e confira seu SHA-256 antes de continuar.
@@ -40,8 +52,8 @@ presencial dos fluxos e equipamentos descritos neste documento.
 4. Abra o atalho **Pool Petiscos**, escolha cada perfil e crie PINs diferentes.
 5. Baixe as duas chaves de recuperação e guarde-as em local seguro fora do
    computador.
-6. Faça uma venda fictícia, mova a comanda até **Entregue** e confira o
-   Financeiro e o Estoque.
+6. Abra o caixa informando um valor de teste, faça uma venda fictícia, mova a
+   comanda até **Entregue** e confira o Financeiro e o Estoque.
 7. Em **Configurações > Backups automáticos**, execute um backup local.
 8. Selecione **Conectar Google Drive**. O navegador abrirá a tela oficial do
    Google para escolher e autorizar a conta da proprietária.

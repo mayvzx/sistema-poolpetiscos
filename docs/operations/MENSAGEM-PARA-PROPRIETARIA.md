@@ -14,6 +14,10 @@ registrar despesas e movimentos do caixa, fazer abertura e fechamento e
 consultar os resultados. Elaine e Pool terão acessos separados, e as vendas
 ficarão identificadas pelo perfil que as registrou.
 
+Ele será entregue sem vendas, despesas ou valores fictícios. O cardápio e os
+preços já ficam cadastrados, mas vocês informarão o estoque real e o dinheiro
+disponível para troco ao abrir o caixa.
+
 Nas últimas atualizações, incluímos um PIN individual para cada perfil e uma
 chave de recuperação para o caso de alguém esquecer o PIN. Essa chave deve ser
 baixada e guardada com cuidado fora do computador do caixa.
