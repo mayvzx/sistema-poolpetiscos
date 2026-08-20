@@ -91,6 +91,8 @@ vendas, estoque e controle gerencial da Pool Petiscos & Lanches.
 
 ### Correção de entrega de 20/08/2026
 
+- a versão 1.5.2 corrige os alertas de estoque ainda não configurado e adiciona
+  a linha do tempo controlável ao player de músicas;
 - a versão 1.5.1 substitui a 1.5.0 como pacote recomendado para instalação;
 - novas instalações começam sem vendas, despesas, comandas, movimentos ou
   valores de abertura demonstrativos;

@@ -379,8 +379,18 @@ html[data-pool-theme="dark"] textarea:focus-visible {
 .audio-range {
   height: 4px;
   appearance: none;
+  cursor: pointer;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.16);
+}
+
+.music-progress-range {
+  height: 6px;
+}
+
+.audio-range:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .audio-range::-webkit-slider-thumb {

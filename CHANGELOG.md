@@ -2,6 +2,27 @@
 
 Todas as mudanças relevantes do Pool Petiscos são registradas neste arquivo.
 
+## 1.5.2 — 2026-08-20
+
+### Caixa e estoque limpos
+
+- deixa de considerar produtos com estoque e mínimo iguais a zero como itens
+  em falta; o alerta só começa depois que um estoque mínimo real é configurado;
+- mantém novas instalações com caixa fechado, saldo zero e sem movimentações;
+- impede que o fallback antigo do navegador repovoe um banco novo com o estado
+  demonstrativo removido;
+- documenta a substituição segura do banco demonstrativo em máquinas usadas
+  durante o desenvolvimento, sempre preservando uma cópia recuperável.
+
+### Player de música
+
+- adiciona uma linha do tempo com o tempo atual e a duração total da faixa;
+- permite avançar ou voltar na música arrastando o controle de progresso;
+- atualiza a posição durante a reprodução e reinicia os indicadores ao trocar
+  ou recarregar a faixa;
+- mantém o controle acessível por teclado e informa quando os metadados ainda
+  estão sendo carregados.
+
 ## 1.5.1 — 2026-08-20
 
 ### Entrega limpa
