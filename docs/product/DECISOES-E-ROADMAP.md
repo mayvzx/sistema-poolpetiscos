@@ -75,6 +75,20 @@ vendas, estoque e controle gerencial da Pool Petiscos & Lanches.
 - o desinstalador oferece preservação padrão ou remoção completa dos dados
   locais para apresentações e testes.
 
+### Preparação da entrega de 19/08/2026
+
+- o aplicativo OAuth **Pool Petiscos** foi publicado para uso externo no
+  Google Cloud; a proprietária poderá escolher a própria conta na tela oficial
+  do Google, sem depender da conta usada no desenvolvimento;
+- o acesso solicita somente o escopo `drive.file`, limitado aos arquivos que o
+  próprio Pool Petiscos criar ou abrir no Google Drive;
+- nenhuma conta da proprietária foi conectada durante o desenvolvimento: o
+  primeiro login, o envio de um backup e uma restauração da nuvem fazem parte
+  do teste assistido na máquina da lanchonete;
+- a versão 1.5.0 é uma entrega para avaliação operacional e ainda não substitui
+  obrigações fiscais, a confirmação na maquininha ou os itens bloqueados pela
+  visita presencial.
+
 ### Revisão técnica de 25/07/2026
 
 - regras de dinheiro e troco isoladas e testadas;

@@ -22,6 +22,10 @@ ser colocado aqui ou enviado ao GitHub.
 
 ## Operação e implantação
 
+- [Entrega da versão 1.5.0](operations/ENTREGA-1.5.0.md): escopo, instalação,
+  validação presencial, limitações e suporte da versão para teste.
+- [Mensagem para a proprietária](operations/MENSAGEM-PARA-PROPRIETARIA.md):
+  texto em linguagem simples, pronto para envio.
 - [Instalador Windows](operations/INSTALADOR-WINDOWS.md): geração, assinatura,
   instalação, atualização e diagnóstico.
 - [Instalação e pagamentos](operations/INSTALACAO-E-PAGAMENTOS.md): arquitetura
