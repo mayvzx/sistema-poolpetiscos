@@ -89,6 +89,17 @@ vendas, estoque e controle gerencial da Pool Petiscos & Lanches.
   obrigações fiscais, a confirmação na maquininha ou os itens bloqueados pela
   visita presencial.
 
+### Correção de entrega de 20/08/2026
+
+- a versão 1.5.1 substitui a 1.5.0 como pacote recomendado para instalação;
+- novas instalações começam sem vendas, despesas, comandas, movimentos ou
+  valores de abertura demonstrativos;
+- o cardápio e os preços confirmados permanecem, enquanto estoque, estoque
+  mínimo e dinheiro inicial são preenchidos com os valores reais pela
+  proprietária;
+- atualizações não limpam automaticamente bancos existentes, pois eles podem
+  conter movimentações reais que precisam ser preservadas.
+
 ### Revisão técnica de 25/07/2026
 
 - regras de dinheiro e troco isoladas e testadas;

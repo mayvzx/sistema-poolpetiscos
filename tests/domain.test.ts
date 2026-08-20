@@ -6,6 +6,7 @@ import {
   getBusinessStatus,
   parseAmount,
 } from "../features/pool-petiscos/domain";
+import { createInitialPoolState } from "../features/pool-petiscos/pool-app-config";
 import {
   createBackup,
   parseBackup,
@@ -162,6 +163,24 @@ test("valida estado e backup completos antes de restaurar", () => {
   assert.equal(
     parseBackup(JSON.stringify({ ...backup, app: "Outro sistema" })),
     null,
+  );
+});
+
+test("inicia uma instalação nova sem movimentações nem valores fictícios", () => {
+  const state = createInitialPoolState();
+
+  assert.equal(state.cashOpen, false);
+  assert.equal(state.openingBalance, 0);
+  assert.deepEqual(state.sales, []);
+  assert.deepEqual(state.expenses, []);
+  assert.deepEqual(state.cashMovements, []);
+  assert.deepEqual(state.cashClosures, []);
+  assert.deepEqual(state.operatorCredentials, {});
+  assert.ok(state.products.length > 0);
+  assert.ok(
+    state.products.every(
+      (product) => product.stock === 0 && product.minimum === 0,
+    ),
   );
 });
 
