@@ -17,7 +17,7 @@ import type {
 import { roundMoney } from "./domain";
 import { operatorNameForSale } from "./operators";
 
-export const STORAGE_KEY = "pool-caixa-prototype-v3-requisitos-confirmados";
+export const STORAGE_KEY = "pool-petiscos-state-v1.5.2";
 export const BACKUP_VERSION = 1;
 
 const PAYMENT_METHODS = new Set<PaymentMethod>(["Pix", "Dinheiro", "Cartão"]);

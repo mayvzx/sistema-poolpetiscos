@@ -1,4 +1,4 @@
-import type { Sale } from "./types";
+import type { Product, Sale } from "./types";
 
 export const RECIFE_TIME_ZONE = "America/Recife";
 export const BUSINESS_HOURS = "Qui, Sex, Sáb e Dom • 16h–23h";
@@ -179,6 +179,12 @@ export function calculateCashBalance({
   return roundMoney(
     openingBalance + cashSalesTotal - cashExpenseTotal + cashMovementTotal,
   );
+}
+
+export function isLowStock(
+  product: Pick<Product, "stock" | "minimum">,
+) {
+  return product.minimum > 0 && product.stock <= product.minimum;
 }
 
 export type DailyRevenue = {

@@ -4,13 +4,20 @@ import {
   buildDailyRevenue,
   calculateCashBalance,
   getBusinessStatus,
+  isLowStock,
   parseAmount,
 } from "../features/pool-petiscos/domain";
+import {
+  clampPlaybackTime,
+  formatPlaybackTime,
+  playbackProgressPercent,
+} from "../features/pool-petiscos/music-player";
 import { createInitialPoolState } from "../features/pool-petiscos/pool-app-config";
 import {
   createBackup,
   parseBackup,
   parsePoolState,
+  STORAGE_KEY,
 } from "../features/pool-petiscos/persistence";
 import { buildOperatorSalesSummary } from "../features/pool-petiscos/operators";
 import type { PersistedPoolState } from "../features/pool-petiscos/types";
@@ -82,6 +89,23 @@ test("calcula o saldo físico separando vendas, despesas e movimentos", () => {
     }),
     105.25,
   );
+});
+
+test("só alerta estoque baixo depois que um mínimo real foi configurado", () => {
+  assert.equal(isLowStock({ stock: 0, minimum: 0 }), false);
+  assert.equal(isLowStock({ stock: 3, minimum: 3 }), true);
+  assert.equal(isLowStock({ stock: 2, minimum: 3 }), true);
+  assert.equal(isLowStock({ stock: 4, minimum: 3 }), false);
+});
+
+test("formata e limita a posição do player de música", () => {
+  assert.equal(formatPlaybackTime(Number.NaN), "0:00");
+  assert.equal(formatPlaybackTime(65.9), "1:05");
+  assert.equal(formatPlaybackTime(3661), "1:01:01");
+  assert.equal(clampPlaybackTime(-10, 240), 0);
+  assert.equal(clampPlaybackTime(300, 240), 240);
+  assert.equal(playbackProgressPercent(60, 240), 25);
+  assert.equal(playbackProgressPercent(10, 0), 0);
 });
 
 test("avalia o funcionamento no horário de Recife", () => {
@@ -182,6 +206,10 @@ test("inicia uma instalação nova sem movimentações nem valores fictícios", 
       (product) => product.stock === 0 && product.minimum === 0,
     ),
   );
+});
+
+test("não reutiliza o fallback demonstrativo de versões anteriores", () => {
+  assert.equal(STORAGE_KEY, "pool-petiscos-state-v1.5.2");
 });
 
 test("migra vendas antigas para o histórico de comandas", () => {

@@ -78,6 +78,7 @@ import {
   getBusinessStatus,
   getGreeting,
   getRecifeClock,
+  isLowStock,
   normalizeText,
   parseAmount,
   RECIFE_TIME_ZONE,
@@ -122,6 +123,8 @@ import {
   queueTrackDownload,
   type MusicDownloadJob,
 } from "./music-companion";
+import { MusicProgress } from "./music-progress";
+import { clampPlaybackTime } from "./music-player";
 import {
   categories,
   createInitialPoolState,
@@ -283,6 +286,8 @@ export default function PoolPetiscosApp() {
   const [currentTrackIndex, setCurrentTrackIndex] = useState(-1);
   const [isPlaying, setIsPlaying] = useState(false);
   const [volume, setVolume] = useState(70);
+  const [playbackPosition, setPlaybackPosition] = useState(0);
+  const [playbackDuration, setPlaybackDuration] = useState(0);
   const [musicCompanionStatus, setMusicCompanionStatus] = useState<
     "checking" | "ready" | "unavailable"
   >("checking");
@@ -443,6 +448,8 @@ export default function PoolPetiscosApp() {
         setTracks(nextTracks);
         setCurrentTrackIndex(nextTracks.length ? 0 : -1);
         setIsPlaying(false);
+        setPlaybackPosition(0);
+        setPlaybackDuration(0);
         if (showFeedback) {
           showToast(
             `${localTracks.length} faixa(s) carregada(s) da biblioteca do caixa.`,
@@ -1175,7 +1182,7 @@ export default function PoolPetiscosApp() {
     cashMovementTotal,
   });
   const lowStock = useMemo(
-    () => products.filter((product) => product.stock <= product.minimum),
+    () => products.filter(isLowStock),
     [products],
   );
 
@@ -1228,7 +1235,7 @@ export default function PoolPetiscosApp() {
     return products.filter((product) => {
       const matchesSearch =
         !query || normalizeText(product.name).includes(query);
-      const isLow = product.stock <= product.minimum;
+      const isLow = isLowStock(product);
       const matchesStatus =
         stockFilter === "Todos" ||
         (stockFilter === "Baixo" && isLow) ||
@@ -2114,7 +2121,11 @@ export default function PoolPetiscosApp() {
     }));
     const startIndex = tracks.length;
     setTracks((current) => [...current, ...imported]);
-    if (currentTrackIndex === -1) setCurrentTrackIndex(startIndex);
+    if (currentTrackIndex === -1) {
+      setCurrentTrackIndex(startIndex);
+      setPlaybackPosition(0);
+      setPlaybackDuration(0);
+    }
     showToast(`${imported.length} áudio(s) importado(s) do computador.`);
     event.target.value = "";
   }
@@ -2220,6 +2231,8 @@ export default function PoolPetiscosApp() {
   function selectTrack(index: number) {
     setCurrentTrackIndex(index);
     setIsPlaying(false);
+    setPlaybackPosition(0);
+    setPlaybackDuration(0);
     window.setTimeout(async () => {
       if (!audioRef.current) return;
       try {
@@ -2238,6 +2251,30 @@ export default function PoolPetiscosApp() {
         ? 0
         : (currentTrackIndex + direction + tracks.length) % tracks.length;
     selectTrack(next);
+  }
+
+  function syncPlaybackMetadata() {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const duration = Number.isFinite(audio.duration) ? audio.duration : 0;
+    setPlaybackDuration(duration);
+    setPlaybackPosition(clampPlaybackTime(audio.currentTime, duration));
+  }
+
+  function handlePlaybackTimeUpdate() {
+    const audio = audioRef.current;
+    if (!audio) return;
+    setPlaybackPosition(
+      clampPlaybackTime(audio.currentTime, audio.duration),
+    );
+  }
+
+  function seekPlayback(seconds: number) {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const nextPosition = clampPlaybackTime(seconds, audio.duration);
+    audio.currentTime = nextPosition;
+    setPlaybackPosition(nextPosition);
   }
 
   if (!hydrated || !operatorSessionReady) {
@@ -2811,7 +2848,7 @@ export default function PoolPetiscosApp() {
                 <div className="mt-4 grid grid-cols-2 gap-3 min-[1180px]:grid-cols-3 2xl:grid-cols-4">
                   {filteredProducts.map((product) => {
                     const soldOut = product.stock === 0;
-                    const low = product.stock <= product.minimum;
+                    const low = isLowStock(product);
                     return (
                       <button
                         key={product.id}
@@ -3407,7 +3444,7 @@ export default function PoolPetiscosApp() {
                   </thead>
                   <tbody className="divide-y divide-[#eee9e5]">
                     {filteredStock.map((product) => {
-                      const low = product.stock <= product.minimum;
+                      const low = isLowStock(product);
                       return (
                         <tr
                           key={product.id}
@@ -3970,8 +4007,22 @@ export default function PoolPetiscosApp() {
                   <audio
                     ref={audioRef}
                     src={currentTrack?.url}
-                    onEnded={() => moveTrack(1)}
+                    preload="metadata"
+                    onLoadedMetadata={syncPlaybackMetadata}
+                    onDurationChange={syncPlaybackMetadata}
+                    onTimeUpdate={handlePlaybackTimeUpdate}
+                    onPlay={() => setIsPlaying(true)}
+                    onEnded={() => {
+                      setPlaybackPosition(0);
+                      moveTrack(1);
+                    }}
                     onPause={() => setIsPlaying(false)}
+                  />
+                  <MusicProgress
+                    currentTime={playbackPosition}
+                    duration={playbackDuration}
+                    hasTrack={Boolean(currentTrack)}
+                    onSeek={seekPlayback}
                   />
                   <div className="mt-5 flex items-center justify-center gap-3">
                     <button

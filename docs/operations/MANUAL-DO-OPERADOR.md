@@ -101,6 +101,10 @@ Use **Editar preço** na linha do produto quando o valor de venda mudar. Excluir
 ou editar um produto não altera vendas antigas: o histórico preserva o nome e o
 preço usados no momento da venda.
 
+O alerta de estoque baixo só aparece depois que um estoque mínimo maior que
+zero for configurado. Enquanto a quantidade real ainda não tiver sido
+levantada, estoque e mínimo iguais a zero não geram notificações.
+
 ## Abrir, movimentar e fechar o caixa
 
 Em **Financeiro**:
@@ -114,7 +118,9 @@ Em **Financeiro**:
 
 Em **Músicas**, pesquise pelo nome ou cole um link do YouTube. Escolha um dos
 resultados e confirme o download apenas quando a lanchonete tiver autorização
-para usar a faixa. yt-dlp e FFmpeg já acompanham o instalador.
+para usar a faixa. O player mostra o tempo atual e a duração total; arraste a
+linha de progresso para avançar ou voltar na música. yt-dlp e FFmpeg já
+acompanham o instalador.
 
 ## Proteger os dados
 
