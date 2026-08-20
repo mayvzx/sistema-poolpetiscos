@@ -282,6 +282,10 @@ export function parsePoolState(value: unknown): PersistedPoolState | null {
   const operatorCredentials = parseOperatorCredentials(
     value.operatorCredentials,
   );
+  const pinRecoveryCredential =
+    value.pinRecoveryCredential === undefined
+      ? undefined
+      : parseOperatorCredential(value.pinRecoveryCredential);
   if (
     products === null ||
     sales === null ||
@@ -291,7 +295,8 @@ export function parsePoolState(value: unknown): PersistedPoolState | null {
     !isTimestamp(value.cashOpenedAt) ||
     cashMovements === null ||
     cashClosures === null ||
-    operatorCredentials === null
+    operatorCredentials === null ||
+    pinRecoveryCredential === null
   ) {
     return null;
   }
@@ -308,6 +313,7 @@ export function parsePoolState(value: unknown): PersistedPoolState | null {
     cashMovements,
     cashClosures,
     operatorCredentials,
+    ...(pinRecoveryCredential ? { pinRecoveryCredential } : {}),
   };
 }
 

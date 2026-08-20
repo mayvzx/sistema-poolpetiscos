@@ -221,6 +221,8 @@ export default function PoolPetiscosApp() {
   const [cashClosures, setCashClosures] = useState<CashClosure[]>([]);
   const [operatorCredentials, setOperatorCredentials] =
     useState<OperatorCredentials>({});
+  const [pinRecoveryCredential, setPinRecoveryCredential] =
+    useState<OperatorCredential>();
   const [displayPreferences, setDisplayPreferences] =
     useState<DisplayPreferences>(DEFAULT_DISPLAY_PREFERENCES);
   const [displayPreferencesReady, setDisplayPreferencesReady] = useState(false);
@@ -471,6 +473,7 @@ export default function PoolPetiscosApp() {
     setCashMovements(state.cashMovements);
     setCashClosures(state.cashClosures);
     setOperatorCredentials(state.operatorCredentials);
+    setPinRecoveryCredential(state.pinRecoveryCredential);
     setCart([]);
     setCustomerName("");
     setCashReceived("");
@@ -758,6 +761,7 @@ export default function PoolPetiscosApp() {
       cashMovements,
       cashClosures,
       operatorCredentials,
+      ...(pinRecoveryCredential ? { pinRecoveryCredential } : {}),
     } satisfies PersistedPoolState;
     const serialized = JSON.stringify(state);
 
@@ -816,6 +820,7 @@ export default function PoolPetiscosApp() {
     hydrated,
     openingBalance,
     operatorCredentials,
+    pinRecoveryCredential,
     products,
     sales,
     flushPrimaryState,
@@ -2040,6 +2045,7 @@ export default function PoolPetiscosApp() {
       cashMovements,
       cashClosures,
       operatorCredentials,
+      ...(pinRecoveryCredential ? { pinRecoveryCredential } : {}),
     };
   }
 
@@ -2242,7 +2248,9 @@ export default function PoolPetiscosApp() {
     return (
       <OperatorLogin
         credentials={operatorCredentials}
+        recoveryCredential={pinRecoveryCredential}
         onCredentialChange={updateOperatorCredential}
+        onRecoveryCredentialChange={setPinRecoveryCredential}
         onLogin={loginOperator}
       />
     );
@@ -4415,9 +4423,11 @@ export default function PoolPetiscosApp() {
           <SettingsPanel
             activeOperatorId={activeOperator.id}
             credentials={operatorCredentials}
+            recoveryCredential={pinRecoveryCredential}
             displayPreferences={displayPreferences}
             resolvedTheme={resolvedTheme}
             onCredentialChange={updateOperatorCredential}
+            onRecoveryCredentialChange={setPinRecoveryCredential}
             onDisplayPreferencesChange={setDisplayPreferences}
             onMessage={showToast}
           />

@@ -2,21 +2,26 @@
 
 import {
   Check,
+  Download,
   Eye,
   EyeOff,
   KeyRound,
   LoaderCircle,
   LogIn,
   ShieldCheck,
+  RotateCcw,
   UserRound,
 } from "lucide-react";
 import Image from "next/image";
 import { type FormEvent, useMemo, useState } from "react";
 import {
   createOperatorCredential,
+  createPinRecoveryCredential,
+  normalizeRecoveryKey,
   sanitizePin,
   validateOperatorPin,
   verifyOperatorPin,
+  verifyPinRecoveryKey,
 } from "./operator-security";
 import { OPERATOR_PROFILES } from "./operators";
 import { PinGuidance } from "./pin-guidance";
@@ -28,16 +33,20 @@ import type {
 
 type OperatorLoginProps = {
   credentials: OperatorCredentials;
+  recoveryCredential?: OperatorCredential;
   onCredentialChange: (
     operatorId: OperatorId,
     credential: OperatorCredential,
   ) => void;
+  onRecoveryCredentialChange: (credential: OperatorCredential) => void;
   onLogin: (operatorId: OperatorId) => void;
 };
 
 export function OperatorLogin({
   credentials,
+  recoveryCredential,
   onCredentialChange,
+  onRecoveryCredentialChange,
   onLogin,
 }: OperatorLoginProps) {
   const [selectedOperator, setSelectedOperator] =
@@ -47,6 +56,12 @@ export function OperatorLogin({
   const [showPin, setShowPin] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [recoveryMode, setRecoveryMode] = useState(false);
+  const [recoveryKey, setRecoveryKey] = useState("");
+  const [generatedRecoveryKey, setGeneratedRecoveryKey] = useState("");
+  const [pendingLogin, setPendingLogin] = useState<OperatorId | null>(null);
+  const [recoveryAcknowledged, setRecoveryAcknowledged] = useState(false);
+  const [failedRecoveryAttempts, setFailedRecoveryAttempts] = useState(0);
   const selected = OPERATOR_PROFILES.find(
     (operator) => operator.id === selectedOperator,
   )!;
@@ -62,6 +77,8 @@ export function OperatorLogin({
     setPin("");
     setConfirmPin("");
     setError("");
+    setRecoveryMode(false);
+    setRecoveryKey("");
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -69,10 +86,50 @@ export function OperatorLogin({
     setError("");
     setBusy(true);
     try {
-      if (credential) {
+      if (credential && recoveryMode) {
+        if (!recoveryCredential) {
+          setError(
+            "A chave de recuperação ainda não foi criada. Entre com o outro perfil ou procure o suporte.",
+          );
+          return;
+        }
+        if (failedRecoveryAttempts >= 5) {
+          setError("Muitas tentativas incorretas. Reabra o sistema para tentar novamente.");
+          return;
+        }
+        const validRecovery = await verifyPinRecoveryKey(
+          recoveryKey,
+          recoveryCredential,
+        );
+        if (!validRecovery) {
+          setFailedRecoveryAttempts((attempts) => attempts + 1);
+          setError("Chave de recuperação incorreta.");
+          return;
+        }
+        const validationError = validateOperatorPin(pin);
+        if (validationError) {
+          setError(validationError);
+          return;
+        }
+        if (pin !== confirmPin) {
+          setError("Os dois PINs estão diferentes.");
+          return;
+        }
+        onCredentialChange(
+          selectedOperator,
+          await createOperatorCredential(pin),
+        );
+      } else if (credential) {
         const valid = await verifyOperatorPin(pin, credential);
         if (!valid) {
           setError("PIN incorreto. Confira os 6 números e tente novamente.");
+          return;
+        }
+        if (!recoveryCredential) {
+          const recovery = await createPinRecoveryCredential();
+          onRecoveryCredentialChange(recovery.credential);
+          setGeneratedRecoveryKey(recovery.key);
+          setPendingLogin(selectedOperator);
           return;
         }
       } else {
@@ -89,6 +146,13 @@ export function OperatorLogin({
           selectedOperator,
           await createOperatorCredential(pin),
         );
+        if (!recoveryCredential) {
+          const recovery = await createPinRecoveryCredential();
+          onRecoveryCredentialChange(recovery.credential);
+          setGeneratedRecoveryKey(recovery.key);
+          setPendingLogin(selectedOperator);
+          return;
+        }
       }
       onLogin(selectedOperator);
     } catch {
@@ -96,6 +160,32 @@ export function OperatorLogin({
     } finally {
       setBusy(false);
     }
+  }
+
+  function downloadRecoveryKey() {
+    if (!generatedRecoveryKey) return;
+    const content = [
+      "POOL PETISCOS - CHAVE DE RECUPERAÇÃO DO PIN",
+      "",
+      generatedRecoveryKey,
+      "",
+      "Guarde este arquivo em local seguro e fora do computador do caixa.",
+      "Esta chave redefine o PIN de Elaine ou Pool. Não compartilhe.",
+    ].join("\r\n");
+    const url = URL.createObjectURL(
+      new Blob([content], { type: "text/plain;charset=utf-8" }),
+    );
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "Pool-Petiscos-Chave-de-Recuperacao.txt";
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function finishRecoverySetup() {
+    if (!pendingLogin || !recoveryAcknowledged) return;
+    onLogin(pendingLogin);
   }
 
   return (
@@ -197,13 +287,38 @@ export function OperatorLogin({
           </div>
 
           <form onSubmit={submit} className="mt-5 space-y-4">
+            {credential && recoveryMode && (
+              <div>
+                <label
+                  htmlFor="operator-recovery-key"
+                  className="text-sm font-extrabold text-[#5f5753]"
+                >
+                  Chave de recuperação
+                </label>
+                <input
+                  id="operator-recovery-key"
+                  required
+                  autoFocus
+                  type="text"
+                  autoComplete="off"
+                  value={recoveryKey}
+                  onChange={(event) =>
+                    setRecoveryKey(normalizeRecoveryKey(event.target.value))
+                  }
+                  placeholder="XXXX-XXXX-XXXX-XXXX"
+                  className="mt-2 h-14 w-full rounded-2xl border border-[#ded7d2] bg-white px-4 text-center text-base font-black uppercase tracking-[.12em] outline-none transition focus:border-[#d9202c] focus:ring-4 focus:ring-[#d9202c]/10"
+                />
+              </div>
+            )}
             <div>
               <div className="flex items-center justify-between gap-3">
                 <label
                   htmlFor="operator-pin"
                   className="text-sm font-extrabold text-[#5f5753]"
                 >
-                  {isFirstAccess ? "Crie seu PIN de 6 números" : "Seu PIN"}
+                  {isFirstAccess || recoveryMode
+                    ? "Crie seu novo PIN de 6 números"
+                    : "Seu PIN"}
                 </label>
                 <button
                   type="button"
@@ -227,7 +342,11 @@ export function OperatorLogin({
                   inputMode="numeric"
                   pattern="[0-9]{6}"
                   maxLength={6}
-                  autoComplete={isFirstAccess ? "new-password" : "current-password"}
+                  autoComplete={
+                    isFirstAccess || recoveryMode
+                      ? "new-password"
+                      : "current-password"
+                  }
                   value={pin}
                   onChange={(event) => setPin(sanitizePin(event.target.value))}
                   placeholder="••••••"
@@ -236,7 +355,7 @@ export function OperatorLogin({
               </div>
             </div>
 
-            {isFirstAccess && (
+            {(isFirstAccess || recoveryMode) && (
               <div>
                 <label
                   htmlFor="operator-pin-confirm"
@@ -271,7 +390,7 @@ export function OperatorLogin({
               </p>
             )}
 
-            {isFirstAccess && <PinGuidance compact />}
+            {(isFirstAccess || recoveryMode) && <PinGuidance compact />}
 
             <button
               type="submit"
@@ -285,8 +404,26 @@ export function OperatorLogin({
               )}
               {isFirstAccess
                 ? `Criar PIN e entrar como ${selected.familiarName}`
+                : recoveryMode
+                  ? `Redefinir PIN de ${selected.familiarName}`
                 : `Entrar como ${selected.familiarName}`}
             </button>
+            {credential && (
+              <button
+                type="button"
+                onClick={() => {
+                  setRecoveryMode((current) => !current);
+                  setPin("");
+                  setConfirmPin("");
+                  setRecoveryKey("");
+                  setError("");
+                }}
+                className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-[#ded7d2] px-4 text-sm font-extrabold text-[#5f5753]"
+              >
+                <RotateCcw size={18} />
+                {recoveryMode ? "Voltar ao acesso normal" : "Esqueci meu PIN"}
+              </button>
+            )}
           </form>
 
           <div className="mt-4 flex items-start gap-3 rounded-2xl border border-[#e6dfdb] bg-white p-4 text-sm leading-6 text-[#6d6561]">
@@ -295,6 +432,57 @@ export function OperatorLogin({
           </div>
         </div>
       </section>
+      {generatedRecoveryKey && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4 backdrop-blur-sm">
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="recovery-key-title"
+            className="w-full max-w-xl rounded-[28px] bg-white p-6 shadow-2xl sm:p-8"
+          >
+            <span className="grid size-12 place-items-center rounded-2xl bg-[#fff0f1] text-[#d9202c]">
+              <ShieldCheck size={24} />
+            </span>
+            <h2 id="recovery-key-title" className="mt-5 text-2xl font-black">
+              Salve a chave de recuperação
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-[#6d6561]">
+              Ela será necessária se Elaine ou Pool esquecerem o PIN. Por
+              segurança, esta é a única vez que a chave atual aparece.
+            </p>
+            <code className="mt-5 block rounded-2xl bg-[#211e1d] px-4 py-5 text-center text-lg font-black tracking-[.12em] text-white sm:text-2xl">
+              {generatedRecoveryKey}
+            </code>
+            <button
+              type="button"
+              onClick={downloadRecoveryKey}
+              className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-[#ded7d2] font-extrabold"
+            >
+              <Download size={19} /> Baixar chave em arquivo
+            </button>
+            <label className="mt-4 flex items-start gap-3 rounded-xl bg-[#faf8f6] p-4 text-sm font-semibold leading-6 text-[#5f5753]">
+              <input
+                type="checkbox"
+                checked={recoveryAcknowledged}
+                onChange={(event) =>
+                  setRecoveryAcknowledged(event.target.checked)
+                }
+                className="mt-1 size-4 accent-[#d9202c]"
+              />
+              Guardei a chave fora deste computador e entendo que ela não pode
+              ser exibida novamente.
+            </label>
+            <button
+              type="button"
+              disabled={!recoveryAcknowledged}
+              onClick={finishRecoverySetup}
+              className="mt-4 min-h-12 w-full rounded-xl bg-[#d9202c] px-5 font-extrabold text-white disabled:opacity-45"
+            >
+              Continuar para o caixa
+            </button>
+          </section>
+        </div>
+      )}
     </main>
   );
 }

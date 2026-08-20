@@ -9,10 +9,10 @@
   "ffmpeg": {
     "repository": "yt-dlp/FFmpeg-Builds",
     "release_tag": "latest",
-    "release_date": "2026-07-25",
-    "asset_id": 489531079,
+    "release_date": "2026-08-18",
+    "asset_id": 519580003,
     "archive": "ffmpeg-master-latest-win64-gpl-shared.zip",
     "url": "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared.zip",
-    "sha256": "950709ce4b61e43707b2a217b243bb2ce27d720ae41201ec80204a1a1f26991d"
+    "sha256": "5663502ff25932c70c08c4c08bd2ad99504e3374ec8ac5599a33b34ba11e89a4"
   }
 }

@@ -2,6 +2,47 @@
 
 Todas as mudanças relevantes do Pool Petiscos são registradas neste arquivo.
 
+## 1.5.0 — 2026-08-19
+
+### Recuperação e segurança
+
+- adiciona chave única para redefinir o PIN de Elaine ou Pool em caso de
+  esquecimento;
+- exibe a chave apenas na criação, permite baixá-la e mantém somente seu
+  verificador PBKDF2-SHA-256;
+- permite regenerar a chave mediante confirmação do PIN atual e invalida a
+  chave anterior;
+- protege o token de atualização do Google Drive com DPAPI do usuário Windows.
+
+### Backups e restauração
+
+- cria cópias SQLite diárias, semanais e mensais com retenções independentes;
+- integra Google Drive por OAuth com o escopo limitado `drive.file`;
+- permite consultar e restaurar cópias locais ou do Google Drive;
+- aceita restauração de arquivo `.db`, valida a integridade e o esquema e cria
+  uma cópia automática antes da substituição;
+- mantém o caixa disponível quando a internet ou a sincronização falham.
+
+### Instalador
+
+- adiciona atalho de desinstalação e pergunta se os dados do usuário devem ser
+  preservados ou removidos;
+- remove banco, músicas, PINs, configurações, logs e tokens locais quando a
+  remoção completa é escolhida, preservando arquivos já enviados à nuvem;
+- aceita uma credencial OAuth de aplicativo desktop durante o build e registra
+  no manifesto apenas se ela foi incluída, sem registrar seu conteúdo.
+
+### Preparação da entrega
+
+- publica a tela de autorização do Google para uso externo, permitindo que a
+  proprietária escolha a própria conta na tela oficial do Google;
+- mantém a credencial do aplicativo fora do GitHub e inclui sua configuração
+  somente no instalador gerado para entrega;
+- atualiza dependências transitivas do aplicativo e deixa a auditoria das
+  dependências de produção sem vulnerabilidades conhecidas;
+- documenta a instalação assistida, o teste de restauração, a desinstalação
+  limpa e as limitações da versão entregue para avaliação.
+
 ## 1.4.0 — 2026-08-14
 
 ### Segurança e identificação

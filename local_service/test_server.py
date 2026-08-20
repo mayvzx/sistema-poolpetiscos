@@ -32,6 +32,23 @@ from local_service.storage import (
 )
 
 
+def minimal_pool_state(number: int | None = None) -> dict[str, object]:
+    state: dict[str, object] = {
+        "products": [],
+        "sales": [],
+        "expenses": [],
+        "cashOpen": False,
+        "openingBalance": 0,
+        "cashOpenedAt": 1,
+        "cashMovements": [],
+        "cashClosures": [],
+        "operatorCredentials": {},
+    }
+    if number is not None:
+        state["testNumber"] = number
+    return state
+
+
 class CompanionRulesTest(unittest.TestCase):
     def test_service_version_matches_package(self) -> None:
         package_path = Path(__file__).resolve().parents[1] / "package.json"
@@ -251,9 +268,19 @@ class StateStorageTest(unittest.TestCase):
                 )
 
             backup = storage.ensure_daily_backup(force=True)
-            backups = sorted(storage.backup_directory.glob("*.db"))
-            self.assertEqual(len(backups), 3)
-            self.assertIn(backup, backups)
+            daily_backups = [
+                record for record in storage.list_backups() if record.tier == "daily"
+            ]
+            weekly_backups = [
+                record for record in storage.list_backups() if record.tier == "weekly"
+            ]
+            monthly_backups = [
+                record for record in storage.list_backups() if record.tier == "monthly"
+            ]
+            self.assertEqual(len(daily_backups), 3)
+            self.assertEqual(len(weekly_backups), 1)
+            self.assertEqual(len(monthly_backups), 1)
+            self.assertIn(backup, [record.path for record in daily_backups])
 
             with closing(sqlite3.connect(backup)) as connection:
                 encoded_state, revision = connection.execute(
@@ -272,6 +299,32 @@ class StateStorageTest(unittest.TestCase):
             )
             self.assertEqual(revision, 2)
             self.assertEqual(history_count, 2)
+
+    def test_restore_validates_database_and_keeps_pre_restore_copy(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            storage = self._storage(root)
+            first_state = minimal_pool_state(1)
+            second_state = minimal_pool_state(2)
+            storage.save(first_state, 0)
+            source = root / "restore.db"
+            source.write_bytes(storage.export_database())
+            storage.save(second_state, 1)
+
+            restored = storage.restore_database(source)
+
+            self.assertEqual(restored.state, first_state)
+            self.assertEqual(storage.read().state, first_state)
+            self.assertEqual(
+                len(list(storage.backup_directory.glob("*antes-restauracao*.db"))),
+                1,
+            )
+
+            invalid = root / "invalid.db"
+            invalid.write_bytes(b"not-a-database")
+            with self.assertRaises(sqlite3.DatabaseError):
+                storage.restore_database(invalid)
+            self.assertEqual(storage.read().state, first_state)
 
     def test_readable_views_and_exported_database_are_consistent(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -499,11 +552,114 @@ class StateApiTest(unittest.TestCase):
                 2,
             )
 
+    def test_backup_status_and_local_restore_api(self) -> None:
+        status, saved = self._request(
+            "PUT",
+            "/api/state",
+            {"state": minimal_pool_state(1), "expected_revision": 0},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(saved["revision"], 1)
+
+        status, backup_status = self._request("GET", "/api/backups/status")
+        self.assertEqual(status, 200)
+        self.assertEqual(
+            [item["tier"] for item in backup_status["schedules"]],
+            ["daily", "weekly", "monthly"],
+        )
+
+        status, backup_run = self._request("POST", "/api/backups/run")
+        self.assertEqual(status, 201)
+        daily = next(
+            item for item in backup_run["created"] if item["tier"] == "daily"
+        )
+
+        status, saved = self._request(
+            "PUT",
+            "/api/state",
+            {"state": minimal_pool_state(2), "expected_revision": 1},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(saved["revision"], 2)
+
+        status, restored = self._request(
+            "POST",
+            "/api/backups/restore",
+            {"source": "local", "filename": daily["filename"]},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(restored["restored"], True)
+
+        status, current = self._request("GET", "/api/state")
+        self.assertEqual(status, 200)
+        self.assertEqual(current["state"], minimal_pool_state(1))
+
+    def test_database_file_restore_api(self) -> None:
+        status, _ = self._request(
+            "PUT",
+            "/api/state",
+            {"state": minimal_pool_state(1), "expected_revision": 0},
+        )
+        self.assertEqual(status, 200)
+
+        connection = http.client.HTTPConnection(
+            "127.0.0.1", self.server.server_port, timeout=3
+        )
+        connection.request(
+            "GET",
+            "/api/database/export",
+            headers={"Origin": "http://127.0.0.1:4173"},
+        )
+        response = connection.getresponse()
+        database = response.read()
+        self.assertEqual(response.status, 200)
+        connection.close()
+
+        status, _ = self._request(
+            "PUT",
+            "/api/state",
+            {"state": minimal_pool_state(2), "expected_revision": 1},
+        )
+        self.assertEqual(status, 200)
+
+        connection = http.client.HTTPConnection(
+            "127.0.0.1", self.server.server_port, timeout=3
+        )
+        connection.request(
+            "POST",
+            "/api/database/restore",
+            body=database,
+            headers={
+                "Origin": "http://127.0.0.1:4173",
+                "Content-Type": "application/vnd.sqlite3",
+            },
+        )
+        response = connection.getresponse()
+        restored = json.loads(response.read().decode("utf-8"))
+        connection.close()
+        self.assertEqual(response.status, 200)
+        self.assertEqual(restored["restored"], True)
+
+        status, current = self._request("GET", "/api/state")
+        self.assertEqual(status, 200)
+        self.assertEqual(current["state"], minimal_pool_state(1))
+
     def test_public_demo_cannot_read_or_change_local_state(self) -> None:
         for method, path, payload in (
             ("GET", "/api/state", None),
             ("GET", "/api/database/export", None),
+            ("GET", "/api/backups/status", None),
+            ("GET", "/api/backups/google", None),
             ("POST", "/api/backups", None),
+            ("POST", "/api/backups/run", None),
+            ("POST", "/api/database/restore", {"invalid": True}),
+            (
+                "POST",
+                "/api/backups/restore",
+                {"source": "local", "filename": "backup.db"},
+            ),
+            ("POST", "/api/google-drive/connect", None),
+            ("POST", "/api/google-drive/disconnect", None),
             (
                 "PUT",
                 "/api/state",

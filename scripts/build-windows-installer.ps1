@@ -1,13 +1,14 @@
 [CmdletBinding()]
 param(
     [ValidatePattern('^\d+\.\d+\.\d+(?:\.\d+)?$')]
-    [string]$Version = '1.4.0',
+    [string]$Version = '1.5.0',
     [string]$OutputDirectory = '',
     [string]$WorkDirectory = '',
     [string]$CertificateThumbprint = '',
     [ValidateSet('CurrentUser', 'LocalMachine')]
     [string]$CertificateStoreLocation = 'CurrentUser',
     [string]$TimestampServer = 'http://timestamp.digicert.com',
+    [string]$GoogleDriveOAuthConfig = '',
     [switch]$UnsignedPrototype,
     [switch]$RefreshDependencyLock,
     [switch]$SkipNpmInstall,
@@ -34,11 +35,27 @@ if ([string]::IsNullOrWhiteSpace($WorkDirectory)) {
 $WorkDirectory = [System.IO.Path]::GetFullPath($WorkDirectory)
 $cacheDirectory = Join-Path $WorkDirectory 'cache'
 $stageDirectory = Join-Path $WorkDirectory 'stage'
+$compilerOutputDirectory = Join-Path $WorkDirectory 'installer-output'
 $installerOutputDirectory = Join-Path $OutputDirectory 'installer'
+$compiledSetupPath = Join-Path $compilerOutputDirectory "PoolPetiscos-Setup-$Version.exe"
+$setupPath = Join-Path $installerOutputDirectory "PoolPetiscos-Setup-$Version.exe"
+$setupHashPath = "$setupPath.sha256"
+$fallbackInstallerOutputDirectory = Join-Path `
+    (Split-Path -Parent $WorkDirectory) `
+    'artifacts\installer'
+$fallbackSetupPath = Join-Path `
+    $fallbackInstallerOutputDirectory `
+    "PoolPetiscos-Setup-$Version.exe"
 $lockPath = Join-Path $projectRoot 'installer\dependencies.lock.json'
 $requirementsPath = Join-Path $projectRoot 'installer\requirements-build.txt'
 $issPath = Join-Path $projectRoot 'installer\PoolPetiscos.iss'
 $iconPath = Join-Path $projectRoot 'installer\assets\pool-petiscos.ico'
+if ([string]::IsNullOrWhiteSpace($GoogleDriveOAuthConfig)) {
+    $defaultGoogleDriveConfig = Join-Path $projectRoot 'config\google-drive-oauth.json'
+    if (Test-Path -LiteralPath $defaultGoogleDriveConfig -PathType Leaf) {
+        $GoogleDriveOAuthConfig = $defaultGoogleDriveConfig
+    }
+}
 
 function Assert-ChildPath {
     param(
@@ -668,7 +685,13 @@ New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 New-Item -ItemType Directory -Path $WorkDirectory -Force | Out-Null
 New-Item -ItemType Directory -Path $cacheDirectory -Force | Out-Null
 Reset-ChildDirectory -Path $stageDirectory -Parent $WorkDirectory
-Reset-ChildDirectory -Path $installerOutputDirectory -Parent $OutputDirectory
+Reset-ChildDirectory -Path $compilerOutputDirectory -Parent $WorkDirectory
+New-Item -ItemType Directory -Path $installerOutputDirectory -Force | Out-Null
+foreach ($targetArtifact in @($setupPath, $setupHashPath)) {
+    if (Test-Path -LiteralPath $targetArtifact) {
+        Remove-Item -LiteralPath $targetArtifact -Force
+    }
+}
 
 $dependencyLock = Get-Content -LiteralPath $lockPath -Raw | ConvertFrom-Json
 if ($dependencyLock.schema -ne 1) {
@@ -714,6 +737,7 @@ Invoke-NativeCommand `
         '--clean',
         '--onedir',
         '--windowed',
+        '--optimize', '1',
         '--noupx',
         '--icon', $iconPath,
         '--name', 'PoolPetiscos',
@@ -735,6 +759,32 @@ if ($signingContext) {
     Invoke-CodeSigning -Context $signingContext -FilePath $launcherExecutable
 }
 Copy-DirectoryContents -Source $launcherDirectory -Destination $stageDirectory
+
+if (-not [string]::IsNullOrWhiteSpace($GoogleDriveOAuthConfig)) {
+    $GoogleDriveOAuthConfig = [System.IO.Path]::GetFullPath($GoogleDriveOAuthConfig)
+    if (-not (Test-Path -LiteralPath $GoogleDriveOAuthConfig -PathType Leaf)) {
+        throw "A credencial OAuth do Google Drive não foi encontrada: $GoogleDriveOAuthConfig"
+    }
+    $googleDriveConfig = Get-Content -LiteralPath $GoogleDriveOAuthConfig -Raw |
+        ConvertFrom-Json
+    $googleDriveInstalled = if ($googleDriveConfig.installed) {
+        $googleDriveConfig.installed
+    }
+    else {
+        $googleDriveConfig
+    }
+    if (
+        [string]::IsNullOrWhiteSpace([string]$googleDriveInstalled.client_id) -or
+        [string]::IsNullOrWhiteSpace([string]$googleDriveInstalled.client_secret)
+    ) {
+        throw 'A credencial OAuth do Google Drive não contém client_id e client_secret.'
+    }
+    $stagedConfigDirectory = Join-Path $stageDirectory 'config'
+    New-Item -ItemType Directory -Path $stagedConfigDirectory -Force | Out-Null
+    Copy-Item `
+        -LiteralPath $GoogleDriveOAuthConfig `
+        -Destination (Join-Path $stagedConfigDirectory 'google-drive-oauth.json')
+}
 
 $standaloneDirectory = Join-Path $projectRoot 'dist\standalone'
 $stagedAppDirectory = Join-Path $stageDirectory 'app'
@@ -875,6 +925,7 @@ $buildManifest = [ordered]@{
     node = $dependencyLock.node
     ffmpeg = $dependencyLock.ffmpeg
     yt_dlp_version = $ytDlpVersion
+    google_drive_oauth_configured = -not [string]::IsNullOrWhiteSpace($GoogleDriveOAuthConfig)
 }
 $buildManifest |
     ConvertTo-Json -Depth 6 |
@@ -898,7 +949,7 @@ Test-PackagedLauncher -LauncherPath $stagedLauncher
 $innoCompiler = Find-InnoCompiler
 $innoArguments = @(
     "/DAppStage=$stageDirectory",
-    "/DAppOutput=$installerOutputDirectory",
+    "/DAppOutput=$compilerOutputDirectory",
     "/DAppVersion=$Version",
     "/DAppIcon=$iconPath"
 )
@@ -922,9 +973,35 @@ else {
 $innoArguments += $issPath
 Invoke-NativeCommand -FilePath $innoCompiler -Arguments $innoArguments
 
-$setupPath = Join-Path $installerOutputDirectory "PoolPetiscos-Setup-$Version.exe"
-if (-not (Test-Path -LiteralPath $setupPath -PathType Leaf)) {
+if (-not (Test-Path -LiteralPath $compiledSetupPath -PathType Leaf)) {
     throw 'O Inno Setup não produziu o instalador esperado.'
+}
+try {
+    New-Item -ItemType Directory -Path $installerOutputDirectory -Force | Out-Null
+    Copy-Item `
+        -LiteralPath $compiledSetupPath `
+        -Destination $installerOutputDirectory `
+        -Force `
+        -ErrorAction Stop
+    if (-not (Test-Path -LiteralPath $setupPath -PathType Leaf)) {
+        throw 'A cópia final não apareceu na pasta de artefatos.'
+    }
+}
+catch {
+    Write-Warning (
+        'A pasta de saída foi bloqueada pelo Windows ou OneDrive. ' +
+        "Usando a pasta local de artefatos: $fallbackInstallerOutputDirectory"
+    )
+    New-Item `
+        -ItemType Directory `
+        -Path $fallbackInstallerOutputDirectory `
+        -Force | Out-Null
+    Copy-Item `
+        -LiteralPath $compiledSetupPath `
+        -Destination $fallbackSetupPath `
+        -Force
+    $setupPath = $fallbackSetupPath
+    $setupHashPath = "$setupPath.sha256"
 }
 if ($signingContext) {
     Invoke-NativeCommand `
@@ -932,6 +1009,10 @@ if ($signingContext) {
         -Arguments @('verify', '/pa', '/all', $setupPath)
 }
 $setupHash = (Get-FileHash -LiteralPath $setupPath -Algorithm SHA256).Hash
+Set-Content `
+    -LiteralPath $setupHashPath `
+    -Value "$setupHash  $(Split-Path -Leaf $setupPath)" `
+    -Encoding ascii
 
 if (-not $KeepStage) {
     Reset-ChildDirectory -Path $stageDirectory -Parent $WorkDirectory

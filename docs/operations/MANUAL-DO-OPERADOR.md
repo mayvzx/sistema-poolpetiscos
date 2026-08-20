@@ -32,6 +32,20 @@ Para trocar seu PIN, entre no próprio perfil e abra **Configurações > PIN**.
 Informe o PIN atual, o novo PIN e a confirmação. O sistema guarda apenas um
 verificador protegido, nunca o PIN em texto legível.
 
+### Se esquecer o PIN
+
+No primeiro acesso após esta atualização, o sistema mostra uma **chave de
+recuperação** no formato `XXXX-XXXX-XXXX-XXXX`. Baixe o arquivo e guarde-o fora
+do computador do caixa. A chave aparece somente nesse momento; o sistema salva
+apenas um verificador protegido.
+
+1. Na tela de entrada, escolha o perfil e selecione **Esqueci meu PIN**.
+2. Digite a chave de recuperação.
+3. Crie e confirme um novo PIN de 6 números.
+
+Em **Configurações > Chave de recuperação**, um operador que conheça o próprio
+PIN pode gerar uma nova chave. A chave anterior deixa de funcionar.
+
 ## Ajustar letras e aparência
 
 Abra **Configurações** para adaptar a tela sem reiniciar o sistema:
@@ -113,6 +127,18 @@ Em **Financeiro > Proteção dos dados**:
 O menu Iniciar oferece **Pool Petiscos > Dados e backups** para abrir a pasta
 local. Não altere o arquivo principal do banco manualmente.
 
+Em **Configurações > Backups automáticos**, o aplicativo instalado:
+
+- mantém até 30 cópias diárias, 12 semanais e 12 mensais;
+- permite executar uma cópia imediatamente;
+- conecta ou desconecta a conta do Google Drive;
+- mostra cópias locais e da nuvem com a ação **Restaurar**;
+- aceita um arquivo SQLite `.db` escolhido pelo usuário.
+
+Antes de restaurar, o sistema verifica o arquivo e salva o banco atual com o
+nome `pool-petiscos-antes-restauracao-...db`. A internet é necessária somente
+para o Google Drive; os backups e o caixa local continuam funcionando offline.
+
 ## Encerrar e atualizar
 
 Fechar a aba do navegador não encerra os serviços. Use **Encerrar Pool
@@ -120,6 +146,12 @@ Petiscos** no menu Iniciar antes de manutenção técnica.
 
 Uma versão nova pode ser instalada por cima da anterior. Os dados ficam em uma
 pasta separada e são preservados.
+
+Para remover o protótipo depois de um teste, abra **Pool Petiscos > Desinstalar
+Pool Petiscos** no menu Iniciar. O desinstalador pergunta se também deve apagar
+banco, músicas, PINs, configurações, logs e backups locais. Escolha **Sim** para
+uma remoção completa da máquina de teste. Arquivos já enviados ao Google Drive
+ou OneDrive não são apagados.
 
 ## Se algo não abrir
 

@@ -2,6 +2,7 @@
 
 import {
   Check,
+  Download,
   Eye,
   EyeOff,
   KeyRound,
@@ -14,6 +15,7 @@ import {
   Type,
 } from "lucide-react";
 import { type FormEvent, useMemo, useState } from "react";
+import { BackupSettings } from "./backup-settings";
 import {
   FONT_SCALE_STEP,
   MAX_FONT_SCALE,
@@ -24,6 +26,7 @@ import {
 } from "./display-preferences";
 import {
   createOperatorCredential,
+  createPinRecoveryCredential,
   sanitizePin,
   validateOperatorPin,
   verifyOperatorPin,
@@ -39,12 +42,14 @@ import type {
 type SettingsPanelProps = {
   activeOperatorId: OperatorId;
   credentials: OperatorCredentials;
+  recoveryCredential?: OperatorCredential;
   displayPreferences: DisplayPreferences;
   resolvedTheme: ResolvedTheme;
   onCredentialChange: (
     operatorId: OperatorId,
     credential: OperatorCredential,
   ) => void;
+  onRecoveryCredentialChange: (credential: OperatorCredential) => void;
   onDisplayPreferencesChange: (preferences: DisplayPreferences) => void;
   onMessage: (
     message: string,
@@ -81,9 +86,11 @@ const THEME_OPTIONS: Array<{
 export function SettingsPanel({
   activeOperatorId,
   credentials,
+  recoveryCredential,
   displayPreferences,
   resolvedTheme,
   onCredentialChange,
+  onRecoveryCredentialChange,
   onDisplayPreferencesChange,
   onMessage,
 }: SettingsPanelProps) {
@@ -94,6 +101,9 @@ export function SettingsPanel({
   const [confirmPin, setConfirmPin] = useState("");
   const [showPins, setShowPins] = useState(false);
   const [savingPin, setSavingPin] = useState(false);
+  const [recoveryCurrentPin, setRecoveryCurrentPin] = useState("");
+  const [generatedRecoveryKey, setGeneratedRecoveryKey] = useState("");
+  const [savingRecoveryKey, setSavingRecoveryKey] = useState(false);
   const pinError = useMemo(
     () => (newPin.length === 6 ? validateOperatorPin(newPin) : null),
     [newPin],
@@ -135,6 +145,51 @@ export function SettingsPanel({
     } finally {
       setSavingPin(false);
     }
+  }
+
+  async function regenerateRecoveryKey(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!credential || !(await verifyOperatorPin(recoveryCurrentPin, credential))) {
+      onMessage("Confirme o PIN atual para gerar uma nova chave.", "warning");
+      return;
+    }
+    setSavingRecoveryKey(true);
+    try {
+      const recovery = await createPinRecoveryCredential();
+      onRecoveryCredentialChange(recovery.credential);
+      setGeneratedRecoveryKey(recovery.key);
+      setRecoveryCurrentPin("");
+      onMessage(
+        recoveryCredential
+          ? "Nova chave criada. A chave anterior deixou de funcionar."
+          : "Chave de recuperação criada com segurança.",
+      );
+    } catch {
+      onMessage("Não foi possível criar a chave de recuperação.", "warning");
+    } finally {
+      setSavingRecoveryKey(false);
+    }
+  }
+
+  function downloadRecoveryKey() {
+    if (!generatedRecoveryKey) return;
+    const content = [
+      "POOL PETISCOS - CHAVE DE RECUPERAÇÃO DO PIN",
+      "",
+      generatedRecoveryKey,
+      "",
+      "Guarde este arquivo em local seguro e fora do computador do caixa.",
+      "Esta chave redefine o PIN de Elaine ou Pool. Não compartilhe.",
+    ].join("\r\n");
+    const url = URL.createObjectURL(
+      new Blob([content], { type: "text/plain;charset=utf-8" }),
+    );
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "Pool-Petiscos-Chave-de-Recuperacao.txt";
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
   }
 
   return (
@@ -371,6 +426,72 @@ export function SettingsPanel({
           <PinGuidance />
         </div>
       </section>
+
+      <section className="pool-settings-card rounded-[24px] border border-[#ebe5e1] bg-white p-5 shadow-sm sm:p-7">
+        <div className="flex items-start gap-4">
+          <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-[#f1eefc] text-[#7458b4]">
+            <ShieldCheck size={24} />
+          </span>
+          <div>
+            <h2 className="text-xl font-black">Chave de recuperação</h2>
+            <p className="mt-1 text-sm leading-6 text-[#6d6561]">
+              Redefine o PIN de qualquer perfil em caso de esquecimento. O
+              sistema guarda somente o verificador protegido da chave.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-6 grid gap-5 lg:grid-cols-[1fr_.9fr]">
+          <form onSubmit={regenerateRecoveryKey} className="space-y-4">
+            <PinField
+              label={`PIN atual de ${operator.familiarName}`}
+              value={recoveryCurrentPin}
+              onChange={setRecoveryCurrentPin}
+              visible={showPins}
+              autoComplete="current-password"
+            />
+            <button
+              type="submit"
+              disabled={savingRecoveryKey}
+              className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#302b29] px-5 font-extrabold text-white disabled:opacity-55"
+            >
+              <ShieldCheck size={19} />
+              {savingRecoveryKey
+                ? "Gerando chave..."
+                : recoveryCredential
+                  ? "Gerar nova chave"
+                  : "Criar chave de recuperação"}
+            </button>
+          </form>
+          <div className="pool-soft-panel rounded-2xl border border-[#e6dfdb] bg-[#faf8f6] p-5">
+            {generatedRecoveryKey ? (
+              <>
+                <p className="text-sm font-black text-[#302b29]">
+                  Guarde agora. A chave não será exibida novamente.
+                </p>
+                <code className="mt-4 block rounded-xl bg-[#211e1d] px-3 py-4 text-center text-base font-black tracking-[.08em] text-white sm:text-lg">
+                  {generatedRecoveryKey}
+                </code>
+                <button
+                  type="button"
+                  onClick={downloadRecoveryKey}
+                  className="mt-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-[#d9cfca] bg-white font-extrabold"
+                >
+                  <Download size={18} /> Baixar chave
+                </button>
+              </>
+            ) : (
+              <p className="text-sm font-semibold leading-6 text-[#6d6561]">
+                {recoveryCredential
+                  ? "Existe uma chave ativa. Gere outra apenas se a atual foi perdida; isso invalidará a anterior."
+                  : "Ainda não existe uma chave de recuperação neste caixa."}
+              </p>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <BackupSettings onMessage={onMessage} />
     </div>
   );
 }

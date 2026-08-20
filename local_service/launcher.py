@@ -375,6 +375,7 @@ def run_companion_child(companion_port: int) -> int:
         PoolCompanionHandler,
         PoolCompanionServer,
     )
+    from local_service.backups import BackupManager
     from local_service.storage import StateStorage
 
     music_directory = data_directory() / "musicas"
@@ -389,17 +390,25 @@ def run_companion_child(companion_port: int) -> int:
             logging.getLogger("pool_petiscos.launcher").exception(
                 "O backup de inicialização não pôde ser criado."
             )
+    backup_manager = BackupManager(
+        storage,
+        data_directory(),
+        installation_directory(),
+    )
     server = PoolCompanionServer(
         ("127.0.0.1", companion_port),
         PoolCompanionHandler,
         music_directory,
         storage,
+        backup_manager,
     )
+    backup_manager.start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
+        backup_manager.stop()
         server.server_close()
     return 0
 
@@ -700,6 +709,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--no-browser", action="store_true")
     parser.add_argument("--shutdown", action="store_true")
     parser.add_argument("--open-data-folder", action="store_true")
+    parser.add_argument("--disconnect-google-drive", action="store_true")
     parser.add_argument("--self-test", action="store_true")
     parser.add_argument("--companion-child", action="store_true")
     parser.add_argument(
@@ -738,6 +748,30 @@ def main() -> int:
         return 0 if send_shutdown_signal() else 1
     if arguments.open_data_folder:
         return open_data_directory()
+    if arguments.disconnect_google_drive:
+        from local_service.google_drive import (
+            GoogleDriveClient,
+            OAUTH_CONFIGURATION_FILENAME,
+        )
+
+        home = data_directory()
+        client = GoogleDriveClient(
+            [
+                home / "config" / OAUTH_CONFIGURATION_FILENAME,
+                installation_directory()
+                / "config"
+                / OAUTH_CONFIGURATION_FILENAME,
+            ],
+            home / "config" / "google-drive-token.dpapi",
+        )
+        if not client.token_store.exists():
+            return 0
+        try:
+            client.disconnect()
+        except Exception:
+            # A revogação depende da internet; o token local já foi apagado.
+            return 1
+        return 0
     if arguments.self_test:
         errors = validate_installation()
         return 0 if not errors else 2

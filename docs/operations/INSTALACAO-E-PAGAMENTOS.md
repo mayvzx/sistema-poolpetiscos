@@ -23,14 +23,16 @@ Banco, faixas e logs permanecem fora da instalação:
 ```
 
 Cada gravação no SQLite é transacional e as últimas 50 revisões são mantidas.
-Uma cópia íntegra do banco é criada todos os dias no OneDrive; sem OneDrive, o
-sistema usa uma pasta de backup local. Atualizações do programa não removem os
-dados.
+Cópias íntegras do banco são mantidas em calendários diário, semanal e mensal.
+Elas ficam disponíveis localmente e podem ser sincronizadas com o Google Drive
+depois que a proprietária conecta a conta. O OneDrive continua aceito como
+destino de pasta local quando já estiver configurado no Windows.
 
 Para a instalação física, também é recomendado:
 
 - nobreak para computador, roteador e equipamento de pagamento;
-- OneDrive configurado e sincronizando antes do primeiro uso;
+- conta Google conectada e uma sincronização manual confirmada antes do primeiro
+  uso;
 - restauração de teste antes da operação oficial;
 - uso assistido em paralelo ao processo atual nos primeiros dias.
 
