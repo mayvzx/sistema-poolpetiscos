@@ -37,7 +37,7 @@ botão **Baixar banco completo** gera o SQLite voltado à auditoria técnica.
 | `vw_itens_venda` | itens, observações e valores de cada venda |
 | `vw_despesas` | despesas registradas |
 | `vw_movimentos_caixa` | sangrias e suprimentos |
-| `vw_fechamentos_caixa` | saldos esperado, contado e diferença |
+| `vw_fechamentos_caixa` | saldos esperado e contado, diferença, fundo, retirada e saldo deixado |
 | `vw_operadores` | perfis e situação de configuração do PIN, sem expor o verificador |
 
 As tabelas internas `app_state` e `state_history` garantem gravação atômica e

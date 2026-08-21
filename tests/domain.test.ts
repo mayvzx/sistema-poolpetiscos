@@ -3,6 +3,8 @@ import test from "node:test";
 import {
   buildDailyRevenue,
   calculateCashBalance,
+  calculateCashClosing,
+  DEFAULT_CASH_FUND,
   getBusinessStatus,
   isLowStock,
   parseAmount,
@@ -61,6 +63,7 @@ function validState(): PersistedPoolState {
     expenses: [],
     cashOpen: true,
     openingBalance: 100,
+    cashFund: DEFAULT_CASH_FUND,
     cashOpenedAt: timestamp - 60_000,
     cashMovements: [],
     cashClosures: [],
@@ -88,6 +91,53 @@ test("calcula o saldo físico separando vendas, despesas e movimentos", () => {
       cashMovementTotal: -10,
     }),
     105.25,
+  );
+});
+
+test("fecha o caixa retirando somente o excedente do fundo fixo", () => {
+  assert.deepEqual(
+    calculateCashClosing({
+      expectedBalance: 152,
+      countedBalance: 152,
+      cashFund: 130,
+    }),
+    {
+      difference: 0,
+      cashFund: 130,
+      withdrawalAmount: 22,
+      remainingBalance: 130,
+      fundShortfall: 0,
+    },
+  );
+
+  assert.deepEqual(
+    calculateCashClosing({
+      expectedBalance: 152,
+      countedBalance: 150,
+      cashFund: 130,
+    }),
+    {
+      difference: -2,
+      cashFund: 130,
+      withdrawalAmount: 20,
+      remainingBalance: 130,
+      fundShortfall: 0,
+    },
+  );
+
+  assert.deepEqual(
+    calculateCashClosing({
+      expectedBalance: 120,
+      countedBalance: 120,
+      cashFund: 130,
+    }),
+    {
+      difference: 0,
+      cashFund: 130,
+      withdrawalAmount: 0,
+      remainingBalance: 120,
+      fundShortfall: 10,
+    },
   );
 });
 
@@ -195,6 +245,7 @@ test("inicia uma instalação nova sem movimentações nem valores fictícios", 
 
   assert.equal(state.cashOpen, false);
   assert.equal(state.openingBalance, 0);
+  assert.equal(state.cashFund, 130);
   assert.deepEqual(state.sales, []);
   assert.deepEqual(state.expenses, []);
   assert.deepEqual(state.cashMovements, []);
@@ -222,6 +273,7 @@ test("migra vendas antigas para o histórico de comandas", () => {
   delete legacy.sales[0].operatorId;
   delete legacy.sales[0].operatorName;
   delete (legacy as { operatorCredentials?: unknown }).operatorCredentials;
+  delete (legacy as { cashFund?: unknown }).cashFund;
 
   const parsed = parsePoolState(legacy);
   assert.ok(parsed);
@@ -232,6 +284,36 @@ test("migra vendas antigas para o histórico de comandas", () => {
   assert.equal(parsed.sales[0].operatorName, "Não identificado");
   assert.equal(parsed.sales[0].items[0].observation, "Sem cebola");
   assert.deepEqual(parsed.operatorCredentials, {});
+  assert.equal(parsed.cashFund, 130);
+});
+
+test("migra fechamentos antigos sem inventar uma retirada", () => {
+  const legacy = structuredClone(validState()) as unknown as {
+    cashFund?: unknown;
+    cashClosures: Array<Record<string, unknown>>;
+  };
+  delete legacy.cashFund;
+  legacy.cashClosures = [
+    {
+      id: "FC-ANTIGO",
+      openedAt: 100,
+      closedAt: 200,
+      openingBalance: 130,
+      expectedBalance: 152,
+      countedBalance: 130,
+      difference: -22,
+    },
+  ];
+
+  const parsed = parsePoolState(legacy);
+  assert.ok(parsed);
+  assert.equal(parsed.cashFund, 130);
+  assert.deepEqual(parsed.cashClosures[0], {
+    ...legacy.cashClosures[0],
+    cashFund: 130,
+    withdrawalAmount: 0,
+    remainingBalance: 130,
+  });
 });
 
 test("rejeita verificadores de PIN adulterados ao restaurar", () => {

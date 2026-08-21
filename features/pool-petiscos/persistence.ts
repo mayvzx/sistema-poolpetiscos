@@ -14,7 +14,7 @@ import type {
   SaleItem,
   SaleOperatorId,
 } from "./types";
-import { roundMoney } from "./domain";
+import { DEFAULT_CASH_FUND, roundMoney } from "./domain";
 import { operatorNameForSale } from "./operators";
 
 export const STORAGE_KEY = "pool-petiscos-state-v1.5.2";
@@ -223,7 +223,38 @@ function parseCashClosure(value: unknown): CashClosure | null {
   }
   const difference = roundMoney(value.countedBalance - value.expectedBalance);
   if (Math.abs(difference - roundMoney(value.difference)) > 0.005) return null;
-  return { ...(value as CashClosure), difference };
+  const hasNewClosingFields = [
+    value.cashFund,
+    value.withdrawalAmount,
+    value.remainingBalance,
+  ].some((field) => field !== undefined);
+  if (
+    hasNewClosingFields &&
+    (!isNonNegativeMoney(value.cashFund) ||
+      !isNonNegativeMoney(value.withdrawalAmount) ||
+      !isNonNegativeMoney(value.remainingBalance) ||
+      value.remainingBalance > value.cashFund + 0.005 ||
+      Math.abs(
+        value.countedBalance -
+          value.withdrawalAmount -
+          value.remainingBalance,
+      ) > 0.005)
+  ) {
+    return null;
+  }
+  return {
+    ...(value as CashClosure),
+    difference,
+    cashFund: hasNewClosingFields
+      ? roundMoney(value.cashFund as number)
+      : roundMoney(value.countedBalance),
+    withdrawalAmount: hasNewClosingFields
+      ? roundMoney(value.withdrawalAmount as number)
+      : 0,
+    remainingBalance: hasNewClosingFields
+      ? roundMoney(value.remainingBalance as number)
+      : roundMoney(value.countedBalance),
+  };
 }
 
 function isBase64(value: unknown, minimumBytes: number) {
@@ -296,12 +327,15 @@ export function parsePoolState(value: unknown): PersistedPoolState | null {
     value.pinRecoveryCredential === undefined
       ? undefined
       : parseOperatorCredential(value.pinRecoveryCredential);
+  const cashFund =
+    value.cashFund === undefined ? DEFAULT_CASH_FUND : value.cashFund;
   if (
     products === null ||
     sales === null ||
     expenses === null ||
     typeof value.cashOpen !== "boolean" ||
     !isNonNegativeMoney(value.openingBalance) ||
+    !isNonNegativeMoney(cashFund) ||
     !isTimestamp(value.cashOpenedAt) ||
     cashMovements === null ||
     cashClosures === null ||
@@ -325,6 +359,7 @@ export function parsePoolState(value: unknown): PersistedPoolState | null {
     expenses,
     cashOpen: value.cashOpen,
     openingBalance: roundMoney(value.openingBalance),
+    cashFund: roundMoney(cashFund),
     cashOpenedAt: value.cashOpenedAt,
     cashMovements,
     cashClosures,

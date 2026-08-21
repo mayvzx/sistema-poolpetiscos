@@ -109,10 +109,24 @@ levantada, estoque e mínimo iguais a zero não geram notificações.
 
 Em **Financeiro**:
 
-- abra o caixa com o fundo inicial;
+- abra o caixa com o fundo sugerido; o padrão inicial é R$ 130 e pode ser
+  alterado em **Configurações > Fundo fixo para troco**;
 - registre despesas, sangrias e suprimentos;
 - confira entradas, saídas e saldo esperado;
-- ao fechar, informe o dinheiro contado e confira a diferença.
+- ao fechar, conte todo o dinheiro antes de fazer qualquer retirada;
+- informe o total contado e confira a diferença real, a retirada calculada e o
+  valor que ficará para troco;
+- confirme o fechamento, retire fisicamente o valor indicado e deixe na gaveta
+  o fundo mostrado pelo sistema.
+
+Exemplo: se o saldo esperado e contado for R$ 152 e o fundo configurado for
+R$ 130, o sistema registra uma retirada de R$ 22 e fecha sem diferença. Se forem
+contados R$ 150, a diferença real será de -R$ 2, a retirada será de R$ 20 e
+R$ 130 ficarão para a próxima abertura.
+
+A retirada automática aparece no fluxo de caixa como **Sangria — Retirada
+automática no fechamento**. Pix e cartão continuam no financeiro, mas não
+entram no dinheiro físico contado na gaveta.
 
 ### Consultar e baixar o fluxo de caixa
 

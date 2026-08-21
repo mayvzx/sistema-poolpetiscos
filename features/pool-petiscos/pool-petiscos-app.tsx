@@ -59,6 +59,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import { downloadBlob } from "./browser-download";
+import { CashClosingForm } from "./cash-closing-form";
 import { StartupScreen } from "./startup-screen";
 import { OperatorLogin } from "./operator-login";
 import { SettingsPanel } from "./settings-panel";
@@ -72,8 +73,10 @@ import {
 import {
   buildDailyRevenue,
   calculateCashBalance,
+  calculateCashClosing,
   createRecordId,
   currency,
+  DEFAULT_CASH_FUND,
   formatDateKey,
   formatTime,
   getBusinessStatus,
@@ -221,6 +224,7 @@ export default function PoolPetiscosApp() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [cashOpen, setCashOpen] = useState(false);
   const [openingBalance, setOpeningBalance] = useState(0);
+  const [cashFund, setCashFund] = useState(DEFAULT_CASH_FUND);
   const [cashOpenedAt, setCashOpenedAt] = useState(() => Date.now());
   const [cashMovements, setCashMovements] = useState<CashMovement[]>([]);
   const [cashClosures, setCashClosures] = useState<CashClosure[]>([]);
@@ -480,6 +484,7 @@ export default function PoolPetiscosApp() {
     setExpenses(state.expenses);
     setCashOpen(state.cashOpen);
     setOpeningBalance(state.openingBalance);
+    setCashFund(state.cashFund);
     setCashOpenForm(String(state.openingBalance));
     setCashOpenedAt(state.cashOpenedAt);
     setCashMovements(state.cashMovements);
@@ -785,6 +790,7 @@ export default function PoolPetiscosApp() {
       expenses,
       cashOpen,
       openingBalance,
+      cashFund,
       cashOpenedAt,
       cashMovements,
       cashClosures,
@@ -840,6 +846,7 @@ export default function PoolPetiscosApp() {
     };
   }, [
     cashClosures,
+    cashFund,
     cashMovements,
     cashOpen,
     cashOpenedAt,
@@ -1201,6 +1208,10 @@ export default function PoolPetiscosApp() {
     cashExpenseTotal,
     cashMovementTotal,
   });
+  const latestCashClosure = cashClosures[0];
+  const displayedCashBalance = cashOpen
+    ? cashBalance
+    : (latestCashClosure?.remainingBalance ?? 0);
   const lowStock = useMemo(
     () => products.filter(isLowStock),
     [products],
@@ -1937,7 +1948,7 @@ export default function PoolPetiscosApp() {
       setModal("cash-close");
       return;
     }
-    setCashOpenForm("");
+    setCashOpenForm(cashFund.toFixed(2).replace(".", ","));
     setModal("cash-open");
   }
 
@@ -1966,7 +1977,23 @@ export default function PoolPetiscosApp() {
       return;
     }
     const closedAt = Date.now();
-    const difference = roundMoney(countedBalance - cashBalance);
+    const closing = calculateCashClosing({
+      expectedBalance: cashBalance,
+      countedBalance,
+      cashFund,
+    });
+    if (closing.withdrawalAmount > 0) {
+      setCashMovements((current) => [
+        {
+          id: createRecordId("MC"),
+          timestamp: closedAt,
+          description: "Retirada automática no fechamento",
+          amount: closing.withdrawalAmount,
+          kind: "sangria",
+        },
+        ...current,
+      ]);
+    }
     setCashClosures((current) => [
       {
         id: createRecordId("FC"),
@@ -1975,7 +2002,10 @@ export default function PoolPetiscosApp() {
         openingBalance,
         expectedBalance: cashBalance,
         countedBalance,
-        difference,
+        difference: closing.difference,
+        cashFund: closing.cashFund,
+        withdrawalAmount: closing.withdrawalAmount,
+        remainingBalance: closing.remainingBalance,
       },
       ...current,
     ]);
@@ -1984,12 +2014,23 @@ export default function PoolPetiscosApp() {
     setCashReceived("");
     setPaymentMethod("Pix");
     setModal(null);
-    showToast(
-      Math.abs(difference) < 0.005
-        ? "Caixa fechado sem diferença."
-        : `Caixa fechado com diferença de ${currency.format(difference)}.`,
-      Math.abs(difference) < 0.005 ? "success" : "warning",
-    );
+    if (closing.fundShortfall > 0) {
+      showToast(
+        `Caixa fechado. Faltaram ${currency.format(closing.fundShortfall)} para completar o fundo de troco.`,
+        "warning",
+      );
+    } else if (Math.abs(closing.difference) >= 0.005) {
+      showToast(
+        `Retire ${currency.format(closing.withdrawalAmount)}. O fechamento teve diferença de ${currency.format(closing.difference)}.`,
+        "warning",
+      );
+    } else {
+      showToast(
+        closing.withdrawalAmount > 0
+          ? `Retire ${currency.format(closing.withdrawalAmount)}. ${currency.format(closing.remainingBalance)} ficam para troco.`
+          : `Caixa fechado. ${currency.format(closing.remainingBalance)} ficam para troco.`,
+      );
+    }
   }
 
   function submitCashMovement(event: FormEvent<HTMLFormElement>) {
@@ -2070,6 +2111,7 @@ export default function PoolPetiscosApp() {
       expenses,
       cashOpen,
       openingBalance,
+      cashFund,
       cashOpenedAt,
       cashMovements,
       cashClosures,
@@ -2620,8 +2662,12 @@ export default function PoolPetiscosApp() {
                 },
                 {
                   label: "Saldo do caixa",
-                  value: currency.format(cashBalance),
-                  helper: "Entradas menos saídas",
+                  value: currency.format(displayedCashBalance),
+                  helper: cashOpen
+                    ? "Dinheiro esperado nesta sessão"
+                    : latestCashClosure
+                      ? "Deixado para a próxima abertura"
+                      : "Caixa fechado",
                   icon: WalletCards,
                   colors: "bg-[#eaf8f1] text-[#27865d]",
                 },
@@ -3661,10 +3707,12 @@ export default function PoolPetiscosApp() {
                 },
                 {
                   label: "Saldo em caixa",
-                  value: cashBalance,
+                  value: displayedCashBalance,
                   helper: cashOpen
                     ? `Abertura: ${currency.format(openingBalance)} • só dinheiro`
-                    : "Caixa fechado",
+                    : latestCashClosure
+                      ? `Caixa fechado • fundo: ${currency.format(cashFund)}`
+                      : "Caixa fechado",
                   icon: WalletCards,
                   colors: "bg-[#f1eefc] text-[#7458b4]",
                 },
@@ -4521,9 +4569,11 @@ export default function PoolPetiscosApp() {
             recoveryCredential={pinRecoveryCredential}
             displayPreferences={displayPreferences}
             resolvedTheme={resolvedTheme}
+            cashFund={cashFund}
             onCredentialChange={updateOperatorCredential}
             onRecoveryCredentialChange={setPinRecoveryCredential}
             onDisplayPreferencesChange={setDisplayPreferences}
+            onCashFundChange={setCashFund}
             onMessage={showToast}
           />
         )}
@@ -5017,8 +5067,9 @@ export default function PoolPetiscosApp() {
                   />
                 </label>
                 <div className="rounded-xl bg-[#f1eefc] p-3 text-[8px] leading-4 text-[#5e4893]">
-                  Este valor inicia uma nova sessão. Pix e cartão aparecem no
-                  financeiro, mas não entram no dinheiro físico do caixa.
+                  O fundo configurado é {currency.format(cashFund)}. Ajuste o
+                  campo apenas se houver outro valor físico na gaveta. Pix e
+                  cartão não entram no dinheiro do caixa.
                 </div>
                 <button
                   type="submit"
@@ -5029,64 +5080,14 @@ export default function PoolPetiscosApp() {
                 </button>
               </form>
             ) : modal === "cash-close" ? (
-              <form onSubmit={submitCashClose} className="mt-5 space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-xl bg-[#f7f5f2] p-3">
-                    <span className="block text-[8px] text-[#776f6b]">
-                      Saldo esperado
-                    </span>
-                    <strong className="mt-1 block text-lg">
-                      {currency.format(cashBalance)}
-                    </strong>
-                  </div>
-                  <div className="rounded-xl bg-[#f7f5f2] p-3">
-                    <span className="block text-[8px] text-[#776f6b]">
-                      Vendas em dinheiro
-                    </span>
-                    <strong className="mt-1 block text-lg">
-                      {currency.format(cashSalesTotal)}
-                    </strong>
-                  </div>
-                </div>
-                <label className="block">
-                  <span className="mb-1.5 block text-[9px] font-extrabold text-[#776f6b]">
-                    Valor contado na gaveta
-                  </span>
-                  <input
-                    required
-                    autoFocus
-                    inputMode="decimal"
-                    value={cashCloseForm}
-                    onChange={(event) => setCashCloseForm(event.target.value)}
-                    placeholder="R$ 0,00"
-                    className="h-11 w-full rounded-xl border border-[#ebe5e1] px-3 text-xs outline-none focus:border-[#d9202c]"
-                  />
-                </label>
-                {cashCloseForm.trim() &&
-                  Number.isFinite(parseAmount(cashCloseForm)) && (
-                  <div
-                    className={`rounded-xl p-3 text-[9px] font-bold ${
-                      Math.abs(
-                        roundMoney(parseAmount(cashCloseForm) - cashBalance),
-                      ) < 0.005
-                        ? "bg-[#eaf8f1] text-[#23734f]"
-                        : "bg-[#fff9e9] text-[#8d6100]"
-                    }`}
-                  >
-                    Diferença:{" "}
-                    {currency.format(
-                      roundMoney(parseAmount(cashCloseForm) - cashBalance),
-                    )}
-                  </div>
-                )}
-                <button
-                  type="submit"
-                  className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#302b29] text-xs font-extrabold text-white"
-                >
-                  <Check size={18} />
-                  Confirmar fechamento
-                </button>
-              </form>
+              <CashClosingForm
+                expectedBalance={cashBalance}
+                cashSalesTotal={cashSalesTotal}
+                cashFund={cashFund}
+                countedValue={cashCloseForm}
+                onCountedValueChange={setCashCloseForm}
+                onSubmit={submitCashClose}
+              />
             ) : (
               <form onSubmit={submitCashMovement} className="mt-5 space-y-4">
                 <div className="grid grid-cols-2 gap-2">
