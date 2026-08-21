@@ -8,7 +8,9 @@ from collections.abc import Callable
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest import mock
 
+from local_service.backups import BackupManager
 from local_service.server import (
     MAX_STATE_BODY_BYTES,
     PRODUCTION_ORIGIN,
@@ -200,11 +202,12 @@ class StateStorageTest(unittest.TestCase):
             self.assertIsNone(initial.state)
             self.assertEqual(initial.revision, 0)
 
-            saved = storage.save({"orders": [{"id": "pedido-1"}]}, 0)
+            first_state = minimal_pool_state(1)
+            saved = storage.save(first_state, 0)
             self.assertEqual(saved.revision, 1)
 
             with self.assertRaises(RevisionConflict) as raised:
-                storage.save({"orders": []}, 0)
+                storage.save(minimal_pool_state(2), 0)
             self.assertEqual(raised.exception.snapshot.state, saved.state)
 
             current = storage.read()
@@ -217,15 +220,67 @@ class StateStorageTest(unittest.TestCase):
                     ORDER BY revision
                     """
                 ).fetchall()
-            self.assertEqual(
-                history,
-                [(1, '{"orders":[{"id":"pedido-1"}]}')],
-            )
+            self.assertEqual(len(history), 1)
+            self.assertEqual(history[0][0], 1)
+            self.assertEqual(json.loads(history[0][1]), first_state)
+
+    def test_rejects_invalid_state_and_duplicate_record_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            storage = self._storage(Path(directory))
+            with self.assertRaises(ValueError):
+                storage.save({"cash": {"open": True}}, 0)
+
+            duplicated = minimal_pool_state()
+            product = {
+                "id": "P1",
+                "name": "Batata frita",
+                "category": "Petiscos",
+                "price": 18.5,
+                "stock": 7,
+                "minimum": 3,
+                "emoji": "🍟",
+            }
+            duplicated["products"] = [product, dict(product)]
+            with self.assertRaises(ValueError):
+                storage.save(duplicated, 0)
+
+            self.assertEqual(storage.read().revision, 0)
+
+    def test_read_rejects_externally_corrupted_state(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            storage = self._storage(Path(directory))
+            storage.save(minimal_pool_state(1), 0)
+            with closing(sqlite3.connect(storage.database_path)) as connection:
+                connection.execute(
+                    "UPDATE app_state SET state_json = ? WHERE id = 1",
+                    ('{"cash":"invalid"}',),
+                )
+                connection.commit()
+
+            with self.assertRaises(RuntimeError):
+                storage.read()
+
+    def test_backup_manager_records_local_backup_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            storage = self._storage(root)
+            storage.save(minimal_pool_state(1), 0)
+            manager = BackupManager(storage, root, root)
+
+            with mock.patch.object(
+                storage,
+                "ensure_automatic_backups",
+                side_effect=OSError("disco sem espaço"),
+            ):
+                with self.assertRaisesRegex(OSError, "disco sem espaço"):
+                    manager.run(force=True)
+
+            self.assertIn("disco sem espaço", manager.status()["last_error"])
 
     def test_failed_history_insert_rolls_back_the_current_state(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             storage = self._storage(Path(directory))
-            saved = storage.save({"number": 1}, 0)
+            saved = storage.save(minimal_pool_state(1), 0)
 
             with closing(sqlite3.connect(storage.database_path)) as connection:
                 connection.execute(
@@ -241,7 +296,7 @@ class StateStorageTest(unittest.TestCase):
                 connection.commit()
 
             with self.assertRaises(sqlite3.IntegrityError):
-                storage.save({"number": 2}, 1)
+                storage.save(minimal_pool_state(2), 1)
 
             self.assertEqual(storage.read(), saved)
             with closing(sqlite3.connect(storage.database_path)) as connection:
@@ -254,7 +309,7 @@ class StateStorageTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             storage = self._storage(Path(directory))
             for number in range(55):
-                storage.save({"number": number})
+                storage.save(minimal_pool_state(number))
 
             with closing(sqlite3.connect(storage.database_path)) as connection:
                 first, last, count = connection.execute(
@@ -274,11 +329,10 @@ class StateStorageTest(unittest.TestCase):
                 clock=lambda: now,
                 backup_retention=3,
             )
-            storage.save({"products": [{"name": "Batata"}]}, 0)
-            storage.save(
-                {"products": [{"name": "Batata", "quantity": 2}]},
-                1,
-            )
+            first_state = minimal_pool_state(1)
+            second_state = minimal_pool_state(2)
+            storage.save(first_state, 0)
+            storage.save(second_state, 1)
 
             for offset in range(1, 5):
                 date = (now - timedelta(days=offset)).date().isoformat()
@@ -314,7 +368,7 @@ class StateStorageTest(unittest.TestCase):
                 ).fetchone()[0]
             self.assertEqual(
                 json.loads(encoded_state),
-                {"products": [{"name": "Batata", "quantity": 2}]},
+                second_state,
             )
             self.assertEqual(revision, 2)
             self.assertEqual(history_count, 2)
@@ -502,10 +556,11 @@ class StateApiTest(unittest.TestCase):
         self.assertEqual(initial["revision"], 0)
         self.assertEqual(initial["storage"], "sqlite")
 
+        first_state = minimal_pool_state(1)
         status, saved = self._request(
             "PUT",
             "/api/state",
-            {"state": {"cash": {"open": True}}, "expected_revision": 0},
+            {"state": first_state, "expected_revision": 0},
         )
         self.assertEqual(status, 200)
         self.assertEqual(saved["revision"], 1)
@@ -513,11 +568,13 @@ class StateApiTest(unittest.TestCase):
         self.assertIsNotNone(saved["last_backup_at"])
 
         large_note = "x" * (40 * 1024)
+        second_state = minimal_pool_state(2)
+        second_state["testNote"] = large_note
         status, large_saved = self._request(
             "PUT",
             "/api/state",
             {
-                "state": {"cash": {"open": True}, "note": large_note},
+                "state": second_state,
                 "expected_revision": 1,
             },
         )
@@ -527,13 +584,13 @@ class StateApiTest(unittest.TestCase):
         status, conflict = self._request(
             "PUT",
             "/api/state",
-            {"state": {"cash": {"open": False}}, "expected_revision": 0},
+            {"state": minimal_pool_state(3), "expected_revision": 0},
         )
         self.assertEqual(status, 409)
         self.assertEqual(conflict["revision"], 2)
         self.assertEqual(
             conflict["state"],
-            {"cash": {"open": True}, "note": large_note},
+            second_state,
         )
 
         status, backup = self._request("POST", "/api/backups")
@@ -570,6 +627,20 @@ class StateApiTest(unittest.TestCase):
                 ).fetchone()[0],
                 2,
             )
+
+    def test_state_api_rejects_incomplete_state_without_writing(self) -> None:
+        status, invalid = self._request(
+            "PUT",
+            "/api/state",
+            {"state": {"cash": {"open": True}}, "expected_revision": 0},
+        )
+        self.assertEqual(status, 400)
+        self.assertIn("dados válidos", invalid["error"])
+
+        status, current = self._request("GET", "/api/state")
+        self.assertEqual(status, 200)
+        self.assertIsNone(current["state"])
+        self.assertEqual(current["revision"], 0)
 
     def test_backup_status_and_local_restore_api(self) -> None:
         status, saved = self._request(

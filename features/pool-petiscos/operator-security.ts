@@ -60,6 +60,28 @@ async function derivePinHash(
   return new Uint8Array(bits);
 }
 
+async function verifyCredentialSecret(
+  secret: string,
+  credential: OperatorCredential,
+) {
+  try {
+    const actual = await derivePinHash(
+      secret,
+      base64ToBytes(credential.salt),
+      credential.iterations,
+    );
+    const expected = base64ToBytes(credential.hash);
+    if (actual.length !== expected.length) return false;
+    let difference = 0;
+    for (let index = 0; index < actual.length; index += 1) {
+      difference |= actual[index] ^ expected[index];
+    }
+    return difference === 0;
+  } catch {
+    return false;
+  }
+}
+
 export function sanitizePin(value: string) {
   return value.replace(/\D/g, "").slice(0, PIN_LENGTH);
 }
@@ -100,22 +122,7 @@ export async function verifyOperatorPin(
   credential: OperatorCredential,
 ) {
   if (!/^\d{6}$/.test(pin)) return false;
-  try {
-    const actual = await derivePinHash(
-      pin,
-      base64ToBytes(credential.salt),
-      credential.iterations,
-    );
-    const expected = base64ToBytes(credential.hash);
-    if (actual.length !== expected.length) return false;
-    let difference = 0;
-    for (let index = 0; index < actual.length; index += 1) {
-      difference |= actual[index] ^ expected[index];
-    }
-    return difference === 0;
-  } catch {
-    return false;
-  }
+  return verifyCredentialSecret(pin, credential);
 }
 
 export function normalizeRecoveryKey(value: string) {
@@ -175,20 +182,5 @@ export async function verifyPinRecoveryKey(
   ) {
     return false;
   }
-  try {
-    const actual = await derivePinHash(
-      compact,
-      base64ToBytes(credential.salt),
-      credential.iterations,
-    );
-    const expected = base64ToBytes(credential.hash);
-    if (actual.length !== expected.length) return false;
-    let difference = 0;
-    for (let index = 0; index < actual.length; index += 1) {
-      difference |= actual[index] ^ expected[index];
-    }
-    return difference === 0;
-  } catch {
-    return false;
-  }
+  return verifyCredentialSecret(compact, credential);
 }

@@ -42,7 +42,7 @@ from local_service.youtube_search import (
     validate_youtube_search_query,
 )
 
-SERVICE_VERSION = "1.6.0"
+SERVICE_VERSION = "1.6.1"
 DEFAULT_PORT = 18765
 MAX_BODY_BYTES = 32 * 1024
 MAX_STATE_BODY_BYTES = 10 * 1024 * 1024
@@ -805,7 +805,12 @@ class PoolCompanionHandler(BaseHTTPRequestHandler):
                     )
                 else:
                     raise ValueError("Origem de backup inválida.")
-            except (ValueError, FileNotFoundError, sqlite3.Error) as error:
+            except (
+                ValueError,
+                FileNotFoundError,
+                RuntimeError,
+                sqlite3.Error,
+            ) as error:
                 self._send_json({"error": str(error)}, HTTPStatus.BAD_REQUEST)
                 return
             except (OSError, GoogleDriveError) as error:
@@ -836,7 +841,7 @@ class PoolCompanionHandler(BaseHTTPRequestHandler):
                 snapshot = self.pool_server.storage.restore_database(
                     temporary_path
                 )
-            except (ValueError, OSError, sqlite3.Error) as error:
+            except (ValueError, OSError, RuntimeError, sqlite3.Error) as error:
                 self._send_json({"error": str(error)}, HTTPStatus.BAD_REQUEST)
                 return
             finally:
