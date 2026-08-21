@@ -2,6 +2,23 @@
 
 Todas as mudanças relevantes do Pool Petiscos são registradas neste arquivo.
 
+## 1.6.1 — 2026-08-20
+
+### Revisão final de confiabilidade
+
+- valida integralmente os registros antes de gravar ou restaurar o SQLite,
+  incluindo totais, datas, credenciais e identificadores duplicados;
+- verifica a integridade do banco antes de inicializar o esquema e executa a
+  preparação das tabelas e consultas dentro de uma transação;
+- mostra ao operador a causa real de uma falha do banco e mantém avisos de
+  armazenamento e de backup independentes;
+- registra falhas do agendador e da primeira sincronização com o Google Drive,
+  incluindo erros ocorridos antes da criação da cópia local;
+- estabiliza downloads de relatórios e da chave de recuperação e consolida os
+  trechos repetidos de download, criptografia e estilo da planilha;
+- adiciona testes de regressão para estados incompletos, IDs duplicados,
+  corrupção externa, falha de backup e erros retornados pelo serviço local.
+
 ## 1.6.0 — 2026-08-20
 
 ### Fluxo de caixa e relatórios

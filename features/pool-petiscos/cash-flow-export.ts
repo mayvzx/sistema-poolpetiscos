@@ -3,6 +3,7 @@ import {
   formatCashFlowDate,
   type CashFlowReport,
 } from "./cash-flow";
+import { downloadBytes } from "./browser-download";
 import { currency } from "./domain";
 
 const BRAND_ORANGE = "FFE66E22";
@@ -17,18 +18,14 @@ function safeObservation(value: string) {
   return value.replaceAll("•", "-");
 }
 
-function downloadBytes(bytes: Uint8Array, type: string, filename: string) {
-  const copiedBytes = new Uint8Array(bytes.byteLength);
-  copiedBytes.set(bytes);
-  const blob = new Blob([copiedBytes.buffer], { type });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 2_000);
+function thinBorder() {
+  const side = { style: "thin" as const, color: { argb: LIGHT_BORDER } };
+  return {
+    top: { ...side },
+    left: { ...side },
+    bottom: { ...side },
+    right: { ...side },
+  };
 }
 
 export async function createCashFlowWorkbook(report: CashFlowReport) {
@@ -151,12 +148,7 @@ export async function createCashFlowWorkbook(report: CashFlowReport) {
     cell.font = { name: "Aptos", size: 10, bold: true, color: { argb: "FFFFFFFF" } };
     cell.alignment = { horizontal: "center", vertical: "middle" };
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND_ORANGE } };
-    cell.border = {
-      top: { style: "thin", color: { argb: LIGHT_BORDER } },
-      left: { style: "thin", color: { argb: LIGHT_BORDER } },
-      bottom: { style: "thin", color: { argb: LIGHT_BORDER } },
-      right: { style: "thin", color: { argb: LIGHT_BORDER } },
-    };
+    cell.border = thinBorder();
   });
 
   report.entries.forEach((entry, index) => {
@@ -189,12 +181,7 @@ export async function createCashFlowWorkbook(report: CashFlowReport) {
         pattern: "solid",
         fgColor: { argb: entry.movement === "Entrada" ? ENTRY_GREEN : EXIT_PINK },
       };
-      cell.border = {
-        top: { style: "thin", color: { argb: LIGHT_BORDER } },
-        left: { style: "thin", color: { argb: LIGHT_BORDER } },
-        bottom: { style: "thin", color: { argb: LIGHT_BORDER } },
-        right: { style: "thin", color: { argb: LIGHT_BORDER } },
-      };
+      cell.border = thinBorder();
     });
     row.height = 24;
   });

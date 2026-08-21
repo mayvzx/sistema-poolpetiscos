@@ -278,6 +278,10 @@ function parseList<T>(
   return parsed.some((item) => item === null) ? null : (parsed as T[]);
 }
 
+function hasUniqueIds(items: Array<{ id: string }>): boolean {
+  return new Set(items.map((item) => item.id)).size === items.length;
+}
+
 export function parsePoolState(value: unknown): PersistedPoolState | null {
   if (!isRecord(value)) return null;
   const products = parseList(value.products, parseProduct);
@@ -306,7 +310,13 @@ export function parsePoolState(value: unknown): PersistedPoolState | null {
   ) {
     return null;
   }
-  if (new Set(products.map((product) => product.id)).size !== products.length) {
+  if (
+    !hasUniqueIds(products) ||
+    !hasUniqueIds(sales) ||
+    !hasUniqueIds(expenses) ||
+    !hasUniqueIds(cashMovements) ||
+    !hasUniqueIds(cashClosures)
+  ) {
     return null;
   }
   return {

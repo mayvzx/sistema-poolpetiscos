@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import tempfile
 import threading
@@ -18,6 +19,7 @@ from local_service.google_drive import (
 from local_service.storage import BackupRecord, StateSnapshot, StateStorage
 
 SCHEDULER_INTERVAL_SECONDS = 30 * 60
+logger = logging.getLogger("pool_petiscos.backups")
 
 
 def _utc_now() -> str:
@@ -76,39 +78,42 @@ class BackupManager:
                 if self.storage.read().state is not None:
                     self.run()
             except Exception:
-                # Status records the actionable failure; the register stays open.
-                pass
+                logger.exception("Falha no ciclo automático de backups.")
             self._stop_event.wait(self.interval_seconds)
 
     def status(self) -> dict[str, Any]:
-        state = self._read_state()
-        records = self.storage.list_backups()
-        by_tier = {
-            tier: sum(1 for record in records if record.tier == tier)
-            for tier in ("daily", "weekly", "monthly")
-        }
-        return {
-            "schedules": [
-                {"tier": "daily", "label": "Diário", "retention": 30},
-                {"tier": "weekly", "label": "Semanal", "retention": 12},
-                {"tier": "monthly", "label": "Mensal", "retention": 12},
-            ],
-            "counts": by_tier,
-            "backup_directory": str(self.storage.backup_directory),
-            "last_local_backup_at": self.storage.last_backup_at(),
-            "last_google_sync_at": state.get("last_google_sync_at"),
-            "last_error": state.get("last_error"),
-            "google_drive": self.google_drive.status(),
-            "local_backups": [record.public_dict() for record in records],
-        }
+        with self._lock:
+            state = self._read_state()
+            records = self.storage.list_backups()
+            storage_info = self.storage.backup_info()
+            by_tier = {
+                tier: sum(1 for record in records if record.tier == tier)
+                for tier in ("daily", "weekly", "monthly")
+            }
+            return {
+                "schedules": [
+                    {"tier": "daily", "label": "Diário", "retention": 30},
+                    {"tier": "weekly", "label": "Semanal", "retention": 12},
+                    {"tier": "monthly", "label": "Mensal", "retention": 12},
+                ],
+                "counts": by_tier,
+                "backup_directory": str(self.storage.backup_directory),
+                "last_local_backup_at": storage_info["last_backup_at"],
+                "last_google_sync_at": state.get("last_google_sync_at"),
+                "last_error": (
+                    state.get("last_error") or storage_info["backup_error"]
+                ),
+                "google_drive": self.google_drive.status(),
+                "local_backups": [record.public_dict() for record in records],
+            }
 
     def run(self, *, force: bool = False) -> dict[str, Any]:
         with self._lock:
-            records = self.storage.ensure_automatic_backups(force=force)
             state = self._read_state()
             state["last_error"] = None
             uploaded = 0
             try:
+                records = self.storage.ensure_automatic_backups(force=force)
                 google_status = self.google_drive.status()
                 if google_status["connected"]:
                     manifest = state.setdefault("manifest", {})
@@ -213,23 +218,23 @@ class BackupManager:
         try:
             self.run(force=True)
         except Exception:
-            pass
+            logger.exception("Falha na primeira sincronização com o Google Drive.")
 
     def disconnect_google(self) -> None:
         with self._lock:
             revoked = self.google_drive.disconnect()
-        state = self._read_state()
-        state["manifest"] = {}
-        state["last_google_sync_at"] = None
-        state["last_error"] = (
-            None
-            if revoked
-            else (
-                "A conta foi desconectada deste computador, mas a revogação "
-                "online não pôde ser confirmada."
+            state = self._read_state()
+            state["manifest"] = {}
+            state["last_google_sync_at"] = None
+            state["last_error"] = (
+                None
+                if revoked
+                else (
+                    "A conta foi desconectada deste computador, mas a revogação "
+                    "online não pôde ser confirmada."
+                )
             )
-        )
-        self._write_state(state)
+            self._write_state(state)
 
     @staticmethod
     def _signature(record: BackupRecord) -> dict[str, int | str]:
@@ -245,8 +250,16 @@ class BackupManager:
         try:
             payload = json.loads(self.state_path.read_text(encoding="utf-8"))
             return payload if isinstance(payload, dict) else {}
-        except (OSError, json.JSONDecodeError):
+        except FileNotFoundError:
             return {}
+        except (OSError, json.JSONDecodeError) as error:
+            logger.warning("Estado de backup ilegível: %s", error)
+            return {
+                "last_error": (
+                    "O histórico de sincronização dos backups estava ilegível e "
+                    "será reconstruído."
+                )
+            }
 
     def _write_state(self, state: dict[str, Any]) -> None:
         self.state_path.parent.mkdir(parents=True, exist_ok=True)

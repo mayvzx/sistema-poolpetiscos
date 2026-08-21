@@ -22,7 +22,7 @@ ser colocado aqui ou enviado ao GitHub.
 
 ## Operação e implantação
 
-- [Entrega da versão 1.6.0](operations/ENTREGA-1.6.0.md): escopo, instalação,
+- [Entrega da versão 1.6.1](operations/ENTREGA-1.6.1.md): escopo, instalação,
   validação presencial, limitações e suporte da versão para teste.
 - [Mensagem para a proprietária](operations/MENSAGEM-PARA-PROPRIETARIA.md):
   texto em linguagem simples, pronto para envio.

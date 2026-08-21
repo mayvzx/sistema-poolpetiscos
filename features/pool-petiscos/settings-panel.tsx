@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { type FormEvent, useMemo, useState } from "react";
 import { BackupSettings } from "./backup-settings";
+import { downloadRecoveryKeyFile } from "./browser-download";
 import {
   FONT_SCALE_STEP,
   MAX_FONT_SCALE,
@@ -173,23 +174,7 @@ export function SettingsPanel({
 
   function downloadRecoveryKey() {
     if (!generatedRecoveryKey) return;
-    const content = [
-      "POOL PETISCOS - CHAVE DE RECUPERAÇÃO DO PIN",
-      "",
-      generatedRecoveryKey,
-      "",
-      "Guarde este arquivo em local seguro e fora do computador do caixa.",
-      "Esta chave redefine o PIN de Elaine ou Pool. Não compartilhe.",
-    ].join("\r\n");
-    const url = URL.createObjectURL(
-      new Blob([content], { type: "text/plain;charset=utf-8" }),
-    );
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "Pool-Petiscos-Chave-de-Recuperacao.txt";
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
+    downloadRecoveryKeyFile(generatedRecoveryKey);
   }
 
   return (

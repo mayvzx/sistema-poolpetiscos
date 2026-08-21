@@ -69,7 +69,27 @@ function isValidRevision(value: unknown): value is number {
 }
 
 async function readPayload(response: Response): Promise<LocalStatePayload> {
-  const payload: unknown = await response.json();
+  let payload: unknown = null;
+  try {
+    payload = await response.json();
+  } catch {
+    throw new Error(
+      response.ok
+        ? "A resposta de armazenamento não pôde ser validada."
+        : "O serviço local retornou uma resposta inválida.",
+    );
+  }
+  if (response.status !== 409 && !response.ok) {
+    const message =
+      typeof payload === "object" &&
+      payload !== null &&
+      "error" in payload &&
+      typeof payload.error === "string" &&
+      payload.error.trim()
+        ? payload.error
+        : "O armazenamento principal não concluiu a operação.";
+    throw new Error(message);
+  }
   if (
     typeof payload !== "object" ||
     payload === null ||
@@ -213,9 +233,6 @@ export async function saveLocalPoolState(
 
   if (response.status === 409) {
     throw new LocalStateConflictError(payload);
-  }
-  if (!response.ok) {
-    throw new Error("Não foi possível atualizar o armazenamento principal.");
   }
   return {
     revision: payload.revision,

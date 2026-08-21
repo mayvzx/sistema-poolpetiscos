@@ -58,6 +58,7 @@ import {
   X,
 } from "lucide-react";
 import Image from "next/image";
+import { downloadBlob } from "./browser-download";
 import { StartupScreen } from "./startup-screen";
 import { OperatorLogin } from "./operator-login";
 import { SettingsPanel } from "./settings-panel";
@@ -309,7 +310,8 @@ export default function PoolPetiscosApp() {
   const mainRef = useRef<HTMLElement>(null);
   const previousViewRef = useRef<View>("inicio");
   const toastTimerRef = useRef<number | null>(null);
-  const persistenceWarningRef = useRef(false);
+  const backupWarningRef = useRef(false);
+  const storageWarningRef = useRef(false);
   const tracksRef = useRef<Track[]>([]);
   const primaryStorageReadyRef = useRef(false);
   const primaryStorageRevisionRef = useRef(0);
@@ -515,9 +517,11 @@ export default function PoolPetiscosApp() {
       primaryStorageRevisionRef.current = result.revision;
       primaryStorageSnapshotRef.current = serialized;
       clearPendingSyncIfMatched(serialized);
-      persistenceWarningRef.current = false;
-      if (!result.backupHealthy && !persistenceWarningRef.current) {
-        persistenceWarningRef.current = true;
+      storageWarningRef.current = false;
+      if (result.backupHealthy) {
+        backupWarningRef.current = false;
+      } else if (!backupWarningRef.current) {
+        backupWarningRef.current = true;
         showToast(
           "Os dados foram salvos, mas o backup automático precisa de atenção.",
           "warning",
@@ -552,9 +556,12 @@ export default function PoolPetiscosApp() {
         }
       } else {
         primaryStorageReadyRef.current = false;
-        if (!localFallbackWritableRef.current) {
+        if (!storageWarningRef.current) {
+          storageWarningRef.current = true;
           showToast(
-            "Não foi possível salvar com segurança. Exporte um backup antes de continuar.",
+            localFallbackWritableRef.current
+              ? "O banco local ficou indisponível. Os dados foram mantidos neste navegador; reabra o sistema antes de continuar."
+              : "Não foi possível salvar com segurança. Exporte um backup antes de continuar.",
             "warning",
           );
         }
@@ -615,6 +622,7 @@ export default function PoolPetiscosApp() {
         if (cancelled) return;
 
         primaryStorageReadyRef.current = true;
+        storageWarningRef.current = false;
         primaryStorageRevisionRef.current = snapshot.revision;
         let primaryState = parsePoolState(snapshot.state);
         const pendingMatchesPrimary =
@@ -652,8 +660,8 @@ export default function PoolPetiscosApp() {
             } catch {
               localFallbackWritableRef.current = false;
             }
-            if (!result.backupHealthy) {
-              persistenceWarningRef.current = true;
+            if (!result.backupHealthy && !backupWarningRef.current) {
+              backupWarningRef.current = true;
               showToast(
                 "Os dados foram recuperados, mas o backup automático precisa de atenção.",
                 "warning",
@@ -704,8 +712,8 @@ export default function PoolPetiscosApp() {
             clearPendingSyncIfMatched(
               primaryStorageSnapshotRef.current,
             );
-            if (!result.backupHealthy) {
-              persistenceWarningRef.current = true;
+            if (!result.backupHealthy && !backupWarningRef.current) {
+              backupWarningRef.current = true;
               showToast(
                 "Os dados foram salvos, mas o backup automático precisa de atenção.",
                 "warning",
@@ -728,8 +736,8 @@ export default function PoolPetiscosApp() {
           }
         }
 
-        if (!snapshot.backupHealthy && !persistenceWarningRef.current) {
-          persistenceWarningRef.current = true;
+        if (!snapshot.backupHealthy && !backupWarningRef.current) {
+          backupWarningRef.current = true;
           showToast(
             "O backup automático precisa de atenção. Os dados continuam salvos neste caixa.",
             "warning",
@@ -740,6 +748,16 @@ export default function PoolPetiscosApp() {
         primaryStorageReadyRef.current = false;
         primaryStorageSnapshotRef.current = JSON.stringify(fallbackState);
         restorePoolState(fallbackState);
+        if (
+          ["127.0.0.1", "localhost"].includes(window.location.hostname) &&
+          !storageWarningRef.current
+        ) {
+          storageWarningRef.current = true;
+          showToast(
+            "O banco local não pôde ser aberto. O sistema carregou a cópia de segurança do navegador.",
+            "warning",
+          );
+        }
       }
 
       if (saved && !storedState) {
@@ -778,14 +796,13 @@ export default function PoolPetiscosApp() {
     try {
       window.localStorage.setItem(STORAGE_KEY, serialized);
       localFallbackWritableRef.current = true;
-      persistenceWarningRef.current = false;
     } catch {
       localFallbackWritableRef.current = false;
       if (
         !primaryStorageReadyRef.current &&
-        !persistenceWarningRef.current
+        !storageWarningRef.current
       ) {
-        persistenceWarningRef.current = true;
+        storageWarningRef.current = true;
         showToast(
           "Não foi possível salvar com segurança. Exporte um backup antes de continuar.",
           "warning",
@@ -2069,16 +2086,6 @@ export default function PoolPetiscosApp() {
       type: "application/json",
     });
     downloadBlob(blob, filename);
-  }
-
-  function downloadBlob(blob: Blob, filename: string) {
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
   }
 
   function importBackup(event: ChangeEvent<HTMLInputElement>) {

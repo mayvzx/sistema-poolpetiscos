@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import math
 import os
@@ -39,6 +41,12 @@ READABLE_VIEW_NAMES = (
     "vw_fechamentos_caixa",
     "vw_operadores",
 )
+PAYMENT_METHODS = frozenset({"Pix", "Dinheiro", "Débito", "Crédito", "Cartão"})
+PRODUCT_CATEGORIES = frozenset(
+    {"Hambúrgueres", "Salgados", "Petiscos", "Sobremesas", "Bebidas", "Adicionais"}
+)
+ORDER_STATUSES = frozenset({"aguardando", "em-preparo", "pronto", "entregue"})
+SALE_OPERATOR_IDS = frozenset({"elaine", "poolblay", "nao-identificado"})
 
 
 def _local_app_data(
@@ -107,6 +115,34 @@ def _is_finite_number(value: object, *, non_negative: bool = False) -> bool:
     return math.isfinite(number) and (not non_negative or number >= 0)
 
 
+def _is_integer(value: object, *, minimum: int | None = None) -> bool:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return False
+    return minimum is None or value >= minimum
+
+
+def _is_non_empty_string(value: object) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _is_allowed_string(value: object, allowed: frozenset[str]) -> bool:
+    return isinstance(value, str) and value in allowed
+
+
+def _is_timestamp(value: object) -> bool:
+    return _is_finite_number(value) and float(value) > 0
+
+
+def _is_base64(value: object, minimum_bytes: int) -> bool:
+    if not isinstance(value, str) or not value:
+        return False
+    try:
+        decoded = base64.b64decode(value, validate=True)
+    except (binascii.Error, ValueError):
+        return False
+    return len(decoded) >= minimum_bytes
+
+
 def _is_credential(value: object) -> bool:
     if not isinstance(value, dict):
         return False
@@ -115,34 +151,158 @@ def _is_credential(value: object) -> bool:
         and isinstance(value.get("iterations"), int)
         and not isinstance(value.get("iterations"), bool)
         and 100_000 <= value["iterations"] <= 1_000_000
-        and isinstance(value.get("salt"), str)
-        and bool(value["salt"])
-        and isinstance(value.get("hash"), str)
-        and bool(value["hash"])
-        and _is_finite_number(value.get("updatedAt"))
-        and float(value["updatedAt"]) > 0
+        and _is_base64(value.get("salt"), 16)
+        and _is_base64(value.get("hash"), 32)
+        and _is_timestamp(value.get("updatedAt"))
     )
+
+
+def _is_product(value: object) -> bool:
+    return bool(
+        isinstance(value, dict)
+        and _is_non_empty_string(value.get("id"))
+        and _is_non_empty_string(value.get("name"))
+        and _is_allowed_string(value.get("category"), PRODUCT_CATEGORIES)
+        and _is_finite_number(value.get("price"), non_negative=True)
+        and _is_integer(value.get("stock"), minimum=0)
+        and _is_integer(value.get("minimum"), minimum=0)
+        and isinstance(value.get("emoji"), str)
+    )
+
+
+def _is_sale_item(value: object) -> bool:
+    if not isinstance(value, dict):
+        return False
+    observation = value.get("observation")
+    return bool(
+        _is_non_empty_string(value.get("productId"))
+        and _is_non_empty_string(value.get("name"))
+        and _is_finite_number(value.get("price"), non_negative=True)
+        and _is_integer(value.get("quantity"), minimum=1)
+        and (
+            observation is None
+            or (isinstance(observation, str) and len(observation) <= 180)
+        )
+    )
+
+
+def _is_sale(value: object) -> bool:
+    if not isinstance(value, dict):
+        return False
+    items = value.get("items")
+    timestamp = value.get("timestamp")
+    if (
+        not _is_non_empty_string(value.get("id"))
+        or not _is_timestamp(timestamp)
+        or not _is_finite_number(value.get("total"), non_negative=True)
+        or not _is_allowed_string(value.get("payment"), PAYMENT_METHODS)
+        or not isinstance(items, list)
+        or not items
+        or any(not _is_sale_item(item) for item in items)
+    ):
+        return False
+    expected_total = math.fsum(
+        float(item["price"]) * int(item["quantity"]) for item in items
+    )
+    if abs(expected_total - float(value["total"])) > 0.005:
+        return False
+    operator_id = value.get("operatorId")
+    if operator_id is not None and not _is_allowed_string(
+        operator_id, SALE_OPERATOR_IDS
+    ):
+        return False
+    order_status = value.get("orderStatus")
+    if order_status is not None and not _is_allowed_string(
+        order_status, ORDER_STATUSES
+    ):
+        return False
+    status_updated_at = value.get("statusUpdatedAt")
+    return bool(
+        status_updated_at is None
+        or (
+            _is_timestamp(status_updated_at)
+            and float(status_updated_at) >= float(timestamp)
+        )
+    )
+
+
+def _is_expense(value: object) -> bool:
+    return bool(
+        isinstance(value, dict)
+        and _is_non_empty_string(value.get("id"))
+        and _is_timestamp(value.get("timestamp"))
+        and _is_non_empty_string(value.get("description"))
+        and _is_non_empty_string(value.get("category"))
+        and _is_finite_number(value.get("amount"), non_negative=True)
+        and _is_allowed_string(value.get("payment", "Dinheiro"), PAYMENT_METHODS)
+    )
+
+
+def _is_cash_movement(value: object) -> bool:
+    return bool(
+        isinstance(value, dict)
+        and _is_non_empty_string(value.get("id"))
+        and _is_timestamp(value.get("timestamp"))
+        and _is_non_empty_string(value.get("description"))
+        and _is_finite_number(value.get("amount"), non_negative=True)
+        and isinstance(value.get("kind"), str)
+        and value.get("kind") in {"suprimento", "sangria"}
+    )
+
+
+def _is_cash_closure(value: object) -> bool:
+    if not isinstance(value, dict):
+        return False
+    opened_at = value.get("openedAt")
+    closed_at = value.get("closedAt")
+    expected_balance = value.get("expectedBalance")
+    counted_balance = value.get("countedBalance")
+    difference = value.get("difference")
+    return bool(
+        _is_non_empty_string(value.get("id"))
+        and _is_timestamp(opened_at)
+        and _is_timestamp(closed_at)
+        and float(closed_at) >= float(opened_at)
+        and _is_finite_number(value.get("openingBalance"), non_negative=True)
+        and _is_finite_number(expected_balance)
+        and _is_finite_number(counted_balance, non_negative=True)
+        and _is_finite_number(difference)
+        and abs(
+            (float(counted_balance) - float(expected_balance)) - float(difference)
+        )
+        <= 0.005
+    )
+
+
+def _has_unique_ids(values: list[object]) -> bool:
+    identifiers = [
+        value.get("id") if isinstance(value, dict) else None for value in values
+    ]
+    return len(identifiers) == len(set(identifiers))
 
 
 def _is_pool_state(value: object) -> bool:
     if not isinstance(value, dict):
         return False
-    for key in (
-        "products",
-        "sales",
-        "expenses",
-        "cashMovements",
-        "cashClosures",
-    ):
-        if not isinstance(value.get(key), list):
-            return False
-        if any(not isinstance(item, dict) for item in value[key]):
+    validators = {
+        "products": _is_product,
+        "sales": _is_sale,
+        "expenses": _is_expense,
+        "cashMovements": _is_cash_movement,
+        "cashClosures": _is_cash_closure,
+    }
+    for key, validator in validators.items():
+        entries = value.get(key)
+        if (
+            not isinstance(entries, list)
+            or any(not validator(item) for item in entries)
+            or not _has_unique_ids(entries)
+        ):
             return False
     if (
         not isinstance(value.get("cashOpen"), bool)
         or not _is_finite_number(value.get("openingBalance"), non_negative=True)
-        or not _is_finite_number(value.get("cashOpenedAt"))
-        or float(value["cashOpenedAt"]) <= 0
+        or not _is_timestamp(value.get("cashOpenedAt"))
     ):
         return False
     credentials = value.get("operatorCredentials")
@@ -235,35 +395,45 @@ class StateStorage:
             with closing(self._connect()) as connection:
                 connection.execute("PRAGMA journal_mode = WAL")
                 connection.execute("PRAGMA synchronous = FULL")
-                connection.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS app_state (
-                        id INTEGER PRIMARY KEY CHECK (id = 1),
-                        state_json TEXT,
-                        revision INTEGER NOT NULL DEFAULT 0
-                            CHECK (revision >= 0),
-                        saved_at TEXT
+                quick_check = connection.execute("PRAGMA quick_check").fetchone()
+                if quick_check is None or quick_check[0] != "ok":
+                    raise sqlite3.DatabaseError("O banco local está corrompido.")
+                try:
+                    connection.execute("BEGIN IMMEDIATE")
+                    connection.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS app_state (
+                            id INTEGER PRIMARY KEY CHECK (id = 1),
+                            state_json TEXT,
+                            revision INTEGER NOT NULL DEFAULT 0
+                                CHECK (revision >= 0),
+                            saved_at TEXT
+                        )
+                        """
                     )
-                    """
-                )
-                connection.execute(
-                    """
-                    INSERT OR IGNORE INTO app_state
-                        (id, state_json, revision, saved_at)
-                    VALUES (1, NULL, 0, NULL)
-                    """
-                )
-                connection.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS state_history (
-                        revision INTEGER PRIMARY KEY CHECK (revision > 0),
-                        saved_at TEXT NOT NULL,
-                        state_json TEXT NOT NULL
+                    connection.execute(
+                        """
+                        INSERT OR IGNORE INTO app_state
+                            (id, state_json, revision, saved_at)
+                        VALUES (1, NULL, 0, NULL)
+                        """
                     )
-                    """
-                )
-                self._create_readable_views(connection)
-                connection.execute("PRAGMA user_version = 3")
+                    connection.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS state_history (
+                            revision INTEGER PRIMARY KEY CHECK (revision > 0),
+                            saved_at TEXT NOT NULL,
+                            state_json TEXT NOT NULL
+                        )
+                        """
+                    )
+                    self._create_readable_views(connection)
+                    connection.execute("PRAGMA user_version = 3")
+                    connection.commit()
+                except Exception:
+                    if connection.in_transaction:
+                        connection.rollback()
+                    raise
 
     @staticmethod
     def _create_readable_views(connection: sqlite3.Connection) -> None:
@@ -549,7 +719,7 @@ class StateStorage:
             raise RuntimeError(
                 "O estado persistido no banco é inválido."
             ) from error
-        if state is not None and not isinstance(state, dict):
+        if parsed_revision < 0 or (state is not None and not _is_pool_state(state)):
             raise RuntimeError("O estado persistido no banco é inválido.")
         return StateSnapshot(
             state=state,
@@ -576,8 +746,8 @@ class StateStorage:
         state: dict[str, Any],
         expected_revision: int | None = None,
     ) -> StateSnapshot:
-        if not isinstance(state, dict):
-            raise ValueError("O estado deve ser um objeto.")
+        if not _is_pool_state(state):
+            raise ValueError("O estado não contém dados válidos do Pool Petiscos.")
         if expected_revision is not None and (
             isinstance(expected_revision, bool)
             or not isinstance(expected_revision, int)

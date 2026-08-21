@@ -262,3 +262,20 @@ test("rejeita verificadores de PIN adulterados ao restaurar", () => {
   invalidRecovery.pinRecoveryCredential!.hash = "not-base64";
   assert.equal(parsePoolState(invalidRecovery), null);
 });
+
+test("rejeita identificadores duplicados em todos os registros persistidos", () => {
+  const duplicateCases = [
+    "products",
+    "sales",
+    "expenses",
+    "cashMovements",
+    "cashClosures",
+  ] as const;
+
+  for (const collection of duplicateCases) {
+    const state = structuredClone(validState());
+    const records = state[collection];
+    records.push(structuredClone(records[0]) as never);
+    assert.equal(parsePoolState(state), null, collection);
+  }
+});
