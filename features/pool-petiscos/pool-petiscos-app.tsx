@@ -125,6 +125,7 @@ import {
 } from "./music-companion";
 import { MusicProgress } from "./music-progress";
 import { clampPlaybackTime } from "./music-player";
+import { CashFlowPanel } from "./cash-flow-panel";
 import {
   categories,
   createInitialPoolState,
@@ -443,7 +444,9 @@ export default function PoolPetiscosApp() {
         );
         const nextTracks = [...uploadedTracks, ...localTracks];
         setMusicCompanionStatus(
-          health.yt_dlp && health.ffmpeg ? "ready" : "unavailable",
+          health.yt_dlp && health.yt_dlp_ejs && health.node && health.ffmpeg
+            ? "ready"
+            : "unavailable",
         );
         setTracks(nextTracks);
         setCurrentTrackIndex(nextTracks.length ? 0 : -1);
@@ -1291,6 +1294,8 @@ export default function PoolPetiscosApp() {
     const totals: Record<PaymentMethod, number> = {
       Pix: 0,
       Dinheiro: 0,
+      Débito: 0,
+      Crédito: 0,
       Cartão: 0,
     };
     todaySales.forEach((sale) => {
@@ -1867,7 +1872,7 @@ export default function PoolPetiscosApp() {
     if (expenseForm.payment === "Dinheiro") {
       if (!cashOpen) {
         showToast(
-          "Abra o caixa ou escolha Pix/Cartão para registrar esta saída.",
+          "Abra o caixa ou escolha Pix, débito ou crédito para registrar esta saída.",
           "warning",
         );
         return;
@@ -3040,11 +3045,12 @@ export default function PoolPetiscosApp() {
                   <span className="text-[9px] font-extrabold uppercase tracking-[.13em] text-[#9c928d]">
                     Forma de pagamento
                   </span>
-                  <div className="mt-2 grid grid-cols-3 gap-2">
+                  <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
                     {[
                       { id: "Pix" as const, icon: QrCode },
                       { id: "Dinheiro" as const, icon: Banknote },
-                      { id: "Cartão" as const, icon: CreditCard },
+                      { id: "Débito" as const, icon: CreditCard },
+                      { id: "Crédito" as const, icon: CreditCard },
                     ].map((method) => {
                       const Icon = method.icon;
                       return (
@@ -3683,6 +3689,14 @@ export default function PoolPetiscosApp() {
               })}
             </section>
 
+            <CashFlowPanel
+              sales={sales}
+              expenses={expenses}
+              cashMovements={cashMovements}
+              now={now?.getTime() ?? cashOpenedAt}
+              onMessage={showToast}
+            />
+
             <section className="mt-4 rounded-[22px] border border-[#e5deda] bg-white p-5 shadow-sm sm:p-6">
               <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
                 <div>
@@ -3870,17 +3884,40 @@ export default function PoolPetiscosApp() {
                 <h2 className="text-base font-extrabold">Por forma de pagamento</h2>
                 <div className="mt-5 space-y-5">
                   {[
-                    { id: "Pix" as const, icon: QrCode, color: "#27865d" },
+                    {
+                      id: "Pix" as const,
+                      label: "Pix",
+                      icon: QrCode,
+                      color: "#27865d",
+                    },
                     {
                       id: "Dinheiro" as const,
+                      label: "Dinheiro",
                       icon: Banknote,
                       color: "#d9202c",
                     },
                     {
-                      id: "Cartão" as const,
+                      id: "Débito" as const,
+                      label: "Débito",
                       icon: CreditCard,
                       color: "#7458b4",
                     },
+                    {
+                      id: "Crédito" as const,
+                      label: "Crédito",
+                      icon: CreditCard,
+                      color: "#b26a00",
+                    },
+                    ...(paymentTotals.Cartão > 0
+                      ? [
+                          {
+                            id: "Cartão" as const,
+                            label: "Cartão (antigo)",
+                            icon: CreditCard,
+                            color: "#776f6b",
+                          },
+                        ]
+                      : []),
                   ].map((method) => {
                     const Icon = method.icon;
                     const percentage = revenue
@@ -3891,7 +3928,7 @@ export default function PoolPetiscosApp() {
                         <div className="mb-2 flex items-center gap-2">
                           <Icon size={16} style={{ color: method.color }} />
                           <span className="flex-1 text-[10px] font-bold">
-                            {method.id}
+                            {method.label}
                           </span>
                           <strong className="text-[10px]">
                             {currency.format(paymentTotals[method.id])}
@@ -4851,7 +4888,8 @@ export default function PoolPetiscosApp() {
                   >
                     <option value="Dinheiro">Dinheiro do caixa</option>
                     <option>Pix</option>
-                    <option>Cartão</option>
+                    <option>Débito</option>
+                    <option>Crédito</option>
                   </select>
                 </label>
                 <div className="rounded-xl bg-[#fff9e9] p-3 text-[8px] leading-4 text-[#8d6e2e]">
@@ -4943,7 +4981,8 @@ export default function PoolPetiscosApp() {
                   >
                     <option value="Dinheiro">Dinheiro do caixa</option>
                     <option>Pix</option>
-                    <option>Cartão</option>
+                    <option>Débito</option>
+                    <option>Crédito</option>
                   </select>
                 </label>
                 <button

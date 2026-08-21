@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img alt="Versão" src="https://img.shields.io/badge/vers%C3%A3o-1.5.2-d9202c">
+  <img alt="Versão" src="https://img.shields.io/badge/vers%C3%A3o-1.6.0-d9202c">
   <img alt="Plataforma Windows" src="https://img.shields.io/badge/plataforma-Windows-302b29">
   <img alt="Banco SQLite" src="https://img.shields.io/badge/dados-SQLite-7458b4">
   <img alt="Status protótipo operacional" src="https://img.shields.io/badge/status-prot%C3%B3tipo%20operacional-dc9b19">
@@ -32,7 +32,7 @@ banco ou maquininha.
 
 ## Funcionalidades
 
-- vendas em Pix, dinheiro ou cartão, com troco em destaque;
+- vendas em Pix, dinheiro, débito ou crédito, com troco em destaque;
 - acesso de Elaine e Poolblay, com totais de vendas separados por operador;
 - PIN individual protegido, chave de recuperação e redefinição segura;
 - tamanho das letras ajustável e temas automático, claro e escuro;
@@ -42,6 +42,7 @@ banco ou maquininha.
 - observações por item, como **sem cebola** ou **sem tomate**;
 - histórico de vendas preservado quando um produto muda;
 - despesas e indicadores financeiros calculados dos registros;
+- fluxo de caixa visível por dia, mês ou período, exportável em Excel e PDF;
 - SQLite com controle de revisão e consultas legíveis para auditoria;
 - cópia completa do banco e backup de restauração pela interface;
 - backups SQLite diários, semanais e mensais, com restauração validada;
@@ -49,14 +50,15 @@ banco ou maquininha.
   pelo Pool Petiscos;
 - busca de músicas no YouTube com até cinco resultados;
 - downloads locais com yt-dlp e conversão/reprodução com FFmpeg;
-- inicialização automática, ícone próprio e atualização sem apagar dados;
+- inicialização automática, ícone próprio e atualização com backup obrigatório
+  do banco antes da troca de arquivos;
 - tipografia ampliada, alvos de toque e animações suaves.
 
 ## Instalar no Windows
 
 Baixe o instalador mais recente em
 [Releases](https://github.com/mayvzx/sistema-poolpetiscos/releases/latest). O
-usuário final executa apenas `PoolPetiscos-Setup-1.5.2.exe`; as dependências já
+usuário final executa apenas `PoolPetiscos-Setup-1.6.0.exe`; as dependências já
 estão incluídas.
 
 > O protótipo atual ainda não possui assinatura Authenticode. O Windows pode
@@ -69,6 +71,7 @@ Os dados ficam separados do programa e são preservados nas atualizações:
 %LOCALAPPDATA%\PoolPetiscos\data\pool-petiscos.db
 %LOCALAPPDATA%\PoolPetiscos\musicas
 %LOCALAPPDATA%\PoolPetiscos\logs
+%LOCALAPPDATA%\PoolPetiscos\update-backups
 ```
 
 Na desinstalação, o assistente pergunta se esses dados também devem ser

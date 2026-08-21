@@ -18,9 +18,13 @@ Os dados operacionais ficam separados da instalação:
 %LOCALAPPDATA%\PoolPetiscos\data
 %LOCALAPPDATA%\PoolPetiscos\musicas
 %LOCALAPPDATA%\PoolPetiscos\logs
+%LOCALAPPDATA%\PoolPetiscos\update-backups
 ```
 
-Atualizar preserva esses diretórios. Ao desinstalar, o assistente pergunta se o
+Atualizar preserva esses diretórios. Antes de substituir arquivos, o instalador
+encerra a versão em execução, cria uma cópia do banco em `update-backups` e
+confere seu SHA-256. Uma falha nessa proteção interrompe a atualização. Ao
+desinstalar, o assistente pergunta se o
 usuário deseja manter os dados ou remover banco, músicas, PINs, configurações,
 logs, backups locais e tokens. A preservação é a opção padrão; a remoção
 completa é apropriada para uma máquina usada apenas na apresentação.
@@ -69,7 +73,7 @@ O build procura automaticamente `config\google-drive-oauth.json`, que está no
 
 ```powershell
 .\scripts\build-windows-installer.ps1 `
-  -Version 1.5.2 `
+  -Version 1.6.0 `
   -UnsignedPrototype `
   -GoogleDriveOAuthConfig "C:\Credenciais\pool-petiscos-desktop.json"
 ```
@@ -117,7 +121,7 @@ Use somente para validação interna:
 
 ```powershell
 .\scripts\build-windows-installer.ps1 `
-  -Version 1.5.2 `
+  -Version 1.6.0 `
   -UnsignedPrototype
 ```
 
@@ -125,7 +129,7 @@ O script exige a opção `-UnsignedPrototype`; ele não produz silenciosamente u
 executável que pareça assinado. A saída mostra um aviso claro e fica em:
 
 ```text
-build\windows\installer\PoolPetiscos-Setup-1.5.2.exe
+build\windows\installer\PoolPetiscos-Setup-1.6.0.exe
 ```
 
 Se o Windows ou o OneDrive bloquear a cópia do `.exe` para o projeto, o build
@@ -150,7 +154,7 @@ Para manter a árvore usada pelo Inno Setup e poder revisá-la:
 
 ```powershell
 .\scripts\build-windows-installer.ps1 `
-  -Version 1.5.2 `
+  -Version 1.6.0 `
   -UnsignedPrototype `
   -KeepStage
 ```
@@ -164,7 +168,7 @@ Exemplo com o repositório do usuário atual:
 
 ```powershell
 .\scripts\build-windows-installer.ps1 `
-  -Version 1.5.2 `
+  -Version 1.6.0 `
   -CertificateThumbprint '0123456789ABCDEF0123456789ABCDEF01234567' `
   -CertificateStoreLocation CurrentUser
 ```
@@ -173,7 +177,7 @@ Para um certificado instalado no repositório da máquina:
 
 ```powershell
 .\scripts\build-windows-installer.ps1 `
-  -Version 1.5.2 `
+  -Version 1.6.0 `
   -CertificateThumbprint '0123456789ABCDEF0123456789ABCDEF01234567' `
   -CertificateStoreLocation LocalMachine
 ```
@@ -198,7 +202,7 @@ Uma atualização é sempre explícita:
 
 ```powershell
 .\scripts\build-windows-installer.ps1 `
-  -Version 1.5.2 `
+  -Version 1.6.0 `
   -UnsignedPrototype `
   -RefreshDependencyLock
 ```

@@ -321,6 +321,10 @@ def validate_installation() -> list[str]:
         import yt_dlp  # noqa: F401
     except ImportError:
         errors.append("A biblioteca yt-dlp não está presente no launcher.")
+    try:
+        import yt_dlp_ejs  # noqa: F401
+    except ImportError:
+        errors.append("O componente JavaScript do yt-dlp não está presente.")
     return errors
 
 

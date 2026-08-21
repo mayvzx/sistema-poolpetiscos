@@ -5,18 +5,30 @@
   #error AppOutput não foi informado.
 #endif
 #ifndef AppVersion
-  #define AppVersion "1.5.2"
+  #define AppVersion "1.6.0"
 #endif
 #ifndef AppIcon
   #error AppIcon não foi informado.
 #endif
+#ifndef AppIdentifier
+  #define AppIdentifier "{{A4C9659D-8819-4A24-8D02-F432F51C03D4}"
+#endif
+#ifndef AppInstallDirectory
+  #define AppInstallDirectory "{localappdata}\Programs\Pool Petiscos"
+#endif
+#ifndef AppDataDirectory
+  #define AppDataDirectory "{localappdata}\PoolPetiscos"
+#endif
+#ifndef AppMutexName
+  #define AppMutexName "Local\PoolPetiscosLauncher"
+#endif
 
 [Setup]
-AppId={{A4C9659D-8819-4A24-8D02-F432F51C03D4}
+AppId={#AppIdentifier}
 AppName=Pool Petiscos
 AppVersion={#AppVersion}
 AppPublisher=Pool Petiscos & Lanches
-DefaultDirName={localappdata}\Programs\Pool Petiscos
+DefaultDirName={#AppInstallDirectory}
 DefaultGroupName=Pool Petiscos
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
@@ -28,7 +40,7 @@ WizardStyle=modern
 SetupLogging=yes
 CloseApplications=force
 RestartApplications=no
-AppMutex=Local\PoolPetiscosLauncher
+AppMutex={#AppMutexName}
 UninstallDisplayIcon={app}\PoolPetiscos-{#AppVersion}.ico
 SetupIconFile={#AppIcon}
 VersionInfoVersion={#AppVersion}
@@ -75,11 +87,147 @@ Filename: "{app}\PoolPetiscos.exe"; Parameters: "--shutdown"; Flags: runhidden w
 Filename: "{app}\PoolPetiscos.exe"; Parameters: "--disconnect-google-drive"; Flags: runhidden waituntilterminated skipifdoesntexist; RunOnceId: "DisconnectPoolPetiscosDrive"; Check: ShouldRemoveUserData
 
 [UninstallDelete]
-Type: filesandordirs; Name: "{localappdata}\PoolPetiscos"; Check: ShouldRemoveUserData
+Type: filesandordirs; Name: "{#AppDataDirectory}"; Check: ShouldRemoveUserData
 
 [Code]
 var
   RemoveUserData: Boolean;
+
+function StopRunningApplication(): Boolean;
+var
+  ExecutablePath: String;
+  ResultCode: Integer;
+  Attempt: Integer;
+begin
+  Result := True;
+  ExecutablePath := ExpandConstant('{app}\PoolPetiscos.exe');
+  if FileExists(ExecutablePath) then
+  begin
+    Log('Solicitando o encerramento seguro da versão instalada.');
+    if not Exec(
+      ExecutablePath,
+      '--shutdown',
+      '',
+      SW_HIDE,
+      ewWaitUntilTerminated,
+      ResultCode
+    ) then
+      Log('Não foi possível executar --shutdown; aguardando o mutex mesmo assim.');
+  end;
+
+  for Attempt := 1 to 60 do
+  begin
+    if not CheckForMutexes('{#AppMutexName}') then
+      Exit;
+    Sleep(500);
+  end;
+
+  Result := not CheckForMutexes('{#AppMutexName}');
+end;
+
+function CopyAndVerifyFile(
+  const SourcePath: String;
+  const BackupPath: String;
+  var ErrorMessage: String
+): Boolean;
+var
+  SourceHash: String;
+  BackupHash: String;
+begin
+  Result := False;
+  if not CopyFile(SourcePath, BackupPath, False) then
+  begin
+    ErrorMessage := 'Não foi possível copiar ' + ExtractFileName(SourcePath) + '.';
+    Exit;
+  end;
+
+  SourceHash := GetSHA256OfFile(SourcePath);
+  BackupHash := GetSHA256OfFile(BackupPath);
+  if (SourceHash = '') or (CompareText(SourceHash, BackupHash) <> 0) then
+  begin
+    DeleteFile(BackupPath);
+    ErrorMessage :=
+      'A cópia de ' + ExtractFileName(SourcePath) +
+      ' não passou na verificação.';
+    Exit;
+  end;
+  Log('Arquivo pré-atualização verificado com SHA-256: ' + BackupHash);
+  Result := True;
+end;
+
+function CreatePreUpdateBackup(var ErrorMessage: String): Boolean;
+var
+  SourcePath: String;
+  BackupDirectory: String;
+  BackupPath: String;
+  Suffix: String;
+  Index: Integer;
+begin
+  Result := False;
+  SourcePath := ExpandConstant(
+    '{#AppDataDirectory}\data\pool-petiscos.db'
+  );
+  if not FileExists(SourcePath) then
+  begin
+    Log('Nenhum banco anterior encontrado; instalação inicial sem backup prévio.');
+    Result := True;
+    Exit;
+  end;
+
+  BackupDirectory := ExpandConstant(
+    '{#AppDataDirectory}\update-backups\pre-update-' +
+    GetDateTimeString('yyyymmdd-hhnnss', '-', '-')
+  );
+  BackupPath := BackupDirectory + '\pool-petiscos.db';
+  Log('Criando backup pré-atualização em ' + BackupPath);
+
+  if not ForceDirectories(BackupDirectory) then
+  begin
+    ErrorMessage :=
+      'Não foi possível criar a pasta do backup pré-atualização.';
+    Exit;
+  end;
+  if not CopyAndVerifyFile(SourcePath, BackupPath, ErrorMessage) then
+    Exit;
+
+  { Preserva também um WAL remanescente caso o SQLite ainda não o tenha
+    consolidado no arquivo principal durante o encerramento. }
+  for Index := 1 to 2 do
+  begin
+    if Index = 1 then
+      Suffix := '-wal'
+    else
+      Suffix := '-shm';
+    if FileExists(SourcePath + Suffix) then
+    begin
+      if not CopyAndVerifyFile(
+        SourcePath + Suffix,
+        BackupPath + Suffix,
+        ErrorMessage
+      ) then
+        Exit;
+    end;
+  end;
+
+  Result := True;
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  Result := '';
+  if not StopRunningApplication() then
+  begin
+    Result :=
+      'O Pool Petiscos ainda está em execução. Feche o sistema e tente a atualização novamente.';
+    Exit;
+  end;
+
+  if not CreatePreUpdateBackup(Result) then
+  begin
+    Result := Result + #13#10 + #13#10 +
+      'A atualização foi interrompida para preservar as vendas e configurações existentes.';
+  end;
+end;
 
 function HasCommandLineParameter(const Expected: String): Boolean;
 var

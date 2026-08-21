@@ -20,7 +20,13 @@ import { operatorNameForSale } from "./operators";
 export const STORAGE_KEY = "pool-petiscos-state-v1.5.2";
 export const BACKUP_VERSION = 1;
 
-const PAYMENT_METHODS = new Set<PaymentMethod>(["Pix", "Dinheiro", "Cartão"]);
+const PAYMENT_METHODS = new Set<PaymentMethod>([
+  "Pix",
+  "Dinheiro",
+  "Débito",
+  "Crédito",
+  "Cartão",
+]);
 const ORDER_STATUSES = new Set<OrderStatus>([
   "aguardando",
   "em-preparo",

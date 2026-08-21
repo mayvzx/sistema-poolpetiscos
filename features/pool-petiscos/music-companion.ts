@@ -6,6 +6,9 @@ export type MusicCompanionHealth = {
   service: string;
   version: string;
   yt_dlp: boolean;
+  yt_dlp_version: string;
+  yt_dlp_ejs: boolean;
+  node: boolean;
   ffmpeg: boolean;
   music_directory: string;
 };
