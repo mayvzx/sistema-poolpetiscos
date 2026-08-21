@@ -355,6 +355,24 @@ html[data-pool-theme="dark"] .pool-settings-hero {
   border: 1px solid #4a423e;
 }
 
+html[data-pool-theme="dark"] .cash-flow-report-hero {
+  background:
+    radial-gradient(circle at 92% 10%, rgba(35, 115, 79, 0.18), transparent 34%),
+    radial-gradient(circle at 8% 0%, rgba(230, 110, 34, 0.16), transparent 32%),
+    #272321;
+}
+
+html[data-pool-theme="dark"] [class*="bg-[#edf9f2]"],
+html[data-pool-theme="dark"] [class*="bg-[#e5f6ed]"],
+html[data-pool-theme="dark"] [class*="bg-[#d7f0e3]"] {
+  background-color: #17372b !important;
+}
+
+html[data-pool-theme="dark"] [class*="bg-[#fff3f5]"],
+html[data-pool-theme="dark"] [class*="bg-[#f9dce1]"] {
+  background-color: #3a2023 !important;
+}
+
 html[data-pool-theme="dark"] button:focus-visible,
 html[data-pool-theme="dark"] a:focus-visible,
 html[data-pool-theme="dark"] input:focus-visible,
@@ -366,6 +384,13 @@ html[data-pool-theme="dark"] textarea:focus-visible {
 .pool-font-range {
   min-height: 32px;
   cursor: pointer;
+}
+
+.cash-flow-report-hero {
+  background:
+    radial-gradient(circle at 92% 10%, rgba(35, 115, 79, 0.1), transparent 34%),
+    radial-gradient(circle at 8% 0%, rgba(230, 110, 34, 0.12), transparent 32%),
+    linear-gradient(135deg, #fffaf6, #ffffff 62%);
 }
 
 .no-scrollbar {

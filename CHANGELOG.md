@@ -2,6 +2,40 @@
 
 Todas as mudanças relevantes do Pool Petiscos são registradas neste arquivo.
 
+## 1.6.0 — 2026-08-20
+
+### Fluxo de caixa e relatórios
+
+- adiciona uma tabela de fluxo de caixa no Financeiro com data, movimentação,
+  descrição, valor e observação, seguindo o modelo já usado pela proprietária;
+- permite consultar hoje, o mês atual ou um período personalizado;
+- separa entradas e saídas, calcula o saldo e identifica vendas, despesas,
+  suprimentos e sangrias;
+- gera planilha Excel `.xlsx` com filtros, fórmulas, cores e totais e relatório
+  PDF pronto para salvar, imprimir ou enviar;
+- distingue débito e crédito nos novos registros sem perder vendas antigas
+  gravadas como cartão.
+
+### Atualização sem perda de dados
+
+- mantém o mesmo identificador e diretório do instalador para atualizar por cima
+  da versão 1.5.2;
+- encerra a versão instalada antes da troca de arquivos;
+- cria e confere por SHA-256 uma cópia do SQLite em `update-backups` antes de
+  iniciar a atualização;
+- interrompe a instalação se não for possível proteger o banco existente;
+- preserva vendas, caixa, estoque, PINs, chave de recuperação, músicas,
+  backups e conexão do Google Drive.
+
+### Músicas e equipamento Getnet
+
+- atualiza o yt-dlp e inclui o componente JavaScript necessário às mudanças
+  recentes do YouTube, usando o Node.js já empacotado;
+- melhora os erros mostrados ao operador e mantém o detalhe técnico nos logs;
+- identifica pelas fotos o terminal Getnet como Newland SP630 Pro, um POS
+  clássico; a integração automática depende de contratação/habilitação de TEF
+  com a Getnet e um integrador homologado.
+
 ## 1.5.2 — 2026-08-20
 
 ### Caixa e estoque limpos

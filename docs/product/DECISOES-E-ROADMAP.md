@@ -18,10 +18,11 @@ vendas, estoque e controle gerencial da Pool Petiscos & Lanches.
 
 - painel inicial;
 - venda e carrinho;
-- Pix, dinheiro, cartão e troco;
+- Pix, dinheiro, débito, crédito e troco;
 - baixa de estoque por produto;
 - reposição com custo opcional;
 - despesas e resumo financeiro;
+- fluxo de caixa em tabela com exportação Excel e PDF por período;
 - abertura e fechamento do caixa;
 - sangria e suprimento;
 - conferência entre saldo esperado e contado;
@@ -50,8 +51,9 @@ vendas, estoque e controle gerencial da Pool Petiscos & Lanches.
   das vendas antigas;
 - as consultas SQLite de vendas, comandas e itens mostram operador e
   observações;
-- a maquininha atual foi identificada como Getnet tradicional, mas o modelo e a
-  habilitação para TEF ainda precisam ser confirmados pela etiqueta/contrato;
+- a maquininha atual foi identificada pela etiqueta como Newland SP630 Pro, um
+  POS clássico; somente a habilitação/contratação de POS TEF e o integrador
+  indicado pela Getnet continuam pendentes;
 - a troca para Mercado Pago está prevista para janeiro de 2027, com preferência
   por um terminal Point oficialmente integrável.
 - cada perfil tem um PIN próprio; o banco recebe somente o verificador derivado
@@ -101,6 +103,23 @@ vendas, estoque e controle gerencial da Pool Petiscos & Lanches.
   proprietária;
 - atualizações não limpam automaticamente bancos existentes, pois eles podem
   conter movimentações reais que precisam ser preservadas.
+
+### Retorno da visita presencial de 20/08/2026
+
+- a proprietária aprovou o sistema e manteve a versão 1.5.2 instalada para uso
+  e teste, tornando os registros locais existentes dados que não podem ser
+  apagados na próxima instalação;
+- toda atualização passa a criar e verificar um backup do banco antes de
+  substituir os arquivos do aplicativo;
+- o financeiro passa a reproduzir a leitura da planilha usada anteriormente,
+  com colunas de data, movimentação, descrição, valor e observação, além de
+  totais de entrada, saída e saldo;
+- o relatório pode ser baixado em Excel ou PDF para conferência, impressão e
+  envio;
+- um erro pontual no download de música motivou a atualização do yt-dlp, do
+  componente JavaScript de extração e das mensagens de diagnóstico;
+- a etiqueta confirma o modelo Newland SP630 Pro; integração automática fica
+  condicionada à resposta comercial/técnica da Getnet sobre POS TEF.
 
 ### Revisão técnica de 25/07/2026
 
@@ -176,7 +195,8 @@ Não implementar com dados inventados:
 ## Pagamentos integrados
 
 - [x] Confirmar a marca atual: Getnet.
-- [ ] Confirmar o modelo exato pela etiqueta traseira e a contratação de TEF.
+- [x] Confirmar o modelo exato pela etiqueta traseira: Newland SP630 Pro.
+- [ ] Confirmar com a Getnet a contratação de POS TEF e o integrador indicado.
 - [ ] Decidir se vale integrar a Getnet atual ou aguardar a mudança prevista
       para Mercado Pago em janeiro de 2027.
 - [ ] Na troca, escolher um terminal Mercado Pago Point Smart/Pro compatível

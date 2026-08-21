@@ -16,6 +16,7 @@ from local_service.server import (
     PoolCompanionHandler,
     PoolCompanionServer,
     find_downloaded_audio,
+    friendly_download_error,
     human_size,
     is_allowed_origin,
     is_local_origin,
@@ -77,6 +78,24 @@ class CompanionRulesTest(unittest.TestCase):
             validate_media_url("file:///C:/musica.mp3")
         with self.assertRaises(ValueError):
             validate_media_url("http://127.0.0.1/faixa")
+
+    def test_translates_download_failures_without_exposing_technical_details(
+        self,
+    ) -> None:
+        refused = friendly_download_error(
+            RuntimeError("HTTP Error 403: Forbidden; cookies required")
+        )
+        unavailable = friendly_download_error(
+            RuntimeError("ERROR: Video unavailable")
+        )
+        unsupported = friendly_download_error(
+            RuntimeError("Unsupported URL: https://example.com")
+        )
+
+        self.assertIn("YouTube recusou", refused)
+        self.assertIn("não está disponível", unavailable)
+        self.assertIn("link não é compatível", unsupported)
+        self.assertNotIn("403", refused)
 
     def test_lists_only_supported_audio_files(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

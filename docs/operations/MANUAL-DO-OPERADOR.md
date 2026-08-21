@@ -66,11 +66,11 @@ letras em outros dispositivos.
 3. Se necessário, escreva uma observação abaixo do item, como **sem cebola** ou
    **sem tomate**.
 4. Informe o nome da pessoa que fez o pedido.
-5. Selecione Pix, dinheiro ou cartão.
+5. Selecione Pix, dinheiro, débito ou crédito.
 6. Em dinheiro, informe o valor recebido e confira o **Troco**.
 7. Selecione **Finalizar e criar comanda**.
 
-Pix e cartão são registrados como forma de pagamento, mas ainda precisam ser
+Pix, débito e crédito são registrados como forma de pagamento, mas ainda precisam ser
 confirmados na maquininha. O sistema não deve considerar uma transação aprovada
 automaticamente até a integração com o provedor ser contratada e homologada.
 
@@ -114,6 +114,18 @@ Em **Financeiro**:
 - confira entradas, saídas e saldo esperado;
 - ao fechar, informe o dinheiro contado e confira a diferença.
 
+### Consultar e baixar o fluxo de caixa
+
+Em **Financeiro > Fluxo de caixa**, escolha **Hoje**, **Este mês** ou
+**Escolher período**. A tabela mostra data, tipo de movimentação, descrição,
+valor e observação. Vendas e suprimentos aparecem como entradas; despesas e
+sangrias aparecem como saídas.
+
+Use **Baixar Excel** para obter uma planilha `.xlsx` com filtros, cores, fórmulas
+e totais. Use **Baixar PDF** para salvar, imprimir ou enviar um relatório pronto.
+Os dois arquivos incluem apenas o período escolhido e não alteram os dados do
+sistema.
+
 ## Usar músicas
 
 Em **Músicas**, pesquise pelo nome ou cole um link do YouTube. Escolha um dos
@@ -151,7 +163,9 @@ Fechar a aba do navegador não encerra os serviços. Use **Encerrar Pool
 Petiscos** no menu Iniciar antes de manutenção técnica.
 
 Uma versão nova pode ser instalada por cima da anterior. Os dados ficam em uma
-pasta separada e são preservados.
+pasta separada e são preservados. Antes de trocar os arquivos, o instalador
+encerra o sistema, copia o banco para `update-backups` e confere a cópia. Se não
+conseguir proteger o banco, a atualização é interrompida.
 
 Para remover o protótipo depois de um teste, abra **Pool Petiscos > Desinstalar
 Pool Petiscos** no menu Iniciar. O desinstalador pergunta se também deve apagar

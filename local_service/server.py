@@ -13,6 +13,7 @@ import shutil
 import sqlite3
 import threading
 import tempfile
+import traceback
 import uuid
 from collections.abc import Callable
 from http import HTTPStatus
@@ -41,7 +42,7 @@ from local_service.youtube_search import (
     validate_youtube_search_query,
 )
 
-SERVICE_VERSION = "1.5.2"
+SERVICE_VERSION = "1.6.0"
 DEFAULT_PORT = 18765
 MAX_BODY_BYTES = 32 * 1024
 MAX_STATE_BODY_BYTES = 10 * 1024 * 1024
@@ -194,6 +195,54 @@ def read_job(job_id: str) -> dict[str, Any] | None:
         return dict(job) if job else None
 
 
+def friendly_download_error(error: Exception) -> str:
+    technical_message = str(error).casefold()
+    if any(
+        marker in technical_message
+        for marker in (
+            "sign in to confirm",
+            "not a bot",
+            "http error 403",
+            "forbidden",
+            "cookies",
+        )
+    ):
+        return (
+            "O YouTube recusou este download. Tente outra faixa ou aguarde "
+            "alguns minutos antes de tentar novamente."
+        )
+    if any(
+        marker in technical_message
+        for marker in (
+            "video unavailable",
+            "private video",
+            "copyright",
+            "members-only",
+            "age-restricted",
+        )
+    ):
+        return (
+            "Esta faixa não está disponível para download. Escolha outro "
+            "resultado do YouTube."
+        )
+    if "unsupported url" in technical_message:
+        return "Este link não é compatível. Use o link de um vídeo do YouTube."
+    if "componente" in technical_message:
+        return (
+            "O componente de músicas precisa ser reiniciado. Feche o Pool "
+            "Petiscos pelo menu Iniciar, abra novamente e tente outra vez."
+        )
+    if "ffmpeg" in technical_message:
+        return (
+            "A faixa foi localizada, mas não pôde ser convertida para MP3. "
+            "Reinicie o Pool Petiscos e tente novamente."
+        )
+    return (
+        "Não foi possível baixar esta faixa agora. Tente novamente ou "
+        "escolha outro resultado."
+    )
+
+
 def start_download(job_id: str, source_url: str, music_directory: Path) -> None:
     try:
         if importlib.util.find_spec("yt_dlp") is None:
@@ -203,6 +252,11 @@ def start_download(job_id: str, source_url: str, music_directory: Path) -> None:
         if shutil.which("ffmpeg") is None:
             raise RuntimeError(
                 "O componente de áudio não está disponível."
+            )
+        node_path = shutil.which("node")
+        if node_path is None or importlib.util.find_spec("yt_dlp_ejs") is None:
+            raise RuntimeError(
+                "O componente JavaScript de músicas não está disponível."
             )
 
         import yt_dlp
@@ -247,6 +301,9 @@ def start_download(job_id: str, source_url: str, music_directory: Path) -> None:
         )
         options = {
             "format": "bestaudio/best",
+            "js_runtimes": {
+                "node": {"path": node_path},
+            },
             "noplaylist": True,
             "playlistend": 1,
             "outtmpl": output_template,
@@ -300,12 +357,16 @@ def start_download(job_id: str, source_url: str, music_directory: Path) -> None:
             track=library_item(final_path),
         )
     except Exception as error:  # yt-dlp fornece mensagens próprias por extrator
-        message = str(error).strip() or "Não foi possível baixar esta faixa."
+        print(
+            "[music] Falha técnica no download: "
+            f"{type(error).__name__}: {error}",
+        )
+        traceback.print_exc()
         update_job(
             job_id,
             status="failed",
             progress=0,
-            message=message[:400],
+            message=friendly_download_error(error),
         )
 
 
@@ -563,11 +624,23 @@ class PoolCompanionHandler(BaseHTTPRequestHandler):
             self._send_json({"results": results[:limit]})
             return
         if parsed.path == "/api/health":
+            yt_dlp_available = importlib.util.find_spec("yt_dlp") is not None
+            yt_dlp_version = ""
+            if yt_dlp_available:
+                try:
+                    from yt_dlp.version import __version__ as yt_dlp_version
+                except ImportError:
+                    yt_dlp_version = "desconhecida"
             self._send_json(
                 {
                     "service": "Pool Petiscos Companion",
                     "version": SERVICE_VERSION,
-                    "yt_dlp": importlib.util.find_spec("yt_dlp") is not None,
+                    "yt_dlp": yt_dlp_available,
+                    "yt_dlp_version": yt_dlp_version,
+                    "yt_dlp_ejs": (
+                        importlib.util.find_spec("yt_dlp_ejs") is not None
+                    ),
+                    "node": shutil.which("node") is not None,
                     "ffmpeg": shutil.which("ffmpeg") is not None,
                     "music_directory": str(self.pool_server.music_directory),
                 }

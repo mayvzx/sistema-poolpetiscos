@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [ValidatePattern('^\d+\.\d+\.\d+(?:\.\d+)?$')]
-    [string]$Version = '1.5.2',
+    [string]$Version = '1.6.0',
     [string]$OutputDirectory = '',
     [string]$WorkDirectory = '',
     [string]$CertificateThumbprint = '',
@@ -635,6 +635,8 @@ function Test-PackagedLauncher {
                 $ready = (
                     $health.service -eq 'Pool Petiscos Companion' -and
                     $health.yt_dlp -eq $true -and
+                    $health.yt_dlp_ejs -eq $true -and
+                    $health.node -eq $true -and
                     $health.ffmpeg -eq $true
                 )
             }
@@ -746,6 +748,7 @@ Invoke-NativeCommand `
         '--specpath', $pyinstallerSpec,
         '--paths', $projectRoot,
         '--collect-all', 'yt_dlp',
+        '--collect-all', 'yt_dlp_ejs',
         '--hidden-import', 'local_service.server',
         (Join-Path $projectRoot 'local_service\launcher.py')
     )
@@ -913,9 +916,9 @@ foreach ($licenseFile in $ffmpegLicenseFiles) {
 
 $ytDlpVersion = (
     Get-Content -LiteralPath (Join-Path $projectRoot 'local_service\requirements.txt') |
-    Where-Object { $_ -match '^yt-dlp==' } |
+    Where-Object { $_ -match '^yt-dlp(?:\[default\])?==' } |
     Select-Object -First 1
-) -replace '^yt-dlp==', ''
+) -replace '^yt-dlp(?:\[default\])?==', ''
 $buildManifest = [ordered]@{
     application_version = $Version
     source_commit = $sourceMetadata.commit

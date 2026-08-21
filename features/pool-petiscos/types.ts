@@ -7,7 +7,12 @@ export type View =
   | "musica"
   | "configuracoes";
 
-export type PaymentMethod = "Pix" | "Dinheiro" | "Cartão";
+export type PaymentMethod =
+  | "Pix"
+  | "Dinheiro"
+  | "Débito"
+  | "Crédito"
+  | "Cartão";
 
 export type OperatorId = "elaine" | "poolblay";
 

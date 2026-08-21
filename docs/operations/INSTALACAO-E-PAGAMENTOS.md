@@ -20,6 +20,7 @@ Banco, faixas e logs permanecem fora da instalação:
 %LOCALAPPDATA%\PoolPetiscos\data\pool-petiscos.db
 %LOCALAPPDATA%\PoolPetiscos\musicas
 %LOCALAPPDATA%\PoolPetiscos\logs
+%LOCALAPPDATA%\PoolPetiscos\update-backups
 ```
 
 Cada gravação no SQLite é transacional e as últimas 50 revisões são mantidas.
@@ -62,24 +63,28 @@ status e comprovante retornados pelo provedor.
 
 ### Situação atual — maquininha Getnet
 
-A foto recebida mostra um terminal Getnet tradicional, com teclado físico e
-bobina. Ela não mostra a etiqueta traseira, então ainda não permite confirmar o
-modelo nem se o contrato possui TEF. Para esse tipo de equipamento, o caminho
-mais provável é a **Solução TEF Getnet**, contratada para integrar a automação
-comercial ao sistema de frente de caixa.
+As fotos de 20/08/2026 confirmam um **Newland SP630 Pro** fornecido pela Getnet.
+O SP630 Pro é um POS portátil clássico, baseado em Linux e sem o ambiente
+Android do Get Smart. Portanto, o aplicativo Windows da Pool não pode ser
+instalado na maquininha e a integração por SDK/deep link da Get Store não se
+aplica a esse equipamento.
 
-Isso é diferente do Get Smart: nos terminais Android Get Smart, a Getnet exige
-aplicativo compatível com seus SDKs, submissão na Get Store e certificação. Não
-devemos escolher esse caminho sem confirmar que o terminal é realmente um Get
-Smart.
+O caminho possível para enviar automaticamente o valor e receber a aprovação é
+**POS TEF/TEF Getnet**, mas a foto não confirma a habilitação comercial. A
+proprietária precisa solicitar à Getnet a confirmação de que o cadastro e o
+SP630 Pro podem operar com POS TEF e qual integrador homologado deverá ser usado
+no computador do caixa. A Getnet cita integradores como PayGo, Software Express
+e Auttar; a escolha depende do contrato oferecido ao estabelecimento.
 
 Documentação oficial:
 
-- https://site.getnet.com.br/tef/solucao-tef/
+- https://site.getnet.com.br/tef/pos-tef/
 - https://getstore.getnet.com.br/docs/
 - https://getstore.getnet.com.br/docs/iniciando-integracao/requisitos-desenvolvimento/
+- https://www.newlandnpt.com/download/33.html
+- https://download.newlandpayment.com/root/website-en/SP630-Pro.pdf
 
-Enquanto o modelo e o contrato não forem confirmados, Pix e cartão continuam
+Enquanto o contrato TEF não for confirmado, Pix, débito e crédito continuam
 com confirmação manual na maquininha. O sistema não exibirá QR Code fictício
 nem marcará uma venda como aprovada por uma integração inexistente.
 
@@ -123,8 +128,9 @@ Documentação oficial:
 
 Registrar antes da integração Getnet:
 
-- foto legível da etiqueta traseira com o modelo exato;
-- confirmação com a Getnet de que o contrato possui ou aceita TEF;
+- confirmação com a Getnet de que o cadastro e o SP630 Pro possuem ou aceitam
+  POS TEF;
+- nome, contato e requisitos técnicos do integrador TEF indicado pela Getnet;
 - instituição onde a Pool recebe o Pix;
 - CNPJ/MEI titular da conta;
 - necessidade de débito, crédito, parcelamento e vale-alimentação;
