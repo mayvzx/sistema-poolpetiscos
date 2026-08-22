@@ -129,8 +129,13 @@ import {
   type MusicDownloadJob,
 } from "./music-companion";
 import { MusicProgress } from "./music-progress";
+import {
+  checkForAppUpdate,
+  type AppUpdateStatus,
+} from "./update-companion";
 import { clampPlaybackTime } from "./music-player";
 import { CashFlowPanel } from "./cash-flow-panel";
+import { CashSessionHistoryPanel } from "./cash-session-history-panel";
 import {
   categories,
   createInitialPoolState,
@@ -149,6 +154,7 @@ import {
   type YoutubeSearchStatus,
 } from "./pool-app-config";
 import type {
+  ActiveCashSession,
   CartItem,
   CashClosure,
   CashMovement,
@@ -227,6 +233,8 @@ export default function PoolPetiscosApp() {
   const [openingBalance, setOpeningBalance] = useState(0);
   const [cashFund, setCashFund] = useState(DEFAULT_CASH_FUND);
   const [cashOpenedAt, setCashOpenedAt] = useState(() => Date.now());
+  const [activeCashSession, setActiveCashSession] =
+    useState<ActiveCashSession | null>(null);
   const [cashMovements, setCashMovements] = useState<CashMovement[]>([]);
   const [cashClosures, setCashClosures] = useState<CashClosure[]>([]);
   const [operatorCredentials, setOperatorCredentials] =
@@ -301,6 +309,8 @@ export default function PoolPetiscosApp() {
   const [downloadSourceUrl, setDownloadSourceUrl] = useState("");
   const [downloadJob, setDownloadJob] = useState<MusicDownloadJob | null>(null);
   const [musicDownloadBusy, setMusicDownloadBusy] = useState(false);
+  const [updateStatus, setUpdateStatus] =
+    useState<AppUpdateStatus | null>(null);
   const [youtubeSearchResults, setYoutubeSearchResults] = useState<
     YoutubeSearchResult[]
   >([]);
@@ -488,6 +498,7 @@ export default function PoolPetiscosApp() {
     setCashFund(state.cashFund);
     setCashOpenForm(String(state.openingBalance));
     setCashOpenedAt(state.cashOpenedAt);
+    setActiveCashSession(state.activeCashSession);
     setCashMovements(state.cashMovements);
     setCashClosures(state.cashClosures);
     setOperatorCredentials(state.operatorCredentials);
@@ -793,6 +804,7 @@ export default function PoolPetiscosApp() {
       openingBalance,
       cashFund,
       cashOpenedAt,
+      activeCashSession,
       cashMovements,
       cashClosures,
       operatorCredentials,
@@ -851,6 +863,7 @@ export default function PoolPetiscosApp() {
     cashMovements,
     cashOpen,
     cashOpenedAt,
+    activeCashSession,
     expenses,
     hydrated,
     openingBalance,
@@ -862,6 +875,26 @@ export default function PoolPetiscosApp() {
     rememberPendingSync,
     showToast,
   ]);
+
+  useEffect(() => {
+    if (
+      !hydrated ||
+      !["127.0.0.1", "localhost"].includes(window.location.hostname)
+    ) {
+      return;
+    }
+    let cancelled = false;
+    void checkForAppUpdate()
+      .then((status) => {
+        if (!cancelled) setUpdateStatus(status);
+      })
+      .catch(() => {
+        // A checagem silenciosa não interrompe o atendimento.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [hydrated]);
 
   useEffect(() => {
     const flushBeforeLeaving = () => {
@@ -1167,17 +1200,32 @@ export default function PoolPetiscosApp() {
   );
   const ticketAverage = todaySales.length ? revenue / todaySales.length : 0;
   const sessionSales = useMemo(
-    () => sales.filter((sale) => sale.timestamp >= cashOpenedAt),
-    [cashOpenedAt, sales],
+    () =>
+      activeCashSession
+        ? sales.filter(
+            (sale) => sale.cashSessionId === activeCashSession.id,
+          )
+        : [],
+    [activeCashSession, sales],
   );
   const sessionExpenses = useMemo(
-    () => expenses.filter((expense) => expense.timestamp >= cashOpenedAt),
-    [cashOpenedAt, expenses],
+    () =>
+      activeCashSession
+        ? expenses.filter(
+            (expense) => expense.cashSessionId === activeCashSession.id,
+          )
+        : [],
+    [activeCashSession, expenses],
   );
   const sessionMovements = useMemo(
     () =>
-      cashMovements.filter((movement) => movement.timestamp >= cashOpenedAt),
-    [cashMovements, cashOpenedAt],
+      activeCashSession
+        ? cashMovements.filter(
+            (movement) =>
+              movement.cashSessionId === activeCashSession.id,
+          )
+        : [],
+    [activeCashSession, cashMovements],
   );
   const cashSalesTotal = useMemo(
     () =>
@@ -1548,6 +1596,9 @@ export default function PoolPetiscosApp() {
     }));
     const sale: Sale = {
       id: createRecordId("PV"),
+      ...(activeCashSession
+        ? { cashSessionId: activeCashSession.id }
+        : {}),
       timestamp,
       total: cartTotal,
       payment: paymentMethod,
@@ -1880,6 +1931,9 @@ export default function PoolPetiscosApp() {
       setExpenses((current) => [
         {
           id: createRecordId("DS"),
+          ...(activeCashSession
+            ? { cashSessionId: activeCashSession.id }
+            : {}),
           timestamp: Date.now(),
           description: `Reposição: ${product.name}`,
           category: "Compra de estoque",
@@ -1927,6 +1981,9 @@ export default function PoolPetiscosApp() {
     setExpenses((current) => [
       {
         id: createRecordId("DS"),
+        ...(activeCashSession
+          ? { cashSessionId: activeCashSession.id }
+          : {}),
         timestamp: Date.now(),
         description: expenseForm.description.trim(),
         category: expenseForm.category,
@@ -1965,13 +2022,26 @@ export default function PoolPetiscosApp() {
 
   function submitCashOpen(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!activeOperator) {
+      showToast("Escolha o operador antes de abrir o caixa.", "warning");
+      return;
+    }
     const amount = parseAmount(cashOpenForm);
     if (!Number.isFinite(amount) || amount < 0) {
       showToast("Informe um valor de abertura válido.", "warning");
       return;
     }
+    const openedAt = Date.now();
+    const session: ActiveCashSession = {
+      id: createRecordId("CX"),
+      openedAt,
+      openingBalance: roundMoney(amount),
+      openedByOperatorId: activeOperator.id,
+      openedByOperatorName: activeOperator.name,
+    };
     setOpeningBalance(amount);
-    setCashOpenedAt(Date.now());
+    setCashOpenedAt(openedAt);
+    setActiveCashSession(session);
     setCashOpen(true);
     setCart([]);
     setCashReceived("");
@@ -1982,12 +2052,23 @@ export default function PoolPetiscosApp() {
 
   function submitCashClose(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!activeOperator) {
+      showToast("Escolha o operador antes de fechar o caixa.", "warning");
+      return;
+    }
     const countedBalance = parseAmount(cashCloseForm);
     if (!Number.isFinite(countedBalance) || countedBalance < 0) {
       showToast("Informe o valor contado no caixa.", "warning");
       return;
     }
     const closedAt = Date.now();
+    if (!activeCashSession) {
+      showToast(
+        "A sessão deste caixa não pôde ser identificada. Feche e abra o aplicativo novamente.",
+        "warning",
+      );
+      return;
+    }
     const closing = calculateCashClosing({
       expectedBalance: cashBalance,
       countedBalance,
@@ -1997,6 +2078,7 @@ export default function PoolPetiscosApp() {
       setCashMovements((current) => [
         {
           id: createRecordId("MC"),
+          cashSessionId: activeCashSession.id,
           timestamp: closedAt,
           description: "Retirada automática no fechamento",
           amount: closing.withdrawalAmount,
@@ -2008,8 +2090,13 @@ export default function PoolPetiscosApp() {
     setCashClosures((current) => [
       {
         id: createRecordId("FC"),
+        sessionId: activeCashSession.id,
         openedAt: cashOpenedAt,
         closedAt,
+        openedByOperatorId: activeCashSession.openedByOperatorId,
+        openedByOperatorName: activeCashSession.openedByOperatorName,
+        closedByOperatorId: activeOperator.id,
+        closedByOperatorName: activeOperator.name,
         openingBalance,
         expectedBalance: cashBalance,
         countedBalance,
@@ -2021,25 +2108,26 @@ export default function PoolPetiscosApp() {
       ...current,
     ]);
     setCashOpen(false);
+    setActiveCashSession(null);
     setCart([]);
     setCashReceived("");
     setPaymentMethod("Pix");
     setModal(null);
     if (closing.fundShortfall > 0) {
       showToast(
-        `Caixa fechado. Faltaram ${currency.format(closing.fundShortfall)} para completar o fundo de troco.`,
+        `Caixa fechado. Faltaram ${currency.format(closing.fundShortfall)} para completar o fundo. O resumo foi salvo no Financeiro.`,
         "warning",
       );
     } else if (Math.abs(closing.difference) >= 0.005) {
       showToast(
-        `Retire ${currency.format(closing.withdrawalAmount)}. O fechamento teve diferença de ${currency.format(closing.difference)}.`,
+        `Retire ${currency.format(closing.withdrawalAmount)}. Houve diferença de ${currency.format(closing.difference)}. O resumo foi salvo.`,
         "warning",
       );
     } else {
       showToast(
         closing.withdrawalAmount > 0
-          ? `Retire ${currency.format(closing.withdrawalAmount)}. ${currency.format(closing.remainingBalance)} ficam para troco.`
-          : `Caixa fechado. ${currency.format(closing.remainingBalance)} ficam para troco.`,
+          ? `Retire ${currency.format(closing.withdrawalAmount)}. ${currency.format(closing.remainingBalance)} ficam para troco. Resumo salvo.`
+          : `Caixa fechado. ${currency.format(closing.remainingBalance)} ficam para troco. Resumo salvo.`,
       );
     }
   }
@@ -2066,6 +2154,9 @@ export default function PoolPetiscosApp() {
     setCashMovements((current) => [
       {
         id: createRecordId("MC"),
+        ...(activeCashSession
+          ? { cashSessionId: activeCashSession.id }
+          : {}),
         timestamp: Date.now(),
         description: cashMovementForm.description.trim(),
         amount,
@@ -2124,6 +2215,7 @@ export default function PoolPetiscosApp() {
       openingBalance,
       cashFund,
       cashOpenedAt,
+      activeCashSession,
       cashMovements,
       cashClosures,
       operatorCredentials,
@@ -2575,6 +2667,33 @@ export default function PoolPetiscosApp() {
             </button>
           </div>
         </header>
+
+        {updateStatus?.available && (
+          <div className="border-b border-[#f0d7b4] bg-[#fff8ec] px-4 py-3 sm:px-6 lg:px-9">
+            <div className="mx-auto flex w-full max-w-[1480px] flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-start gap-3">
+                <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#d9202c] text-white">
+                  <Download size={18} />
+                </span>
+                <div>
+                  <strong className="block text-sm font-black text-[#5d3d18]">
+                    Atualização {updateStatus.latest_version} disponível
+                  </strong>
+                  <span className="text-xs font-semibold text-[#80561b]">
+                    O atendimento pode continuar; a instalação só acontece quando você decidir.
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => navigateTo("configuracoes")}
+                className="flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#302b29] px-4 text-xs font-extrabold text-white transition hover:bg-[#171514]"
+              >
+                Ver atualização <ChevronRight size={16} />
+              </button>
+            </div>
+          </div>
+        )}
 
         {activeView === "inicio" && (
           <div className="pool-view-enter mx-auto w-full max-w-[1480px] space-y-4 p-4 sm:p-6 lg:p-9">
@@ -3778,6 +3897,15 @@ export default function PoolPetiscosApp() {
               onMessage={showToast}
             />
 
+            <CashSessionHistoryPanel
+              activeSession={activeCashSession}
+              closures={cashClosures}
+              sales={sales}
+              expenses={expenses}
+              cashMovements={cashMovements}
+              onMessage={showToast}
+            />
+
             <section className="mt-4 rounded-[22px] border border-[#e5deda] bg-white p-5 shadow-sm sm:p-6">
               <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
                 <div>
@@ -4596,10 +4724,12 @@ export default function PoolPetiscosApp() {
             displayPreferences={displayPreferences}
             resolvedTheme={resolvedTheme}
             cashFund={cashFund}
+            updateStatus={updateStatus}
             onCredentialChange={updateOperatorCredential}
             onRecoveryCredentialChange={setPinRecoveryCredential}
             onDisplayPreferencesChange={setDisplayPreferences}
             onCashFundChange={setCashFund}
+            onUpdateStatusChange={setUpdateStatus}
             onMessage={showToast}
           />
         )}

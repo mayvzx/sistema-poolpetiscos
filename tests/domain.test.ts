@@ -41,6 +41,7 @@ function validState(): PersistedPoolState {
     sales: [
       {
         id: "PV-TESTE",
+        cashSessionId: "CX-TESTE",
         timestamp,
         total: 18,
         payment: "Dinheiro",
@@ -65,6 +66,13 @@ function validState(): PersistedPoolState {
     openingBalance: 100,
     cashFund: DEFAULT_CASH_FUND,
     cashOpenedAt: timestamp - 60_000,
+    activeCashSession: {
+      id: "CX-TESTE",
+      openedAt: timestamp - 60_000,
+      openingBalance: 100,
+      openedByOperatorId: "elaine",
+      openedByOperatorName: "Elaine",
+    },
     cashMovements: [],
     cashClosures: [],
     operatorCredentials: {},
@@ -246,6 +254,7 @@ test("inicia uma instalação nova sem movimentações nem valores fictícios", 
   assert.equal(state.cashOpen, false);
   assert.equal(state.openingBalance, 0);
   assert.equal(state.cashFund, 130);
+  assert.equal(state.activeCashSession, null);
   assert.deepEqual(state.sales, []);
   assert.deepEqual(state.expenses, []);
   assert.deepEqual(state.cashMovements, []);
@@ -310,10 +319,25 @@ test("migra fechamentos antigos sem inventar uma retirada", () => {
   assert.equal(parsed.cashFund, 130);
   assert.deepEqual(parsed.cashClosures[0], {
     ...legacy.cashClosures[0],
+    sessionId: "SESSAO-FC-ANTIGO",
+    openedByOperatorId: "nao-identificado",
+    openedByOperatorName: "Não identificado",
+    closedByOperatorId: "nao-identificado",
+    closedByOperatorName: "Não identificado",
     cashFund: 130,
     withdrawalAmount: 0,
     remainingBalance: 130,
   });
+});
+
+test("liga registros legados à sessão de caixa correspondente", () => {
+  const state = structuredClone(validState());
+  delete state.sales[0].cashSessionId;
+
+  const parsed = parsePoolState(state);
+
+  assert.ok(parsed);
+  assert.equal(parsed.sales[0].cashSessionId, "CX-TESTE");
 });
 
 test("rejeita verificadores de PIN adulterados ao restaurar", () => {

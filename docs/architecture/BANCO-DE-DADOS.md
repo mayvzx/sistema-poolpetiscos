@@ -32,12 +32,12 @@ botão **Baixar banco completo** gera o SQLite voltado à auditoria técnica.
 | Consulta | Conteúdo |
 | --- | --- |
 | `vw_produtos` | nome, categoria, preço e estoque |
-| `vw_vendas` | data, operador, total, forma de pagamento e quantidade de itens |
-| `vw_comandas` | cliente, operador, situação do preparo, horários e pagamento |
-| `vw_itens_venda` | itens, observações e valores de cada venda |
-| `vw_despesas` | despesas registradas |
-| `vw_movimentos_caixa` | sangrias e suprimentos |
-| `vw_fechamentos_caixa` | saldos esperado e contado, diferença, fundo, retirada e saldo deixado |
+| `vw_vendas` | sessão de caixa, data, operador, total, pagamento e itens |
+| `vw_comandas` | sessão, cliente, operador, situação, horários e pagamento |
+| `vw_itens_venda` | sessão, itens, observações e valores de cada venda |
+| `vw_despesas` | sessão de caixa e despesas registradas |
+| `vw_movimentos_caixa` | sessão de caixa, sangrias e suprimentos |
+| `vw_fechamentos_caixa` | sessão, responsáveis, saldos, diferença, fundo e retirada |
 | `vw_operadores` | perfis e situação de configuração do PIN, sem expor o verificador |
 
 As tabelas internas `app_state` e `state_history` garantem gravação atômica e

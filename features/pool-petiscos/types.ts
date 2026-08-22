@@ -70,6 +70,7 @@ export type OrderStatus =
 
 export type Sale = {
   id: string;
+  cashSessionId?: string;
   timestamp: number;
   total: number;
   payment: PaymentMethod;
@@ -83,6 +84,7 @@ export type Sale = {
 
 export type Expense = {
   id: string;
+  cashSessionId?: string;
   timestamp: number;
   description: string;
   category: string;
@@ -92,6 +94,7 @@ export type Expense = {
 
 export type CashMovement = {
   id: string;
+  cashSessionId?: string;
   timestamp: number;
   description: string;
   amount: number;
@@ -100,8 +103,13 @@ export type CashMovement = {
 
 export type CashClosure = {
   id: string;
+  sessionId: string;
   openedAt: number;
   closedAt: number;
+  openedByOperatorId: SaleOperatorId;
+  openedByOperatorName: string;
+  closedByOperatorId: SaleOperatorId;
+  closedByOperatorName: string;
   openingBalance: number;
   expectedBalance: number;
   countedBalance: number;
@@ -109,6 +117,14 @@ export type CashClosure = {
   cashFund: number;
   withdrawalAmount: number;
   remainingBalance: number;
+};
+
+export type ActiveCashSession = {
+  id: string;
+  openedAt: number;
+  openingBalance: number;
+  openedByOperatorId: SaleOperatorId;
+  openedByOperatorName: string;
 };
 
 export type Track = {
@@ -141,6 +157,7 @@ export type PersistedPoolState = {
   openingBalance: number;
   cashFund: number;
   cashOpenedAt: number;
+  activeCashSession: ActiveCashSession | null;
   cashMovements: CashMovement[];
   cashClosures: CashClosure[];
   operatorCredentials: OperatorCredentials;

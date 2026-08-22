@@ -53,6 +53,31 @@ def minimal_pool_state(number: int | None = None) -> dict[str, object]:
     return state
 
 
+class FakeUpdateChecker:
+    def check(self, *, force: bool = False) -> dict[str, object]:
+        return {
+            "current_version": SERVICE_VERSION,
+            "latest_version": "1.7.1",
+            "available": True,
+            "release_url": (
+                "https://github.com/mayvzx/sistema-poolpetiscos/"
+                "releases/tag/v1.7.1"
+            ),
+            "release_name": "Versão 1.7.1",
+            "published_at": "2026-08-22T12:00:00Z",
+            "notes": "Atualização de teste",
+            "verified_installer": None,
+            "checked_at": 1,
+            "forced": force,
+        }
+
+    def download_verified_installer(self) -> dict[str, object]:
+        return {"downloaded": True, "version": "1.7.1"}
+
+    def open_update_folder(self) -> dict[str, str]:
+        return {"folder": "C:\\PoolPetiscos\\updates"}
+
+
 class CompanionRulesTest(unittest.TestCase):
     def test_service_version_matches_package(self) -> None:
         package_path = Path(__file__).resolve().parents[1] / "package.json"
@@ -464,6 +489,7 @@ class StateStorageTest(unittest.TestCase):
                     "sales": [
                         {
                             "id": "V1",
+                            "cashSessionId": "CX-ATIVA",
                             "timestamp": 1_700_000_000_000,
                             "total": 37,
                             "payment": "Pix",
@@ -488,6 +514,13 @@ class StateStorageTest(unittest.TestCase):
                     "openingBalance": 100,
                     "cashFund": 130,
                     "cashOpenedAt": 1_700_000_000_000,
+                    "activeCashSession": {
+                        "id": "CX-ATIVA",
+                        "openedAt": 1_700_000_000_000,
+                        "openingBalance": 100,
+                        "openedByOperatorId": "elaine",
+                        "openedByOperatorName": "Elaine",
+                    },
                     "cashMovements": [],
                     "cashClosures": [
                         {
@@ -532,17 +565,19 @@ class StateStorageTest(unittest.TestCase):
                 )
                 self.assertEqual(
                     connection.execute(
-                        "SELECT forma_pagamento, operador, quantidade_itens "
+                        "SELECT sessao_caixa_id, forma_pagamento, operador, "
+                        "quantidade_itens "
                         "FROM vw_vendas"
                     ).fetchone(),
-                    ("Pix", "Elaine", 2),
+                    ("CX-ATIVA", "Pix", "Elaine", 2),
                 )
                 self.assertEqual(
                     connection.execute(
-                        "SELECT cliente, situacao, operador, quantidade_itens "
+                        "SELECT sessao_caixa_id, cliente, situacao, operador, "
+                        "quantidade_itens "
                         "FROM vw_comandas"
                     ).fetchone(),
-                    ("Ana", "em-preparo", "Elaine", 2),
+                    ("CX-ATIVA", "Ana", "em-preparo", "Elaine", 2),
                 )
                 self.assertEqual(
                     connection.execute(
@@ -581,6 +616,7 @@ class StateApiTest(unittest.TestCase):
             PoolCompanionHandler,
             root / "music",
             self.storage,
+            update_checker=FakeUpdateChecker(),
         )
         self.worker = threading.Thread(
             target=self.server.serve_forever,
@@ -695,6 +731,20 @@ class StateApiTest(unittest.TestCase):
                 2,
             )
 
+    def test_update_api_is_notice_first_and_does_not_run_an_installer(self) -> None:
+        status, update = self._request("GET", "/api/update/status?force=1")
+        self.assertEqual(status, 200)
+        self.assertEqual(update["latest_version"], "1.7.1")
+        self.assertEqual(update["forced"], True)
+
+        status, downloaded = self._request("POST", "/api/update/download")
+        self.assertEqual(status, 201)
+        self.assertEqual(downloaded["downloaded"], True)
+
+        status, opened = self._request("POST", "/api/update/open-folder")
+        self.assertEqual(status, 200)
+        self.assertIn("updates", opened["folder"])
+
     def test_state_api_rejects_incomplete_state_without_writing(self) -> None:
         status, invalid = self._request(
             "PUT",
@@ -807,6 +857,7 @@ class StateApiTest(unittest.TestCase):
             ("GET", "/api/database/export", None),
             ("GET", "/api/backups/status", None),
             ("GET", "/api/backups/google", None),
+            ("GET", "/api/update/status", None),
             ("POST", "/api/backups", None),
             ("POST", "/api/backups/run", None),
             ("POST", "/api/database/restore", {"invalid": True}),
@@ -817,6 +868,8 @@ class StateApiTest(unittest.TestCase):
             ),
             ("POST", "/api/google-drive/connect", None),
             ("POST", "/api/google-drive/disconnect", None),
+            ("POST", "/api/update/download", None),
+            ("POST", "/api/update/open-folder", None),
             (
                 "PUT",
                 "/api/state",

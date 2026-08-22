@@ -160,7 +160,7 @@ export function roundMoney(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
-export function createRecordId(prefix: "PV" | "DS" | "MC" | "FC") {
+export function createRecordId(prefix: "PV" | "DS" | "MC" | "FC" | "CX") {
   const time = Date.now().toString(36).toUpperCase();
   const random = Math.random().toString(36).slice(2, 6).toUpperCase();
   return `${prefix}-${time}-${random}`;

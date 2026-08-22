@@ -1,4 +1,5 @@
 import type {
+  ActiveCashSession,
   CashClosure,
   CashMovement,
   Expense,
@@ -165,6 +166,9 @@ function parseSale(value: unknown): Sale | null {
       ? (value.operatorId as SaleOperatorId)
       : "nao-identificado";
   const operatorName = operatorNameForSale(operatorId);
+  const cashSessionId = isNonEmptyString(value.cashSessionId)
+    ? value.cashSessionId.trim()
+    : undefined;
   return {
     ...(value as Sale),
     total: itemTotal,
@@ -174,6 +178,7 @@ function parseSale(value: unknown): Sale | null {
     statusUpdatedAt,
     operatorId,
     operatorName,
+    ...(cashSessionId ? { cashSessionId } : {}),
   };
 }
 
@@ -190,7 +195,14 @@ function parseExpense(value: unknown): Expense | null {
   }
   const payment = value.payment ?? "Dinheiro";
   if (!isPaymentMethod(payment)) return null;
-  return { ...(value as Omit<Expense, "payment">), payment };
+  const cashSessionId = isNonEmptyString(value.cashSessionId)
+    ? value.cashSessionId.trim()
+    : undefined;
+  return {
+    ...(value as Omit<Expense, "payment">),
+    payment,
+    ...(cashSessionId ? { cashSessionId } : {}),
+  };
 }
 
 function parseCashMovement(value: unknown): CashMovement | null {
@@ -204,7 +216,13 @@ function parseCashMovement(value: unknown): CashMovement | null {
   ) {
     return null;
   }
-  return value as CashMovement;
+  const cashSessionId = isNonEmptyString(value.cashSessionId)
+    ? value.cashSessionId.trim()
+    : undefined;
+  return {
+    ...(value as CashMovement),
+    ...(cashSessionId ? { cashSessionId } : {}),
+  };
 }
 
 function parseCashClosure(value: unknown): CashClosure | null {
@@ -242,8 +260,22 @@ function parseCashClosure(value: unknown): CashClosure | null {
   ) {
     return null;
   }
+  const sessionId = isNonEmptyString(value.sessionId)
+    ? value.sessionId.trim()
+    : `SESSAO-${value.id.trim()}`;
+  const openedByOperatorId = parseSaleOperatorId(value.openedByOperatorId);
+  const closedByOperatorId = parseSaleOperatorId(value.closedByOperatorId);
   return {
     ...(value as CashClosure),
+    sessionId,
+    openedByOperatorId,
+    openedByOperatorName: isNonEmptyString(value.openedByOperatorName)
+      ? value.openedByOperatorName.trim()
+      : operatorNameForSale(openedByOperatorId),
+    closedByOperatorId,
+    closedByOperatorName: isNonEmptyString(value.closedByOperatorName)
+      ? value.closedByOperatorName.trim()
+      : operatorNameForSale(closedByOperatorId),
     difference,
     cashFund: hasNewClosingFields
       ? roundMoney(value.cashFund as number)
@@ -255,6 +287,71 @@ function parseCashClosure(value: unknown): CashClosure | null {
       ? roundMoney(value.remainingBalance as number)
       : roundMoney(value.countedBalance),
   };
+}
+
+function parseSaleOperatorId(value: unknown): SaleOperatorId {
+  return typeof value === "string" &&
+    SALE_OPERATOR_IDS.has(value as SaleOperatorId)
+    ? (value as SaleOperatorId)
+    : "nao-identificado";
+}
+
+function parseActiveCashSession(
+  value: unknown,
+  fallback: {
+    cashOpen: boolean;
+    openedAt: number;
+    openingBalance: number;
+  },
+): ActiveCashSession | null {
+  if (!fallback.cashOpen) return null;
+  if (value === undefined || value === null) {
+    return {
+      id: `SESSAO-ABERTA-${Math.trunc(fallback.openedAt)}`,
+      openedAt: fallback.openedAt,
+      openingBalance: roundMoney(fallback.openingBalance),
+      openedByOperatorId: "nao-identificado",
+      openedByOperatorName: operatorNameForSale("nao-identificado"),
+    };
+  }
+  if (
+    !isRecord(value) ||
+    !isNonEmptyString(value.id) ||
+    !isTimestamp(value.openedAt) ||
+    !isNonNegativeMoney(value.openingBalance)
+  ) {
+    return null;
+  }
+  const openedByOperatorId = parseSaleOperatorId(value.openedByOperatorId);
+  return {
+    id: value.id.trim(),
+    openedAt: value.openedAt,
+    openingBalance: roundMoney(value.openingBalance),
+    openedByOperatorId,
+    openedByOperatorName: isNonEmptyString(value.openedByOperatorName)
+      ? value.openedByOperatorName.trim()
+      : operatorNameForSale(openedByOperatorId),
+  };
+}
+
+function linkLegacyCashSession<T extends { timestamp: number; cashSessionId?: string }>(
+  item: T,
+  cashClosures: CashClosure[],
+  activeCashSession: ActiveCashSession | null,
+): T {
+  if (item.cashSessionId) return item;
+  const closure = cashClosures
+    .filter(
+      (candidate) =>
+        item.timestamp >= candidate.openedAt &&
+        item.timestamp <= candidate.closedAt,
+    )
+    .sort((left, right) => right.openedAt - left.openedAt)[0];
+  if (closure) return { ...item, cashSessionId: closure.sessionId };
+  if (activeCashSession && item.timestamp >= activeCashSession.openedAt) {
+    return { ...item, cashSessionId: activeCashSession.id };
+  }
+  return item;
 }
 
 function isBase64(value: unknown, minimumBytes: number) {
@@ -344,6 +441,20 @@ export function parsePoolState(value: unknown): PersistedPoolState | null {
   ) {
     return null;
   }
+  const activeCashSession = parseActiveCashSession(value.activeCashSession, {
+    cashOpen: value.cashOpen,
+    openedAt: value.cashOpenedAt,
+    openingBalance: value.openingBalance,
+  });
+  if (value.cashOpen && !activeCashSession) return null;
+  if (
+    activeCashSession &&
+    (activeCashSession.openedAt !== value.cashOpenedAt ||
+      Math.abs(activeCashSession.openingBalance - value.openingBalance) >
+        0.005)
+  ) {
+    return null;
+  }
   if (
     !hasUniqueIds(products) ||
     !hasUniqueIds(sales) ||
@@ -353,15 +464,42 @@ export function parsePoolState(value: unknown): PersistedPoolState | null {
   ) {
     return null;
   }
+  if (
+    new Set(cashClosures.map((closure) => closure.sessionId)).size !==
+    cashClosures.length
+  ) {
+    return null;
+  }
+  const linkedSales = sales.map((sale) =>
+    linkLegacyCashSession(sale, cashClosures, activeCashSession),
+  );
+  const linkedExpenses = expenses.map((expense) =>
+    linkLegacyCashSession(expense, cashClosures, activeCashSession),
+  );
+  const linkedCashMovements = cashMovements.map((movement) =>
+    linkLegacyCashSession(movement, cashClosures, activeCashSession),
+  );
+  const knownSessionIds = new Set([
+    ...cashClosures.map((closure) => closure.sessionId),
+    ...(activeCashSession ? [activeCashSession.id] : []),
+  ]);
+  if (
+    [...linkedSales, ...linkedExpenses, ...linkedCashMovements].some(
+      (item) => item.cashSessionId && !knownSessionIds.has(item.cashSessionId),
+    )
+  ) {
+    return null;
+  }
   return {
     products,
-    sales,
-    expenses,
+    sales: linkedSales,
+    expenses: linkedExpenses,
     cashOpen: value.cashOpen,
     openingBalance: roundMoney(value.openingBalance),
     cashFund: roundMoney(cashFund),
     cashOpenedAt: value.cashOpenedAt,
-    cashMovements,
+    activeCashSession,
+    cashMovements: linkedCashMovements,
     cashClosures,
     operatorCredentials,
     ...(pinRecoveryCredential ? { pinRecoveryCredential } : {}),

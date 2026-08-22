@@ -14,6 +14,7 @@ flowchart LR
     API --> BK["Backups verificados<br/>diário, semanal e mensal"]
     BK --> GD["Google Drive<br/>OAuth drive.file"]
     API --> YT["yt-dlp"]
+    API --> GH["GitHub Releases<br/>aviso e SHA-256"]
     YT --> FF["FFmpeg"]
     FF --> MU["Biblioteca local<br/>de músicas"]
     LA["PoolPetiscos.exe"] --> UI
@@ -67,6 +68,10 @@ momento errado.
 - a chave de recuperação do PIN segue a mesma regra e aparece apenas na criação;
 - o Google Drive usa o escopo limitado `drive.file`; o token de atualização é
   protegido pela DPAPI do usuário Windows e nunca vai para o navegador;
+- o canal de atualização aceita apenas releases do repositório oficial e só
+  baixa o instalador quando nome, tamanho e SHA-256 publicados conferem;
+- a execução do instalador é manual; o serviço local não inicia uma atualização
+  silenciosa durante o atendimento;
 - o PIN serve para identificar o operador local e não substitui a proteção da
   conta do Windows nem a criptografia do computador;
 - nenhuma credencial de banco, maquininha ou certificado fica no frontend ou no
