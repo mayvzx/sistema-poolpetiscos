@@ -2,6 +2,36 @@
 
 Todas as mudanças relevantes do Pool Petiscos são registradas neste arquivo.
 
+## 1.7.0 — 2026-08-22
+
+### Sessões de caixa e resumo de fechamento
+
+- cria uma identificação única a cada abertura e liga a ela vendas, despesas,
+  sangrias e suprimentos;
+- registra quem abriu e quem fechou o caixa, preservando o histórico dos dois
+  operadores;
+- migra automaticamente registros anteriores para a sessão correspondente sem
+  apagar vendas, estoque, PINs, backups ou conexão do Google Drive;
+- substitui o recorte baseado apenas no horário por cálculos da sessão ativa,
+  evitando que movimentos antigos entrem no saldo de uma nova abertura;
+- adiciona no Financeiro o histórico de sessões, totais por pagamento,
+  conferência, retirada, fundo deixado e responsáveis;
+- gera um resumo de fechamento em PDF para guardar, imprimir ou enviar.
+- limita o histórico interno a 12 estados completos, mantendo recuperação
+  recente sem crescimento excessivo do SQLite ao longo dos anos;
+- rejeita sessões de caixa sobrepostas, identificadores reutilizados e
+  lançamentos vinculados fora do período correto.
+
+### Aviso seguro de atualização
+
+- consulta o release estável do repositório oficial uma vez por dia no
+  aplicativo Windows;
+- mostra um aviso discreto sem interromper o atendimento;
+- aceita para download apenas o instalador com nome, tamanho e SHA-256
+  publicados no release oficial;
+- baixa o arquivo para uma pasta separada e deixa a execução manual, sem
+  instalar versões silenciosamente durante um caixa aberto.
+
 ## 1.6.2 — 2026-08-21
 
 ### Fundo fixo e fechamento orientado

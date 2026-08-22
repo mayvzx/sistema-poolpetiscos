@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img alt="Versão" src="https://img.shields.io/badge/vers%C3%A3o-1.6.2-d9202c">
+  <img alt="Versão" src="https://img.shields.io/badge/vers%C3%A3o-1.7.0-d9202c">
   <img alt="Plataforma Windows" src="https://img.shields.io/badge/plataforma-Windows-302b29">
   <img alt="Banco SQLite" src="https://img.shields.io/badge/dados-SQLite-7458b4">
   <img alt="Status protótipo operacional" src="https://img.shields.io/badge/status-prot%C3%B3tipo%20operacional-dc9b19">
@@ -36,7 +36,8 @@ banco ou maquininha.
 - acesso de Elaine e Poolblay, com totais de vendas separados por operador;
 - PIN individual protegido, chave de recuperação e redefinição segura;
 - tamanho das letras ajustável e temas automático, claro e escuro;
-- abertura, movimentação, conferência e fechamento de caixa;
+- sessões explícitas de caixa, ligando cada venda e movimento à sua abertura;
+- resumo de cada fechamento, com formas de pagamento, responsáveis e PDF;
 - cadastro, alteração, exclusão, reposição e alerta de estoque;
 - comandas em **Aguardando**, **Em preparo**, **Pronto** e histórico;
 - observações por item, como **sem cebola** ou **sem tomate**;
@@ -50,6 +51,7 @@ banco ou maquininha.
   pelo Pool Petiscos;
 - busca de músicas no YouTube com até cinco resultados;
 - downloads locais com yt-dlp e conversão/reprodução com FFmpeg;
+- aviso diário de nova versão e download do instalador verificado por SHA-256;
 - inicialização automática, ícone próprio e atualização com backup obrigatório
   do banco antes da troca de arquivos;
 - tipografia ampliada, alvos de toque e animações suaves.
@@ -58,7 +60,7 @@ banco ou maquininha.
 
 Baixe o instalador mais recente em
 [Releases](https://github.com/mayvzx/sistema-poolpetiscos/releases/latest). O
-usuário final executa apenas `PoolPetiscos-Setup-1.6.2.exe`; as dependências já
+usuário final executa apenas `PoolPetiscos-Setup-1.7.0.exe`; as dependências já
 estão incluídas.
 
 > O protótipo atual ainda não possui assinatura Authenticode. O Windows pode
@@ -72,6 +74,7 @@ Os dados ficam separados do programa e são preservados nas atualizações:
 %LOCALAPPDATA%\PoolPetiscos\musicas
 %LOCALAPPDATA%\PoolPetiscos\logs
 %LOCALAPPDATA%\PoolPetiscos\update-backups
+%LOCALAPPDATA%\PoolPetiscos\updates
 ```
 
 Na desinstalação, o assistente pergunta se esses dados também devem ser

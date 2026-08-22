@@ -29,6 +29,7 @@ from local_service.storage import (
     StateStorage,
     default_database_path,
 )
+from local_service.update_checker import UpdateCheckError, UpdateChecker
 from local_service.youtube_search import (
     DEFAULT_YOUTUBE_SEARCH_LIMIT,
     YOUTUBE_SEARCH_CONCURRENCY,
@@ -42,7 +43,7 @@ from local_service.youtube_search import (
     validate_youtube_search_query,
 )
 
-SERVICE_VERSION = "1.6.2"
+SERVICE_VERSION = "1.7.0"
 DEFAULT_PORT = 18765
 MAX_BODY_BYTES = 32 * 1024
 MAX_STATE_BODY_BYTES = 10 * 1024 * 1024
@@ -384,6 +385,7 @@ class PoolCompanionServer(ThreadingHTTPServer):
             Callable[[str, int], list[dict[str, Any]]] | None
         ) = None,
         youtube_search_timeout_seconds: float = YOUTUBE_SEARCH_TIMEOUT_SECONDS,
+        update_checker: UpdateChecker | None = None,
     ) -> None:
         super().__init__(server_address, handler_class)
         self.music_directory = music_directory
@@ -398,6 +400,10 @@ class PoolCompanionServer(ThreadingHTTPServer):
         self.youtube_search_timeout_seconds = youtube_search_timeout_seconds
         self.youtube_search_slots = threading.BoundedSemaphore(
             YOUTUBE_SEARCH_CONCURRENCY
+        )
+        self.update_checker = update_checker or UpdateChecker(
+            SERVICE_VERSION,
+            home_directory / "updates",
         )
 
 
@@ -646,6 +652,18 @@ class PoolCompanionHandler(BaseHTTPRequestHandler):
                 }
             )
             return
+        if parsed.path == "/api/update/status":
+            if self._reject_sensitive_origin():
+                return
+            parameters = parse_qs(parsed.query, keep_blank_values=True)
+            force = parameters.get("force", ["0"])[0] == "1"
+            try:
+                status = self.pool_server.update_checker.check(force=force)
+            except UpdateCheckError as error:
+                self._send_json({"error": str(error)}, HTTPStatus.BAD_GATEWAY)
+                return
+            self._send_json(status)
+            return
         if parsed.path == "/api/music/library":
             self._send_json(
                 {"tracks": list_library(self.pool_server.music_directory)}
@@ -875,6 +893,28 @@ class PoolCompanionHandler(BaseHTTPRequestHandler):
                 },
                 HTTPStatus.CREATED,
             )
+            return
+        if parsed.path == "/api/update/download":
+            if self._reject_sensitive_origin():
+                return
+            try:
+                result = (
+                    self.pool_server.update_checker.download_verified_installer()
+                )
+            except UpdateCheckError as error:
+                self._send_json({"error": str(error)}, HTTPStatus.BAD_GATEWAY)
+                return
+            self._send_json(result, HTTPStatus.CREATED)
+            return
+        if parsed.path == "/api/update/open-folder":
+            if self._reject_sensitive_origin():
+                return
+            try:
+                result = self.pool_server.update_checker.open_update_folder()
+            except UpdateCheckError as error:
+                self._send_json({"error": str(error)}, HTTPStatus.BAD_GATEWAY)
+                return
+            self._send_json(result)
             return
         if parsed.path != "/api/music/download":
             self._send_json({"error": "Rota não encontrada."}, HTTPStatus.NOT_FOUND)

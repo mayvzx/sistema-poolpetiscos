@@ -14,6 +14,7 @@ flowchart LR
     API --> BK["Backups verificados<br/>diário, semanal e mensal"]
     BK --> GD["Google Drive<br/>OAuth drive.file"]
     API --> YT["yt-dlp"]
+    API --> GH["GitHub Releases<br/>aviso e SHA-256"]
     YT --> FF["FFmpeg"]
     FF --> MU["Biblioteca local<br/>de músicas"]
     LA["PoolPetiscos.exe"] --> UI
@@ -42,8 +43,9 @@ automaticamente junto com o launcher, evitando servidores locais órfãos.
 
 O estado atual é salvo de forma atômica em `app_state.state_json`. A aplicação
 trata venda, baixa de estoque e caixa como uma única revisão; assim não há risco
-de gravar apenas metade de uma operação. As últimas 50 revisões ficam em
-`state_history`.
+de gravar apenas metade de uma operação. As últimas 12 revisões ficam em
+`state_history`; como cada revisão contém o estado completo, esse limite evita
+crescimento desnecessário do banco e os períodos maiores ficam nos backups.
 
 Para leitura humana, o banco cria consultas SQLite somente leitura:
 `vw_produtos`, `vw_vendas`, `vw_itens_venda`, `vw_despesas`,
@@ -67,6 +69,10 @@ momento errado.
 - a chave de recuperação do PIN segue a mesma regra e aparece apenas na criação;
 - o Google Drive usa o escopo limitado `drive.file`; o token de atualização é
   protegido pela DPAPI do usuário Windows e nunca vai para o navegador;
+- o canal de atualização aceita apenas releases do repositório oficial e só
+  baixa o instalador quando nome, tamanho e SHA-256 publicados conferem;
+- a execução do instalador é manual; o serviço local não inicia uma atualização
+  silenciosa durante o atendimento;
 - o PIN serve para identificar o operador local e não substitui a proteção da
   conta do Windows nem a criptografia do computador;
 - nenhuma credencial de banco, maquininha ou certificado fica no frontend ou no
@@ -78,6 +84,19 @@ não entram no SQLite nem nos backups do caixa.
 
 ## Aplicação hospedada
 
-O Sites publica a mesma interface para demonstração. Sem o serviço instalado,
-essa versão trabalha apenas com o armazenamento do navegador. Ela não substitui
-o aplicativo Windows para operação real.
+A Vercel publica a mesma interface para demonstração e validação visual. Sem o
+serviço instalado, essa versão trabalha apenas com o armazenamento do
+navegador. Ela não substitui o aplicativo Windows para operação real.
+
+## Limites de escala
+
+A arquitetura atual é intencionalmente local e voltada a um caixa principal.
+Ela foi ensaiada com 41.600 vendas e 1.040 sessões, equivalentes a cerca de cinco
+anos de uma operação pequena. Consultas e gravações permaneceram válidas, e os
+backups compactos não carregam as revisões internas redundantes.
+
+Se o negócio passar a usar vários caixas simultâneos ou acumular um volume muito
+maior, vendas, itens e movimentos deverão migrar do documento atômico para
+tabelas SQL normalizadas. Essa evolução não é necessária para o cenário atual,
+mas está registrada como fronteira técnica, não como uma promessa de escala
+ilimitada.

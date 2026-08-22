@@ -25,7 +25,10 @@ BACKUP_RETENTION_DAYS = 30
 BACKUP_RETENTION_WEEKS = 12
 BACKUP_RETENTION_MONTHS = 12
 PRE_RESTORE_BACKUP_RETENTION = 10
-STATE_HISTORY_RETENTION = 50
+# Cada revisão contém o estado completo. Doze versões recentes cobrem falhas
+# transitórias sem multiplicar indefinidamente o tamanho do banco ao longo dos
+# anos; a retenção histórica continua nos backups diário, semanal e mensal.
+STATE_HISTORY_RETENTION = 12
 ONEDRIVE_ENVIRONMENT_KEYS = (
     "OneDriveCommercial",
     "OneDriveConsumer",
@@ -186,6 +189,12 @@ def _is_sale_item(value: object) -> bool:
     )
 
 
+def _has_valid_optional_session_id(value: dict[str, Any]) -> bool:
+    return "cashSessionId" not in value or _is_non_empty_string(
+        value.get("cashSessionId")
+    )
+
+
 def _is_sale(value: object) -> bool:
     if not isinstance(value, dict):
         return False
@@ -193,6 +202,7 @@ def _is_sale(value: object) -> bool:
     timestamp = value.get("timestamp")
     if (
         not _is_non_empty_string(value.get("id"))
+        or not _has_valid_optional_session_id(value)
         or not _is_timestamp(timestamp)
         or not _is_finite_number(value.get("total"), non_negative=True)
         or not _is_allowed_string(value.get("payment"), PAYMENT_METHODS)
@@ -230,6 +240,7 @@ def _is_expense(value: object) -> bool:
     return bool(
         isinstance(value, dict)
         and _is_non_empty_string(value.get("id"))
+        and _has_valid_optional_session_id(value)
         and _is_timestamp(value.get("timestamp"))
         and _is_non_empty_string(value.get("description"))
         and _is_non_empty_string(value.get("category"))
@@ -242,6 +253,7 @@ def _is_cash_movement(value: object) -> bool:
     return bool(
         isinstance(value, dict)
         and _is_non_empty_string(value.get("id"))
+        and _has_valid_optional_session_id(value)
         and _is_timestamp(value.get("timestamp"))
         and _is_non_empty_string(value.get("description"))
         and _is_finite_number(value.get("amount"), non_negative=True)
@@ -271,6 +283,27 @@ def _is_cash_closure(value: object) -> bool:
             (float(counted_balance) - float(expected_balance)) - float(difference)
         )
         <= 0.005
+    ):
+        return False
+    session_fields = (
+        "sessionId",
+        "openedByOperatorId",
+        "openedByOperatorName",
+        "closedByOperatorId",
+        "closedByOperatorName",
+    )
+    supplied_session_fields = [field in value for field in session_fields]
+    if any(supplied_session_fields) and not (
+        all(supplied_session_fields)
+        and _is_non_empty_string(value.get("sessionId"))
+        and _is_allowed_string(
+            value.get("openedByOperatorId"), SALE_OPERATOR_IDS
+        )
+        and _is_non_empty_string(value.get("openedByOperatorName"))
+        and _is_allowed_string(
+            value.get("closedByOperatorId"), SALE_OPERATOR_IDS
+        )
+        and _is_non_empty_string(value.get("closedByOperatorName"))
     ):
         return False
     closing_fields = ("cashFund", "withdrawalAmount", "remainingBalance")
@@ -303,6 +336,49 @@ def _has_unique_ids(values: list[object]) -> bool:
     return len(identifiers) == len(set(identifiers))
 
 
+def _cash_sessions_are_consistent(value: dict[str, Any]) -> bool:
+    closures = value["cashClosures"]
+    chronological = sorted(
+        closures,
+        key=lambda closure: (closure["openedAt"], closure["closedAt"]),
+    )
+    for previous, current in zip(chronological, chronological[1:]):
+        if float(current["openedAt"]) <= float(previous["closedAt"]):
+            return False
+
+    intervals = {
+        closure.get("sessionId", f"SESSAO-{closure['id']}"): (
+            float(closure["openedAt"]),
+            float(closure["closedAt"]),
+        )
+        for closure in closures
+    }
+    active_session = value.get("activeCashSession")
+    if isinstance(active_session, dict):
+        if active_session["id"] in intervals:
+            return False
+        if chronological and float(active_session["openedAt"]) <= float(
+            chronological[-1]["closedAt"]
+        ):
+            return False
+        intervals[active_session["id"]] = (
+            float(active_session["openedAt"]),
+            math.inf,
+        )
+
+    return all(
+        "cashSessionId" not in record
+        or (
+            record["cashSessionId"] in intervals
+            and intervals[record["cashSessionId"]][0]
+            <= float(record["timestamp"])
+            <= intervals[record["cashSessionId"]][1]
+        )
+        for collection in ("sales", "expenses", "cashMovements")
+        for record in value[collection]
+    )
+
+
 def _is_pool_state(value: object) -> bool:
     if not isinstance(value, dict):
         return False
@@ -330,6 +406,52 @@ def _is_pool_state(value: object) -> bool:
         )
         or not _is_timestamp(value.get("cashOpenedAt"))
     ):
+        return False
+    active_session = value.get("activeCashSession")
+    if active_session is not None and not (
+        isinstance(active_session, dict)
+        and _is_non_empty_string(active_session.get("id"))
+        and _is_timestamp(active_session.get("openedAt"))
+        and _is_finite_number(
+            active_session.get("openingBalance"), non_negative=True
+        )
+        and _is_allowed_string(
+            active_session.get("openedByOperatorId"), SALE_OPERATOR_IDS
+        )
+        and _is_non_empty_string(active_session.get("openedByOperatorName"))
+    ):
+        return False
+    if value.get("cashOpen") and "activeCashSession" in value and active_session is None:
+        return False
+    if not value.get("cashOpen") and active_session is not None:
+        return False
+    closures = value["cashClosures"]
+    closure_session_ids = [
+        closure.get("sessionId", f"SESSAO-{closure['id']}")
+        for closure in closures
+    ]
+    if len(closure_session_ids) != len(set(closure_session_ids)):
+        return False
+    known_session_ids = set(closure_session_ids)
+    if isinstance(active_session, dict):
+        if (
+            active_session["openedAt"] != value["cashOpenedAt"]
+            or abs(
+                float(active_session["openingBalance"])
+                - float(value["openingBalance"])
+            )
+            > 0.005
+        ):
+            return False
+        known_session_ids.add(active_session["id"])
+    if any(
+        record.get("cashSessionId") not in known_session_ids
+        for collection in ("sales", "expenses", "cashMovements")
+        for record in value[collection]
+        if "cashSessionId" in record
+    ):
+        return False
+    if not _cash_sessions_are_consistent(value):
         return False
     credentials = value.get("operatorCredentials")
     if not isinstance(credentials, dict) or any(
@@ -454,7 +576,7 @@ class StateStorage:
                         """
                     )
                     self._create_readable_views(connection)
-                    connection.execute("PRAGMA user_version = 3")
+                    connection.execute("PRAGMA user_version = 4")
                     connection.commit()
                 except Exception:
                     if connection.in_transaction:
@@ -495,6 +617,7 @@ class StateStorage:
             CREATE VIEW vw_vendas AS
             SELECT
                 json_extract(sale.value, '$.id') AS id,
+                json_extract(sale.value, '$.cashSessionId') AS sessao_caixa_id,
                 CAST(json_extract(sale.value, '$.timestamp') AS INTEGER)
                     AS data_hora_ms,
                 datetime(
@@ -536,6 +659,7 @@ class StateStorage:
             CREATE VIEW vw_comandas AS
             SELECT
                 json_extract(sale.value, '$.id') AS venda_id,
+                json_extract(sale.value, '$.cashSessionId') AS sessao_caixa_id,
                 COALESCE(
                     NULLIF(
                         TRIM(json_extract(sale.value, '$.customerName')),
@@ -595,6 +719,7 @@ class StateStorage:
             CREATE VIEW vw_itens_venda AS
             SELECT
                 json_extract(sale.value, '$.id') AS venda_id,
+                json_extract(sale.value, '$.cashSessionId') AS sessao_caixa_id,
                 CAST(json_extract(sale.value, '$.timestamp') AS INTEGER)
                     AS venda_data_hora_ms,
                 json_extract(item.value, '$.productId') AS produto_id,
@@ -627,6 +752,8 @@ class StateStorage:
             CREATE VIEW vw_despesas AS
             SELECT
                 json_extract(expense.value, '$.id') AS id,
+                json_extract(expense.value, '$.cashSessionId')
+                    AS sessao_caixa_id,
                 CAST(json_extract(expense.value, '$.timestamp') AS INTEGER)
                     AS data_hora_ms,
                 datetime(
@@ -649,6 +776,8 @@ class StateStorage:
             CREATE VIEW vw_movimentos_caixa AS
             SELECT
                 json_extract(movement.value, '$.id') AS id,
+                json_extract(movement.value, '$.cashSessionId')
+                    AS sessao_caixa_id,
                 CAST(json_extract(movement.value, '$.timestamp') AS INTEGER)
                     AS data_hora_ms,
                 datetime(
@@ -670,6 +799,10 @@ class StateStorage:
             CREATE VIEW vw_fechamentos_caixa AS
             SELECT
                 json_extract(closure.value, '$.id') AS id,
+                COALESCE(
+                    json_extract(closure.value, '$.sessionId'),
+                    'SESSAO-' || json_extract(closure.value, '$.id')
+                ) AS sessao_caixa_id,
                 CAST(json_extract(closure.value, '$.openedAt') AS INTEGER)
                     AS abertura_ms,
                 datetime(
@@ -686,6 +819,14 @@ class StateStorage:
                     'unixepoch',
                     'localtime'
                 ) AS fechamento,
+                COALESCE(
+                    json_extract(closure.value, '$.openedByOperatorName'),
+                    'Não identificado'
+                ) AS aberto_por,
+                COALESCE(
+                    json_extract(closure.value, '$.closedByOperatorName'),
+                    'Não identificado'
+                ) AS fechado_por,
                 CAST(
                     json_extract(closure.value, '$.openingBalance') AS REAL
                 ) AS saldo_inicial,
@@ -901,7 +1042,7 @@ class StateStorage:
         return self._backup_path("daily", now)
 
     def _write_verified_copy(self, destination: Path) -> None:
-        """Create an atomic SQLite copy and verify it before publication."""
+        """Create a compact, atomic SQLite copy and verify it."""
 
         temporary = destination.with_name(
             f".{destination.name}.{uuid.uuid4().hex}.tmp"
@@ -911,6 +1052,12 @@ class StateStorage:
         try:
             target = sqlite3.connect(temporary)
             source.backup(target)
+            # O backup já é um ponto completo de restauração. Os snapshots
+            # recentes pertencem apenas ao banco ativo e duplicariam o mesmo
+            # estado em cada arquivo diário, semanal e mensal.
+            target.execute("DELETE FROM state_history")
+            target.commit()
+            target.execute("VACUUM")
             integrity = target.execute("PRAGMA integrity_check").fetchone()
             if integrity is None or integrity[0] != "ok":
                 raise sqlite3.DatabaseError(

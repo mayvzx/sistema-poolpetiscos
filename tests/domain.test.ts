@@ -41,6 +41,7 @@ function validState(): PersistedPoolState {
     sales: [
       {
         id: "PV-TESTE",
+        cashSessionId: "CX-TESTE",
         timestamp,
         total: 18,
         payment: "Dinheiro",
@@ -65,6 +66,13 @@ function validState(): PersistedPoolState {
     openingBalance: 100,
     cashFund: DEFAULT_CASH_FUND,
     cashOpenedAt: timestamp - 60_000,
+    activeCashSession: {
+      id: "CX-TESTE",
+      openedAt: timestamp - 60_000,
+      openingBalance: 100,
+      openedByOperatorId: "elaine",
+      openedByOperatorName: "Elaine",
+    },
     cashMovements: [],
     cashClosures: [],
     operatorCredentials: {},
@@ -246,6 +254,7 @@ test("inicia uma instalação nova sem movimentações nem valores fictícios", 
   assert.equal(state.cashOpen, false);
   assert.equal(state.openingBalance, 0);
   assert.equal(state.cashFund, 130);
+  assert.equal(state.activeCashSession, null);
   assert.deepEqual(state.sales, []);
   assert.deepEqual(state.expenses, []);
   assert.deepEqual(state.cashMovements, []);
@@ -310,10 +319,112 @@ test("migra fechamentos antigos sem inventar uma retirada", () => {
   assert.equal(parsed.cashFund, 130);
   assert.deepEqual(parsed.cashClosures[0], {
     ...legacy.cashClosures[0],
+    sessionId: "SESSAO-FC-ANTIGO",
+    openedByOperatorId: "nao-identificado",
+    openedByOperatorName: "Não identificado",
+    closedByOperatorId: "nao-identificado",
+    closedByOperatorName: "Não identificado",
     cashFund: 130,
     withdrawalAmount: 0,
     remainingBalance: 130,
   });
+});
+
+test("liga registros legados à sessão de caixa correspondente", () => {
+  const state = structuredClone(validState());
+  delete state.sales[0].cashSessionId;
+
+  const parsed = parsePoolState(state);
+
+  assert.ok(parsed);
+  assert.equal(parsed.sales[0].cashSessionId, "CX-TESTE");
+});
+
+test("rejeita sessões sobrepostas, reutilizadas ou com registros fora do período", () => {
+  const reusedSession = structuredClone(validState());
+  reusedSession.cashClosures = [
+    {
+      id: "FC-ANTERIOR",
+      sessionId: reusedSession.activeCashSession!.id,
+      openedAt: reusedSession.cashOpenedAt - 120_000,
+      closedAt: reusedSession.cashOpenedAt - 90_000,
+      openedByOperatorId: "elaine",
+      openedByOperatorName: "Elaine",
+      closedByOperatorId: "elaine",
+      closedByOperatorName: "Elaine",
+      openingBalance: 130,
+      expectedBalance: 130,
+      countedBalance: 130,
+      difference: 0,
+      cashFund: 130,
+      withdrawalAmount: 0,
+      remainingBalance: 130,
+    },
+  ];
+  assert.equal(parsePoolState(reusedSession), null);
+
+  const outsideSession = structuredClone(validState());
+  outsideSession.sales[0].timestamp = outsideSession.cashOpenedAt - 1;
+  outsideSession.sales[0].statusUpdatedAt = outsideSession.sales[0].timestamp;
+  assert.equal(parsePoolState(outsideSession), null);
+
+  const overlapping = structuredClone(validState());
+  overlapping.cashOpen = false;
+  overlapping.activeCashSession = null;
+  overlapping.sales = [];
+  overlapping.cashClosures = [
+    {
+      ...reusedSession.cashClosures[0],
+      sessionId: "CX-1",
+    },
+    {
+      ...reusedSession.cashClosures[0],
+      id: "FC-2",
+      sessionId: "CX-2",
+      openedAt: reusedSession.cashOpenedAt - 100_000,
+      closedAt: reusedSession.cashOpenedAt - 80_000,
+    },
+  ];
+  assert.equal(parsePoolState(overlapping), null);
+});
+
+test("normaliza o histórico de fechamentos do mais recente para o mais antigo", () => {
+  const state = structuredClone(validState());
+  const baseClosure = {
+    id: "FC-ANTIGA",
+    sessionId: "CX-ANTIGA",
+    openedAt: state.cashOpenedAt - 240_000,
+    closedAt: state.cashOpenedAt - 180_000,
+    openedByOperatorId: "elaine" as const,
+    openedByOperatorName: "Elaine",
+    closedByOperatorId: "elaine" as const,
+    closedByOperatorName: "Elaine",
+    openingBalance: 130,
+    expectedBalance: 130,
+    countedBalance: 130,
+    difference: 0,
+    cashFund: 130,
+    withdrawalAmount: 0,
+    remainingBalance: 130,
+  };
+  state.cashClosures = [
+    baseClosure,
+    {
+      ...baseClosure,
+      id: "FC-RECENTE",
+      sessionId: "CX-RECENTE",
+      openedAt: state.cashOpenedAt - 120_000,
+      closedAt: state.cashOpenedAt - 90_000,
+    },
+  ];
+
+  const parsed = parsePoolState(state);
+
+  assert.ok(parsed);
+  assert.deepEqual(
+    parsed.cashClosures.map((closure) => closure.id),
+    ["FC-RECENTE", "FC-ANTIGA"],
+  );
 });
 
 test("rejeita verificadores de PIN adulterados ao restaurar", () => {

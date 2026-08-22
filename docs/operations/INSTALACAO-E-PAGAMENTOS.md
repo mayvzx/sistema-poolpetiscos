@@ -23,7 +23,9 @@ Banco, faixas e logs permanecem fora da instalação:
 %LOCALAPPDATA%\PoolPetiscos\update-backups
 ```
 
-Cada gravação no SQLite é transacional e as últimas 50 revisões são mantidas.
+Cada gravação no SQLite é transacional e as últimas 12 revisões recentes são
+mantidas. Esse limite evita crescimento excessivo; os históricos mais longos
+ficam nos backups automáticos.
 Cópias íntegras do banco são mantidas em calendários diário, semanal e mensal.
 Elas ficam disponíveis localmente e podem ser sincronizadas com o Google Drive
 depois que a proprietária conecta a conta. O OneDrive continua aceito como

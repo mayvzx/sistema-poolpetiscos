@@ -35,6 +35,8 @@ import {
 } from "./operator-security";
 import { getOperatorProfile } from "./operators";
 import { PinGuidance } from "./pin-guidance";
+import { UpdateSettings } from "./update-settings";
+import type { AppUpdateStatus } from "./update-companion";
 import type {
   OperatorCredential,
   OperatorCredentials,
@@ -48,6 +50,7 @@ type SettingsPanelProps = {
   displayPreferences: DisplayPreferences;
   resolvedTheme: ResolvedTheme;
   cashFund: number;
+  updateStatus: AppUpdateStatus | null;
   onCredentialChange: (
     operatorId: OperatorId,
     credential: OperatorCredential,
@@ -55,6 +58,7 @@ type SettingsPanelProps = {
   onRecoveryCredentialChange: (credential: OperatorCredential) => void;
   onDisplayPreferencesChange: (preferences: DisplayPreferences) => void;
   onCashFundChange: (cashFund: number) => void;
+  onUpdateStatusChange: (status: AppUpdateStatus) => void;
   onMessage: (
     message: string,
     tone?: "success" | "warning" | "info",
@@ -94,10 +98,12 @@ export function SettingsPanel({
   displayPreferences,
   resolvedTheme,
   cashFund,
+  updateStatus,
   onCredentialChange,
   onRecoveryCredentialChange,
   onDisplayPreferencesChange,
   onCashFundChange,
+  onUpdateStatusChange,
   onMessage,
 }: SettingsPanelProps) {
   const operator = getOperatorProfile(activeOperatorId);
@@ -354,6 +360,12 @@ export function SettingsPanel({
         key={cashFund}
         cashFund={cashFund}
         onCashFundChange={onCashFundChange}
+        onMessage={onMessage}
+      />
+
+      <UpdateSettings
+        status={updateStatus}
+        onStatusChange={onUpdateStatusChange}
         onMessage={onMessage}
       />
 

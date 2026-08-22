@@ -132,6 +132,18 @@ A retirada automática aparece no fluxo de caixa como **Sangria — Retirada
 automática no fechamento**. Pix e cartão continuam no financeiro, mas não
 entram no dinheiro físico contado na gaveta.
 
+Cada abertura recebe uma identificação própria. Todas as vendas, despesas,
+sangrias e suprimentos daquele período ficam ligados a essa sessão, mesmo que o
+caixa atravesse a meia-noite. O sistema também registra quem abriu e quem
+fechou.
+
+### Consultar o resumo de um fechamento
+
+Em **Financeiro > Sessões de caixa**, escolha um fechamento para ver vendas,
+formas de pagamento, saídas, valor contado, diferença, retirada, fundo deixado
+e responsáveis. Use **Baixar resumo em PDF** para guardar, imprimir ou enviar o
+fechamento daquele caixa.
+
 ### Consultar e baixar o fluxo de caixa
 
 Em **Financeiro > Fluxo de caixa**, escolha **Hoje**, **Este mês** ou
@@ -184,6 +196,12 @@ Uma versão nova pode ser instalada por cima da anterior. Os dados ficam em uma
 pasta separada e são preservados. Antes de trocar os arquivos, o instalador
 encerra o sistema, copia o banco para `update-backups` e confere a cópia. Se não
 conseguir proteger o banco, a atualização é interrompida.
+
+Em **Configurações > Atualizações do aplicativo**, use **Verificar agora**. Se
+houver uma versão nova, o sistema baixa somente o instalador cujo SHA-256 foi
+publicado no release oficial. Depois, use **Abrir pasta para instalar** e execute
+o arquivo quando o atendimento estiver encerrado. O aplicativo nunca instala
+uma versão sozinho.
 
 Para remover o protótipo depois de um teste, abra **Pool Petiscos > Desinstalar
 Pool Petiscos** no menu Iniciar. O desinstalador pergunta se também deve apagar
