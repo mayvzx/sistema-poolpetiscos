@@ -25,7 +25,10 @@ BACKUP_RETENTION_DAYS = 30
 BACKUP_RETENTION_WEEKS = 12
 BACKUP_RETENTION_MONTHS = 12
 PRE_RESTORE_BACKUP_RETENTION = 10
-STATE_HISTORY_RETENTION = 50
+# Cada revisão contém o estado completo. Doze versões recentes cobrem falhas
+# transitórias sem multiplicar indefinidamente o tamanho do banco ao longo dos
+# anos; a retenção histórica continua nos backups diário, semanal e mensal.
+STATE_HISTORY_RETENTION = 12
 ONEDRIVE_ENVIRONMENT_KEYS = (
     "OneDriveCommercial",
     "OneDriveConsumer",
@@ -333,6 +336,49 @@ def _has_unique_ids(values: list[object]) -> bool:
     return len(identifiers) == len(set(identifiers))
 
 
+def _cash_sessions_are_consistent(value: dict[str, Any]) -> bool:
+    closures = value["cashClosures"]
+    chronological = sorted(
+        closures,
+        key=lambda closure: (closure["openedAt"], closure["closedAt"]),
+    )
+    for previous, current in zip(chronological, chronological[1:]):
+        if float(current["openedAt"]) <= float(previous["closedAt"]):
+            return False
+
+    intervals = {
+        closure.get("sessionId", f"SESSAO-{closure['id']}"): (
+            float(closure["openedAt"]),
+            float(closure["closedAt"]),
+        )
+        for closure in closures
+    }
+    active_session = value.get("activeCashSession")
+    if isinstance(active_session, dict):
+        if active_session["id"] in intervals:
+            return False
+        if chronological and float(active_session["openedAt"]) <= float(
+            chronological[-1]["closedAt"]
+        ):
+            return False
+        intervals[active_session["id"]] = (
+            float(active_session["openedAt"]),
+            math.inf,
+        )
+
+    return all(
+        "cashSessionId" not in record
+        or (
+            record["cashSessionId"] in intervals
+            and intervals[record["cashSessionId"]][0]
+            <= float(record["timestamp"])
+            <= intervals[record["cashSessionId"]][1]
+        )
+        for collection in ("sales", "expenses", "cashMovements")
+        for record in value[collection]
+    )
+
+
 def _is_pool_state(value: object) -> bool:
     if not isinstance(value, dict):
         return False
@@ -404,6 +450,8 @@ def _is_pool_state(value: object) -> bool:
         for record in value[collection]
         if "cashSessionId" in record
     ):
+        return False
+    if not _cash_sessions_are_consistent(value):
         return False
     credentials = value.get("operatorCredentials")
     if not isinstance(credentials, dict) or any(
@@ -994,7 +1042,7 @@ class StateStorage:
         return self._backup_path("daily", now)
 
     def _write_verified_copy(self, destination: Path) -> None:
-        """Create an atomic SQLite copy and verify it before publication."""
+        """Create a compact, atomic SQLite copy and verify it."""
 
         temporary = destination.with_name(
             f".{destination.name}.{uuid.uuid4().hex}.tmp"
@@ -1004,6 +1052,12 @@ class StateStorage:
         try:
             target = sqlite3.connect(temporary)
             source.backup(target)
+            # O backup já é um ponto completo de restauração. Os snapshots
+            # recentes pertencem apenas ao banco ativo e duplicariam o mesmo
+            # estado em cada arquivo diário, semanal e mensal.
+            target.execute("DELETE FROM state_history")
+            target.commit()
+            target.execute("VACUUM")
             integrity = target.execute("PRAGMA integrity_check").fetchone()
             if integrity is None or integrity[0] != "ok":
                 raise sqlite3.DatabaseError(

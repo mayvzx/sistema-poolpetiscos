@@ -23,6 +23,19 @@ Os dados anteriores são migrados automaticamente. A atualização não apaga
 vendas, estoque, PINs, chave de recuperação, músicas, backups nem a conta do
 Google Drive conectada.
 
+## Validação de uso prolongado
+
+A revisão final simulou cinco anos de operação em um único caixa: 41.600 vendas
+distribuídas em 1.040 sessões. O estado foi validado e ordenado em cerca de
+69 ms; a gravação SQLite junto dos três backups automáticos terminou em cerca
+de 2,7 s na máquina de desenvolvimento. Cada backup compacto ficou com cerca
+de 12 MB.
+
+Esse ensaio não transforma o aplicativo em um sistema multi-caixa. A estrutura
+1.7.0 é adequada para um computador principal e dezenas de milhares de vendas;
+uma futura operação simultânea em várias máquinas exigirá tabelas SQL próprias
+e sincronização entre caixas.
+
 ## Aviso de atualização
 
 O aplicativo Windows consulta uma vez por dia se existe um release estável mais

@@ -29,7 +29,9 @@ from local_service.server import (
 )
 from local_service.storage import (
     RevisionConflict,
+    STATE_HISTORY_RETENTION,
     StateStorage,
+    _is_pool_state,
     default_database_path,
     resolve_backup_directory,
 )
@@ -165,7 +167,7 @@ class StateStorageTest(unittest.TestCase):
         *,
         clock: Callable[[], datetime] | None = None,
         backup_retention: int = 30,
-        history_retention: int = 50,
+        history_retention: int = STATE_HISTORY_RETENTION,
     ) -> StateStorage:
         return StateStorage(
             database_path=root / "data" / "pool-petiscos.db",
@@ -316,6 +318,91 @@ class StateStorageTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 storage.save(invalid, 2)
 
+    def test_rejects_inconsistent_cash_session_timelines(self) -> None:
+        active = minimal_pool_state()
+        active.update(
+            {
+                "cashOpen": True,
+                "openingBalance": 130,
+                "cashOpenedAt": 1_000,
+                "activeCashSession": {
+                    "id": "CX-ATIVA",
+                    "openedAt": 1_000,
+                    "openingBalance": 130,
+                    "openedByOperatorId": "elaine",
+                    "openedByOperatorName": "Elaine",
+                },
+            }
+        )
+        active["cashClosures"] = [
+            {
+                "id": "FC-ANTERIOR",
+                "sessionId": "CX-ATIVA",
+                "openedAt": 100,
+                "closedAt": 900,
+                "openedByOperatorId": "elaine",
+                "openedByOperatorName": "Elaine",
+                "closedByOperatorId": "elaine",
+                "closedByOperatorName": "Elaine",
+                "openingBalance": 130,
+                "expectedBalance": 130,
+                "countedBalance": 130,
+                "difference": 0,
+                "cashFund": 130,
+                "withdrawalAmount": 0,
+                "remainingBalance": 130,
+            }
+        ]
+        self.assertFalse(_is_pool_state(active))
+
+        outside_period = minimal_pool_state()
+        outside_period.update(active)
+        outside_period["cashClosures"] = []
+        outside_period["sales"] = [
+            {
+                "id": "PV-ANTERIOR",
+                "cashSessionId": "CX-ATIVA",
+                "timestamp": 999,
+                "total": 10,
+                "payment": "Dinheiro",
+                "operatorId": "elaine",
+                "operatorName": "Elaine",
+                "customerName": "Balcão 01",
+                "orderStatus": "entregue",
+                "statusUpdatedAt": 999,
+                "items": [
+                    {
+                        "productId": "P1",
+                        "name": "Pastel",
+                        "price": 10,
+                        "quantity": 1,
+                    }
+                ],
+            }
+        ]
+        self.assertFalse(_is_pool_state(outside_period))
+
+        overlapping = minimal_pool_state()
+        first_closure = {
+            "id": "FC-1",
+            "openedAt": 100,
+            "closedAt": 300,
+            "openingBalance": 130,
+            "expectedBalance": 130,
+            "countedBalance": 130,
+            "difference": 0,
+        }
+        overlapping["cashClosures"] = [
+            first_closure,
+            {
+                **first_closure,
+                "id": "FC-2",
+                "openedAt": 200,
+                "closedAt": 400,
+            },
+        ]
+        self.assertFalse(_is_pool_state(overlapping))
+
     def test_read_rejects_externally_corrupted_state(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             storage = self._storage(Path(directory))
@@ -375,10 +462,10 @@ class StateStorageTest(unittest.TestCase):
                 ).fetchone()[0]
             self.assertEqual(history_count, 1)
 
-    def test_history_keeps_the_latest_fifty_snapshots(self) -> None:
+    def test_history_keeps_only_the_bounded_recent_snapshots(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             storage = self._storage(Path(directory))
-            for number in range(55):
+            for number in range(STATE_HISTORY_RETENTION + 5):
                 storage.save(minimal_pool_state(number))
 
             with closing(sqlite3.connect(storage.database_path)) as connection:
@@ -388,7 +475,10 @@ class StateStorageTest(unittest.TestCase):
                     FROM state_history
                     """
                 ).fetchone()
-            self.assertEqual((first, last, count), (6, 55, 50))
+            self.assertEqual(
+                (first, last, count),
+                (6, STATE_HISTORY_RETENTION + 5, STATE_HISTORY_RETENTION),
+            )
 
     def test_backup_is_restorable_and_retention_is_enforced(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -441,7 +531,7 @@ class StateStorageTest(unittest.TestCase):
                 second_state,
             )
             self.assertEqual(revision, 2)
-            self.assertEqual(history_count, 2)
+            self.assertEqual(history_count, 0)
 
     def test_restore_validates_database_and_keeps_pre_restore_copy(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -525,8 +615,8 @@ class StateStorageTest(unittest.TestCase):
                     "cashClosures": [
                         {
                             "id": "FC1",
-                            "openedAt": 1_700_000_000_000,
-                            "closedAt": 1_700_000_500_000,
+                            "openedAt": 1_699_999_000_000,
+                            "closedAt": 1_699_999_500_000,
                             "openingBalance": 130,
                             "expectedBalance": 152,
                             "countedBalance": 152,
@@ -728,7 +818,7 @@ class StateApiTest(unittest.TestCase):
                 exported.execute(
                     "SELECT COUNT(*) FROM state_history"
                 ).fetchone()[0],
-                2,
+                0,
             )
 
     def test_update_api_is_notice_first_and_does_not_run_an_installer(self) -> None:

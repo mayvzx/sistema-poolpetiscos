@@ -138,7 +138,8 @@ vendas, estoque e controle gerencial da Pool Petiscos & Lanches.
 
 - SQLite passou a ser a fonte principal dos dados no computador do caixa;
 - gravações usam transação e detectam alterações concorrentes;
-- as últimas 50 revisões ficam preservadas no banco;
+- as últimas 12 revisões ficam preservadas no banco, evitando crescimento
+  excessivo; a retenção mais longa fica nos backups diário, semanal e mensal;
 - uma mudança ainda não sincronizada sobrevive ao fechamento inesperado da
   página e é reconciliada na próxima abertura;
 - o backup diário é criado como uma cópia SQLite íntegra e atômica;

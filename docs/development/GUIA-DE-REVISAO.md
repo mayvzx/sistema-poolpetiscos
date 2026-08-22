@@ -60,7 +60,7 @@ inteiro.
 - falha ao iniciar o site local encerra os processos já abertos;
 - modal fecha com Escape, prende o foco e volta ao controle anterior;
 - atalhos de navegação ficam preservados no endereço (`#venda`, `#estoque` etc.);
-- dados são gravados em SQLite e mantêm as últimas 50 revisões;
+- dados são gravados em SQLite e mantêm as últimas 12 revisões recentes;
 - alterações pendentes são recuperadas depois de um fechamento inesperado;
 - backups SQLite diários passam por verificação de integridade;
 - uma cópia íntegra do SQLite pode ser baixada sem interromper o caixa;

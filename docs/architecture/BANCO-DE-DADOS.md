@@ -43,6 +43,11 @@ botão **Baixar banco completo** gera o SQLite voltado à auditoria técnica.
 As tabelas internas `app_state` e `state_history` garantem gravação atômica e
 recuperação de revisões. Para leitura comum, prefira as consultas `vw_*`.
 
+Os arquivos exportados e os backups automáticos mantêm o `app_state` completo,
+mas removem os snapshots redundantes de `state_history` antes da verificação de
+integridade. Cada arquivo continua restaurável e fica menor para guardar
+localmente ou enviar ao Google Drive.
+
 Os PINs nunca aparecem nessas consultas. O estado interno contém somente um
 verificador derivado com PBKDF2-SHA-256 e um sal aleatório por perfil, não o PIN
 em texto legível. Ainda assim, trate o banco e os backups como arquivos

@@ -305,7 +305,7 @@ function parseActiveCashSession(
   },
 ): ActiveCashSession | null {
   if (!fallback.cashOpen) return null;
-  if (value === undefined || value === null) {
+  if (value === undefined) {
     return {
       id: `SESSAO-ABERTA-${Math.trunc(fallback.openedAt)}`,
       openedAt: fallback.openedAt,
@@ -314,6 +314,7 @@ function parseActiveCashSession(
       openedByOperatorName: operatorNameForSale("nao-identificado"),
     };
   }
+  if (value === null) return null;
   if (
     !isRecord(value) ||
     !isNonEmptyString(value.id) ||
@@ -332,6 +333,59 @@ function parseActiveCashSession(
       ? value.openedByOperatorName.trim()
       : operatorNameForSale(openedByOperatorId),
   };
+}
+
+function hasConsistentCashSessionTimeline(
+  cashClosures: CashClosure[],
+  activeCashSession: ActiveCashSession | null,
+) {
+  const chronological = [...cashClosures].sort(
+    (left, right) =>
+      left.openedAt - right.openedAt || left.closedAt - right.closedAt,
+  );
+  for (let index = 1; index < chronological.length; index += 1) {
+    if (chronological[index].openedAt <= chronological[index - 1].closedAt) {
+      return false;
+    }
+  }
+  if (!activeCashSession) return true;
+  if (
+    cashClosures.some(
+      (closure) => closure.sessionId === activeCashSession.id,
+    )
+  ) {
+    return false;
+  }
+  const latestClosedAt = chronological.at(-1)?.closedAt;
+  return latestClosedAt === undefined || activeCashSession.openedAt > latestClosedAt;
+}
+
+function recordsBelongToTheirCashSessions(
+  records: Array<{ timestamp: number; cashSessionId?: string }>,
+  cashClosures: CashClosure[],
+  activeCashSession: ActiveCashSession | null,
+) {
+  const intervals = new Map(
+    cashClosures.map((closure) => [
+      closure.sessionId,
+      { openedAt: closure.openedAt, closedAt: closure.closedAt },
+    ]),
+  );
+  if (activeCashSession) {
+    intervals.set(activeCashSession.id, {
+      openedAt: activeCashSession.openedAt,
+      closedAt: Number.POSITIVE_INFINITY,
+    });
+  }
+  return records.every((record) => {
+    if (!record.cashSessionId) return true;
+    const interval = intervals.get(record.cashSessionId);
+    return Boolean(
+      interval &&
+        record.timestamp >= interval.openedAt &&
+        record.timestamp <= interval.closedAt,
+    );
+  });
 }
 
 function linkLegacyCashSession<T extends { timestamp: number; cashSessionId?: string }>(
@@ -447,6 +501,7 @@ export function parsePoolState(value: unknown): PersistedPoolState | null {
     openingBalance: value.openingBalance,
   });
   if (value.cashOpen && !activeCashSession) return null;
+  if (!value.cashOpen && value.activeCashSession != null) return null;
   if (
     activeCashSession &&
     (activeCashSession.openedAt !== value.cashOpenedAt ||
@@ -470,22 +525,42 @@ export function parsePoolState(value: unknown): PersistedPoolState | null {
   ) {
     return null;
   }
+  if (!hasConsistentCashSessionTimeline(cashClosures, activeCashSession)) {
+    return null;
+  }
+  const normalizedCashClosures = [...cashClosures].sort(
+    (left, right) =>
+      right.closedAt - left.closedAt || right.openedAt - left.openedAt,
+  );
   const linkedSales = sales.map((sale) =>
-    linkLegacyCashSession(sale, cashClosures, activeCashSession),
+    linkLegacyCashSession(sale, normalizedCashClosures, activeCashSession),
   );
   const linkedExpenses = expenses.map((expense) =>
-    linkLegacyCashSession(expense, cashClosures, activeCashSession),
+    linkLegacyCashSession(expense, normalizedCashClosures, activeCashSession),
   );
   const linkedCashMovements = cashMovements.map((movement) =>
-    linkLegacyCashSession(movement, cashClosures, activeCashSession),
+    linkLegacyCashSession(
+      movement,
+      normalizedCashClosures,
+      activeCashSession,
+    ),
   );
   const knownSessionIds = new Set([
-    ...cashClosures.map((closure) => closure.sessionId),
+    ...normalizedCashClosures.map((closure) => closure.sessionId),
     ...(activeCashSession ? [activeCashSession.id] : []),
   ]);
   if (
     [...linkedSales, ...linkedExpenses, ...linkedCashMovements].some(
       (item) => item.cashSessionId && !knownSessionIds.has(item.cashSessionId),
+    )
+  ) {
+    return null;
+  }
+  if (
+    !recordsBelongToTheirCashSessions(
+      [...linkedSales, ...linkedExpenses, ...linkedCashMovements],
+      normalizedCashClosures,
+      activeCashSession,
     )
   ) {
     return null;
@@ -500,7 +575,7 @@ export function parsePoolState(value: unknown): PersistedPoolState | null {
     cashOpenedAt: value.cashOpenedAt,
     activeCashSession,
     cashMovements: linkedCashMovements,
-    cashClosures,
+    cashClosures: normalizedCashClosures,
     operatorCredentials,
     ...(pinRecoveryCredential ? { pinRecoveryCredential } : {}),
   };

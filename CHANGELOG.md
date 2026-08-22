@@ -17,6 +17,10 @@ Todas as mudanças relevantes do Pool Petiscos são registradas neste arquivo.
 - adiciona no Financeiro o histórico de sessões, totais por pagamento,
   conferência, retirada, fundo deixado e responsáveis;
 - gera um resumo de fechamento em PDF para guardar, imprimir ou enviar.
+- limita o histórico interno a 12 estados completos, mantendo recuperação
+  recente sem crescimento excessivo do SQLite ao longo dos anos;
+- rejeita sessões de caixa sobrepostas, identificadores reutilizados e
+  lançamentos vinculados fora do período correto.
 
 ### Aviso seguro de atualização
 

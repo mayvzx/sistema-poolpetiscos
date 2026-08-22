@@ -43,8 +43,9 @@ automaticamente junto com o launcher, evitando servidores locais órfãos.
 
 O estado atual é salvo de forma atômica em `app_state.state_json`. A aplicação
 trata venda, baixa de estoque e caixa como uma única revisão; assim não há risco
-de gravar apenas metade de uma operação. As últimas 50 revisões ficam em
-`state_history`.
+de gravar apenas metade de uma operação. As últimas 12 revisões ficam em
+`state_history`; como cada revisão contém o estado completo, esse limite evita
+crescimento desnecessário do banco e os períodos maiores ficam nos backups.
 
 Para leitura humana, o banco cria consultas SQLite somente leitura:
 `vw_produtos`, `vw_vendas`, `vw_itens_venda`, `vw_despesas`,
@@ -83,6 +84,19 @@ não entram no SQLite nem nos backups do caixa.
 
 ## Aplicação hospedada
 
-O Sites publica a mesma interface para demonstração. Sem o serviço instalado,
-essa versão trabalha apenas com o armazenamento do navegador. Ela não substitui
-o aplicativo Windows para operação real.
+A Vercel publica a mesma interface para demonstração e validação visual. Sem o
+serviço instalado, essa versão trabalha apenas com o armazenamento do
+navegador. Ela não substitui o aplicativo Windows para operação real.
+
+## Limites de escala
+
+A arquitetura atual é intencionalmente local e voltada a um caixa principal.
+Ela foi ensaiada com 41.600 vendas e 1.040 sessões, equivalentes a cerca de cinco
+anos de uma operação pequena. Consultas e gravações permaneceram válidas, e os
+backups compactos não carregam as revisões internas redundantes.
+
+Se o negócio passar a usar vários caixas simultâneos ou acumular um volume muito
+maior, vendas, itens e movimentos deverão migrar do documento atômico para
+tabelas SQL normalizadas. Essa evolução não é necessária para o cenário atual,
+mas está registrada como fronteira técnica, não como uma promessa de escala
+ilimitada.
