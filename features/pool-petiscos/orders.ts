@@ -1,4 +1,5 @@
 import type { OrderStatus, Sale } from "./types";
+import { formatDateKey } from "./domain";
 
 export const ACTIVE_ORDER_STATUSES: readonly OrderStatus[] = [
   "aguardando",
@@ -25,6 +26,29 @@ export function sortOrdersNewestFirst(sales: Sale[]) {
   return [...sales].sort(
     (left, right) => right.statusUpdatedAt - left.statusUpdatedAt,
   );
+}
+
+const COUNTER_ORDER_PATTERN = /^Balcão (\d+)$/;
+
+export function resolveOrderCustomerName(
+  customerName: string,
+  sales: Sale[],
+  timestamp: number,
+) {
+  const informedName = customerName.trim();
+  if (informedName) return informedName;
+
+  const orderDate = formatDateKey(timestamp);
+  const usedNumbers = new Set(
+    sales
+      .filter((sale) => formatDateKey(sale.timestamp) === orderDate)
+      .map((sale) => COUNTER_ORDER_PATTERN.exec(sale.customerName)?.[1])
+      .filter((value): value is string => Boolean(value))
+      .map(Number),
+  );
+  let nextNumber = 1;
+  while (usedNumbers.has(nextNumber)) nextNumber += 1;
+  return `Balcão ${String(nextNumber).padStart(2, "0")}`;
 }
 
 export function nextOrderStatus(status: OrderStatus): OrderStatus | null {

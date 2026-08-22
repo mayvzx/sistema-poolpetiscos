@@ -319,6 +319,36 @@ html[data-pool-theme="dark"] textarea::placeholder {
   color: #938984;
 }
 
+.pool-primary-action:disabled {
+  border-color: #ded7d2;
+  background-color: #eee8e4 !important;
+  color: #615955 !important;
+  box-shadow: none;
+}
+
+html[data-pool-theme="dark"] .pool-primary-action:disabled {
+  border-color: #504844;
+  background-color: #393330 !important;
+  color: #c8bfba !important;
+}
+
+html[data-pool-theme="dark"] [class*="hover:bg-white"]:hover,
+html[data-pool-theme="dark"] [class*="hover:bg-[#f3efec]"]:hover,
+html[data-pool-theme="dark"] [class*="hover:bg-[#f7f5f2]"]:hover,
+html[data-pool-theme="dark"] [class*="hover:bg-[#faf8f6]"]:hover,
+html[data-pool-theme="dark"] [class*="hover:bg-[#fdfbf9]"]:hover {
+  background-color: #332e2b !important;
+}
+
+html[data-pool-theme="dark"] [class*="hover:bg-[#fff0f1]"]:hover,
+html[data-pool-theme="dark"] [class*="hover:bg-[#fff7f7]"]:hover {
+  background-color: #472529 !important;
+}
+
+html[data-pool-theme="dark"] .pool-stock-row:hover {
+  background-color: #332e2b !important;
+}
+
 html[data-pool-theme="dark"] .pool-settings-card,
 html[data-pool-theme="dark"] .pool-soft-panel,
 html[data-pool-theme="dark"] .pool-preview {

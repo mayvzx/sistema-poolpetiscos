@@ -20,6 +20,18 @@ O fundo pode ser alterado em **Configurações > Fundo fixo para troco**. O valo
 configurado é sugerido na próxima abertura, mas continua editável para que o
 operador confirme o dinheiro físico disponível.
 
+## Nova venda mais rápida
+
+O resumo do pedido agora mantém o total e o botão de finalizar visíveis. Quando
+a comanda tiver muitos produtos, somente a lista de itens rola dentro do card,
+sem obrigar o operador a percorrer a página inteira.
+
+O nome da comanda passou a ser opcional. Quando o cliente não informar o nome,
+basta deixar o campo vazio: o sistema usará automaticamente **Balcão 01**,
+**Balcão 02** e assim por diante naquele dia. Também foram corrigidos o
+contraste do botão desabilitado e os efeitos de passar o mouse no tema escuro,
+inclusive na tabela do estoque.
+
 ## Compatibilidade e atualização
 
 Execute `PoolPetiscos-Setup-1.6.2.exe` diretamente por cima da instalação

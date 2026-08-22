@@ -65,10 +65,14 @@ letras em outros dispositivos.
 2. Escolha os produtos e confira as quantidades.
 3. Se necessário, escreva uma observação abaixo do item, como **sem cebola** ou
    **sem tomate**.
-4. Informe o nome da pessoa que fez o pedido.
+4. Informe o nome da pessoa, se souber. Se deixar em branco, o sistema cria um
+   identificador automático como **Balcão 01**.
 5. Selecione Pix, dinheiro, débito ou crédito.
 6. Em dinheiro, informe o valor recebido e confira o **Troco**.
 7. Selecione **Finalizar e criar comanda**.
+
+O total e o botão de finalizar permanecem visíveis. Em pedidos maiores, role
+somente a lista de itens dentro do card **Pedido atual**.
 
 Pix, débito e crédito são registrados como forma de pagamento, mas ainda precisam ser
 confirmados na maquininha. O sistema não deve considerar uma transação aprovada
