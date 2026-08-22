@@ -258,7 +258,7 @@ def _is_cash_closure(value: object) -> bool:
     expected_balance = value.get("expectedBalance")
     counted_balance = value.get("countedBalance")
     difference = value.get("difference")
-    return bool(
+    if not (
         _is_non_empty_string(value.get("id"))
         and _is_timestamp(opened_at)
         and _is_timestamp(closed_at)
@@ -269,6 +269,28 @@ def _is_cash_closure(value: object) -> bool:
         and _is_finite_number(difference)
         and abs(
             (float(counted_balance) - float(expected_balance)) - float(difference)
+        )
+        <= 0.005
+    ):
+        return False
+    closing_fields = ("cashFund", "withdrawalAmount", "remainingBalance")
+    supplied_fields = [field in value for field in closing_fields]
+    if not any(supplied_fields):
+        return True
+    if not all(supplied_fields):
+        return False
+    cash_fund = value.get("cashFund")
+    withdrawal_amount = value.get("withdrawalAmount")
+    remaining_balance = value.get("remainingBalance")
+    return bool(
+        _is_finite_number(cash_fund, non_negative=True)
+        and _is_finite_number(withdrawal_amount, non_negative=True)
+        and _is_finite_number(remaining_balance, non_negative=True)
+        and float(remaining_balance) <= float(cash_fund) + 0.005
+        and abs(
+            float(counted_balance)
+            - float(withdrawal_amount)
+            - float(remaining_balance)
         )
         <= 0.005
     )
@@ -302,6 +324,10 @@ def _is_pool_state(value: object) -> bool:
     if (
         not isinstance(value.get("cashOpen"), bool)
         or not _is_finite_number(value.get("openingBalance"), non_negative=True)
+        or (
+            "cashFund" in value
+            and not _is_finite_number(value.get("cashFund"), non_negative=True)
+        )
         or not _is_timestamp(value.get("cashOpenedAt"))
     ):
         return False
@@ -670,7 +696,15 @@ class StateStorage:
                     json_extract(closure.value, '$.countedBalance') AS REAL
                 ) AS saldo_contado,
                 CAST(json_extract(closure.value, '$.difference') AS REAL)
-                    AS diferenca
+                    AS diferenca,
+                CAST(json_extract(closure.value, '$.cashFund') AS REAL)
+                    AS fundo_troco,
+                CAST(
+                    json_extract(closure.value, '$.withdrawalAmount') AS REAL
+                ) AS retirada_fechamento,
+                CAST(
+                    json_extract(closure.value, '$.remainingBalance') AS REAL
+                ) AS saldo_deixado
             FROM app_state
             JOIN json_each(
                 COALESCE(app_state.state_json, '{}'),

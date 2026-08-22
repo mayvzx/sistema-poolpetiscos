@@ -4,6 +4,7 @@ import {
   formatOrderWait,
   nextOrderStatus,
   previousOrderStatus,
+  resolveOrderCustomerName,
   sortOrdersOldestFirst,
 } from "../features/pool-petiscos/orders";
 import type { Sale } from "../features/pool-petiscos/types";
@@ -52,4 +53,53 @@ test("mostra o tempo de espera em linguagem curta", () => {
   assert.equal(formatOrderWait(now - 30_000, now), "agora");
   assert.equal(formatOrderWait(now - 18 * 60_000, now), "há 18 min");
   assert.equal(formatOrderWait(now - 75 * 60_000, now), "há 1h 15min");
+});
+
+test("usa o nome informado ou cria uma identificação simples de balcão", () => {
+  const timestamp = Date.parse("2026-08-22T12:00:00-03:00");
+  const base: Sale = {
+    id: "PV-1",
+    timestamp,
+    total: 10,
+    payment: "Pix",
+    operatorId: "elaine",
+    operatorName: "Elaine",
+    customerName: "Balcão 01",
+    orderStatus: "aguardando",
+    statusUpdatedAt: timestamp,
+    items: [{ productId: "P1", name: "Pastel", price: 10, quantity: 1 }],
+  };
+
+  assert.equal(resolveOrderCustomerName("  Maria  ", [base], timestamp), "Maria");
+  assert.equal(resolveOrderCustomerName("", [base], timestamp), "Balcão 02");
+  assert.equal(
+    resolveOrderCustomerName(
+      "",
+      [
+        base,
+        {
+          ...base,
+          id: "PV-3",
+          customerName: "Balcão 03",
+        },
+      ],
+      timestamp,
+    ),
+    "Balcão 02",
+  );
+  assert.equal(
+    resolveOrderCustomerName(
+      "",
+      [
+        base,
+        {
+          ...base,
+          id: "PV-OLD",
+          timestamp: Date.parse("2026-08-21T12:00:00-03:00"),
+        },
+      ],
+      timestamp,
+    ),
+    "Balcão 02",
+  );
 });

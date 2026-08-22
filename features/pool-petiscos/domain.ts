@@ -2,6 +2,7 @@ import type { Product, Sale } from "./types";
 
 export const RECIFE_TIME_ZONE = "America/Recife";
 export const BUSINESS_HOURS = "Qui, Sex, Sáb e Dom • 16h–23h";
+export const DEFAULT_CASH_FUND = 130;
 
 const BUSINESS_DAYS = new Set(["Sun", "Thu", "Fri", "Sat"]);
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
@@ -179,6 +180,36 @@ export function calculateCashBalance({
   return roundMoney(
     openingBalance + cashSalesTotal - cashExpenseTotal + cashMovementTotal,
   );
+}
+
+export function calculateCashClosing({
+  expectedBalance,
+  countedBalance,
+  cashFund,
+}: {
+  expectedBalance: number;
+  countedBalance: number;
+  cashFund: number;
+}) {
+  const normalizedExpected = roundMoney(expectedBalance);
+  const normalizedCounted = roundMoney(Math.max(0, countedBalance));
+  const normalizedFund = roundMoney(Math.max(0, cashFund));
+  const withdrawalAmount = roundMoney(
+    Math.max(0, normalizedCounted - normalizedFund),
+  );
+  const remainingBalance = roundMoney(
+    normalizedCounted - withdrawalAmount,
+  );
+
+  return {
+    difference: roundMoney(normalizedCounted - normalizedExpected),
+    cashFund: normalizedFund,
+    withdrawalAmount,
+    remainingBalance,
+    fundShortfall: roundMoney(
+      Math.max(0, normalizedFund - remainingBalance),
+    ),
+  };
 }
 
 export function isLowStock(

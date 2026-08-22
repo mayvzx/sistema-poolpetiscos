@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { INITIAL_PRODUCTS } from "./catalog-data";
 import { currency } from "./domain";
+import { DEFAULT_CASH_FUND } from "./domain";
 import { parsePoolState, STORAGE_KEY } from "./persistence";
 import type { PersistedPoolState, Product, View } from "./types";
 
@@ -206,6 +207,7 @@ export function createInitialPoolState(): PersistedPoolState {
     expenses: [],
     cashOpen: false,
     openingBalance: 0,
+    cashFund: DEFAULT_CASH_FUND,
     cashOpenedAt: Date.now(),
     cashMovements: [],
     cashClosures: [],

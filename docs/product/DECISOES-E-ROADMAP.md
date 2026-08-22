@@ -177,7 +177,13 @@ Não implementar com dados inventados:
 - estoque inicial real;
 - valor habitual de abertura;
 - especificações do computador;
-- rotina real de sangria, despesas e fechamento.
+
+## Regras operacionais confirmadas na validação
+
+- o fundo habitual é R$ 130 e deve permanecer na gaveta após cada fechamento;
+- o valor excedente contado é retirado no fechamento e registrado como sangria;
+- a próxima abertura sugere novamente o fundo configurado, sem carregar as
+  vendas em dinheiro da sessão anterior.
 
 ## Operação local em desenvolvimento
 

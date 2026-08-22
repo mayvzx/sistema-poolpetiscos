@@ -17,6 +17,7 @@ import {
 import { type FormEvent, useMemo, useState } from "react";
 import { BackupSettings } from "./backup-settings";
 import { downloadRecoveryKeyFile } from "./browser-download";
+import { CashFundSettings } from "./cash-fund-settings";
 import {
   FONT_SCALE_STEP,
   MAX_FONT_SCALE,
@@ -46,12 +47,14 @@ type SettingsPanelProps = {
   recoveryCredential?: OperatorCredential;
   displayPreferences: DisplayPreferences;
   resolvedTheme: ResolvedTheme;
+  cashFund: number;
   onCredentialChange: (
     operatorId: OperatorId,
     credential: OperatorCredential,
   ) => void;
   onRecoveryCredentialChange: (credential: OperatorCredential) => void;
   onDisplayPreferencesChange: (preferences: DisplayPreferences) => void;
+  onCashFundChange: (cashFund: number) => void;
   onMessage: (
     message: string,
     tone?: "success" | "warning" | "info",
@@ -90,9 +93,11 @@ export function SettingsPanel({
   recoveryCredential,
   displayPreferences,
   resolvedTheme,
+  cashFund,
   onCredentialChange,
   onRecoveryCredentialChange,
   onDisplayPreferencesChange,
+  onCashFundChange,
   onMessage,
 }: SettingsPanelProps) {
   const operator = getOperatorProfile(activeOperatorId);
@@ -344,6 +349,13 @@ export function SettingsPanel({
           </p>
         </section>
       </div>
+
+      <CashFundSettings
+        key={cashFund}
+        cashFund={cashFund}
+        onCashFundChange={onCashFundChange}
+        onMessage={onMessage}
+      />
 
       <section className="pool-settings-card rounded-[24px] border border-[#ebe5e1] bg-white p-5 shadow-sm sm:p-7">
         <div className="flex items-start gap-4">

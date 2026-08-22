@@ -2,6 +2,35 @@
 
 Todas as mudanças relevantes do Pool Petiscos são registradas neste arquivo.
 
+## 1.6.2 — 2026-08-21
+
+### Fundo fixo e fechamento orientado
+
+- configura R$ 130 como fundo de troco inicial, com valor editável nas
+  Configurações;
+- preenche a próxima abertura com o fundo configurado, mantendo a confirmação
+  do valor físico pelo operador;
+- pede a contagem total antes da retirada e separa claramente diferença real,
+  retirada do movimento e dinheiro deixado na gaveta;
+- registra automaticamente a retirada excedente como sangria no fluxo de caixa;
+- guarda em cada fechamento o fundo usado, a retirada e o saldo remanescente;
+- mostra, quando o caixa está fechado, o valor realmente deixado para a próxima
+  abertura em vez do saldo esperado da sessão anterior;
+- migra estados e fechamentos anteriores sem alterar vendas, PINs, backups ou
+  histórico já registrado.
+
+### Venda mais rápida e contraste revisado
+
+- mantém o total e o botão de finalizar sempre visíveis, com rolagem apenas na
+  parte variável do pedido quando a comanda tiver muitos itens;
+- torna o nome da comanda opcional e identifica pedidos sem nome como
+  **Balcão 01**, **Balcão 02** e assim por diante, reiniciando a sequência a
+  cada dia;
+- melhora a aparência e a legibilidade do botão de finalizar quando ele está
+  desabilitado nos temas claro e escuro;
+- corrige os hovers do tema escuro, inclusive no estoque, para que o fundo não
+  fique branco nem esconda o nome dos produtos.
+
 ## 1.6.1 — 2026-08-20
 
 ### Revisão final de confiabilidade

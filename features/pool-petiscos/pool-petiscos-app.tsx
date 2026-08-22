@@ -59,6 +59,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import { downloadBlob } from "./browser-download";
+import { CashClosingForm } from "./cash-closing-form";
 import { StartupScreen } from "./startup-screen";
 import { OperatorLogin } from "./operator-login";
 import { SettingsPanel } from "./settings-panel";
@@ -72,8 +73,10 @@ import {
 import {
   buildDailyRevenue,
   calculateCashBalance,
+  calculateCashClosing,
   createRecordId,
   currency,
+  DEFAULT_CASH_FUND,
   formatDateKey,
   formatTime,
   getBusinessStatus,
@@ -100,6 +103,7 @@ import {
   nextOrderStatus,
   ORDER_STATUS_LABELS,
   previousOrderStatus,
+  resolveOrderCustomerName,
   sortOrdersNewestFirst,
   sortOrdersOldestFirst,
 } from "./orders";
@@ -221,6 +225,7 @@ export default function PoolPetiscosApp() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [cashOpen, setCashOpen] = useState(false);
   const [openingBalance, setOpeningBalance] = useState(0);
+  const [cashFund, setCashFund] = useState(DEFAULT_CASH_FUND);
   const [cashOpenedAt, setCashOpenedAt] = useState(() => Date.now());
   const [cashMovements, setCashMovements] = useState<CashMovement[]>([]);
   const [cashClosures, setCashClosures] = useState<CashClosure[]>([]);
@@ -480,6 +485,7 @@ export default function PoolPetiscosApp() {
     setExpenses(state.expenses);
     setCashOpen(state.cashOpen);
     setOpeningBalance(state.openingBalance);
+    setCashFund(state.cashFund);
     setCashOpenForm(String(state.openingBalance));
     setCashOpenedAt(state.cashOpenedAt);
     setCashMovements(state.cashMovements);
@@ -785,6 +791,7 @@ export default function PoolPetiscosApp() {
       expenses,
       cashOpen,
       openingBalance,
+      cashFund,
       cashOpenedAt,
       cashMovements,
       cashClosures,
@@ -840,6 +847,7 @@ export default function PoolPetiscosApp() {
     };
   }, [
     cashClosures,
+    cashFund,
     cashMovements,
     cashOpen,
     cashOpenedAt,
@@ -1201,6 +1209,10 @@ export default function PoolPetiscosApp() {
     cashExpenseTotal,
     cashMovementTotal,
   });
+  const latestCashClosure = cashClosures[0];
+  const displayedCashBalance = cashOpen
+    ? cashBalance
+    : (latestCashClosure?.remainingBalance ?? 0);
   const lowStock = useMemo(
     () => products.filter(isLowStock),
     [products],
@@ -1249,6 +1261,16 @@ export default function PoolPetiscosApp() {
         (!query || normalizeText(product.name).includes(query)),
     );
   }, [category, products, saleSearch]);
+
+  const anonymousOrderName = useMemo(
+    () =>
+      resolveOrderCustomerName(
+        "",
+        sales,
+        now?.getTime() ?? cashOpenedAt,
+      ),
+    [cashOpenedAt, now, sales],
+  );
 
   const filteredStock = useMemo(() => {
     const query = normalizeText(stockSearch);
@@ -1490,11 +1512,6 @@ export default function PoolPetiscosApp() {
       showToast("Adicione pelo menos um produto ao pedido.", "warning");
       return;
     }
-    const orderCustomerName = customerName.trim();
-    if (!orderCustomerName) {
-      showToast("Informe o nome da pessoa para criar a comanda.", "warning");
-      return;
-    }
     const unavailableItem = cartDetails.find(
       (item) => item.quantity > item.product.stock,
     );
@@ -1514,6 +1531,12 @@ export default function PoolPetiscosApp() {
       );
       return;
     }
+    const timestamp = Date.now();
+    const orderCustomerName = resolveOrderCustomerName(
+      customerName,
+      sales,
+      timestamp,
+    );
     const items: SaleItem[] = cartDetails.map((item) => ({
       productId: item.product.id,
       name: item.product.name,
@@ -1523,7 +1546,6 @@ export default function PoolPetiscosApp() {
         ? { observation: item.observation.trim() }
         : {}),
     }));
-    const timestamp = Date.now();
     const sale: Sale = {
       id: createRecordId("PV"),
       timestamp,
@@ -1937,7 +1959,7 @@ export default function PoolPetiscosApp() {
       setModal("cash-close");
       return;
     }
-    setCashOpenForm("");
+    setCashOpenForm(cashFund.toFixed(2).replace(".", ","));
     setModal("cash-open");
   }
 
@@ -1966,7 +1988,23 @@ export default function PoolPetiscosApp() {
       return;
     }
     const closedAt = Date.now();
-    const difference = roundMoney(countedBalance - cashBalance);
+    const closing = calculateCashClosing({
+      expectedBalance: cashBalance,
+      countedBalance,
+      cashFund,
+    });
+    if (closing.withdrawalAmount > 0) {
+      setCashMovements((current) => [
+        {
+          id: createRecordId("MC"),
+          timestamp: closedAt,
+          description: "Retirada automática no fechamento",
+          amount: closing.withdrawalAmount,
+          kind: "sangria",
+        },
+        ...current,
+      ]);
+    }
     setCashClosures((current) => [
       {
         id: createRecordId("FC"),
@@ -1975,7 +2013,10 @@ export default function PoolPetiscosApp() {
         openingBalance,
         expectedBalance: cashBalance,
         countedBalance,
-        difference,
+        difference: closing.difference,
+        cashFund: closing.cashFund,
+        withdrawalAmount: closing.withdrawalAmount,
+        remainingBalance: closing.remainingBalance,
       },
       ...current,
     ]);
@@ -1984,12 +2025,23 @@ export default function PoolPetiscosApp() {
     setCashReceived("");
     setPaymentMethod("Pix");
     setModal(null);
-    showToast(
-      Math.abs(difference) < 0.005
-        ? "Caixa fechado sem diferença."
-        : `Caixa fechado com diferença de ${currency.format(difference)}.`,
-      Math.abs(difference) < 0.005 ? "success" : "warning",
-    );
+    if (closing.fundShortfall > 0) {
+      showToast(
+        `Caixa fechado. Faltaram ${currency.format(closing.fundShortfall)} para completar o fundo de troco.`,
+        "warning",
+      );
+    } else if (Math.abs(closing.difference) >= 0.005) {
+      showToast(
+        `Retire ${currency.format(closing.withdrawalAmount)}. O fechamento teve diferença de ${currency.format(closing.difference)}.`,
+        "warning",
+      );
+    } else {
+      showToast(
+        closing.withdrawalAmount > 0
+          ? `Retire ${currency.format(closing.withdrawalAmount)}. ${currency.format(closing.remainingBalance)} ficam para troco.`
+          : `Caixa fechado. ${currency.format(closing.remainingBalance)} ficam para troco.`,
+      );
+    }
   }
 
   function submitCashMovement(event: FormEvent<HTMLFormElement>) {
@@ -2070,6 +2122,7 @@ export default function PoolPetiscosApp() {
       expenses,
       cashOpen,
       openingBalance,
+      cashFund,
       cashOpenedAt,
       cashMovements,
       cashClosures,
@@ -2620,8 +2673,12 @@ export default function PoolPetiscosApp() {
                 },
                 {
                   label: "Saldo do caixa",
-                  value: currency.format(cashBalance),
-                  helper: "Entradas menos saídas",
+                  value: currency.format(displayedCashBalance),
+                  helper: cashOpen
+                    ? "Dinheiro esperado nesta sessão"
+                    : latestCashClosure
+                      ? "Deixado para a próxima abertura"
+                      : "Caixa fechado",
                   icon: WalletCards,
                   colors: "bg-[#eaf8f1] text-[#27865d]",
                 },
@@ -2928,8 +2985,8 @@ export default function PoolPetiscosApp() {
                 )}
               </section>
 
-              <aside className="h-fit rounded-[20px] border border-[#ebe5e1] bg-white p-4 shadow-[0_10px_30px_rgba(66,45,37,.06)] lg:sticky lg:top-[88px]">
-                <div className="flex items-center justify-between">
+              <aside className="flex h-fit flex-col rounded-[20px] border border-[#ebe5e1] bg-white p-4 shadow-[0_10px_30px_rgba(66,45,37,.06)] lg:sticky lg:top-[88px] lg:h-[clamp(480px,calc(100dvh-300px),680px)] lg:overflow-hidden">
+                <div className="flex shrink-0 items-center justify-between">
                   <div>
                     <span className="text-[9px] font-extrabold uppercase tracking-[.13em] text-[#9c928d]">
                       Pedido atual
@@ -2941,6 +2998,10 @@ export default function PoolPetiscosApp() {
                   </span>
                 </div>
 
+                <div
+                  className="lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:overscroll-contain lg:pr-1"
+                  data-testid="current-order-scroll"
+                >
                 <div className="mt-4 min-h-[170px] space-y-2">
                   {!cartDetails.length ? (
                     <div className="grid min-h-[170px] place-items-center rounded-2xl border border-dashed border-[#ded7d2] bg-[#fcfaf8] text-center">
@@ -3031,22 +3092,29 @@ export default function PoolPetiscosApp() {
                   )}
                 </div>
 
-                <div className="mt-4 border-t border-[#ebe5e1] pt-4">
+                <div className="mt-4 border-t border-[#ebe5e1] pb-4 pt-4">
                   <label className="mb-4 block">
                     <span className="mb-1.5 flex items-center gap-2 text-sm font-extrabold text-[#4f4743]">
                       <UserRound size={17} className="text-[#d9202c]" />
-                      Nome na comanda
+                      Nome na comanda <em className="font-normal not-italic text-[#8d8581]">(opcional)</em>
                     </span>
                     <input
                       value={customerName}
                       onChange={(event) => setCustomerName(event.target.value)}
                       autoComplete="off"
                       maxLength={60}
-                      placeholder="Ex.: João"
+                      placeholder="Ex.: João — ou deixe em branco"
+                      aria-describedby="anonymous-order-help"
                       className="h-12 w-full rounded-xl border border-[#ded7d2] bg-white px-4 text-base font-bold outline-none transition focus:border-[#d9202c] focus:ring-4 focus:ring-[#d9202c]/10"
                     />
-                    <span className="mt-1.5 block text-xs leading-5 text-[#776f6b]">
-                      Esse nome aparecerá na fila de preparo.
+                    <span
+                      id="anonymous-order-help"
+                      className="mt-2 flex items-center justify-between gap-3 rounded-xl bg-[#f7f5f2] px-3 py-2 text-xs leading-5 text-[#776f6b]"
+                    >
+                      <span>Sem nome, a identificação será automática.</span>
+                      <strong className="shrink-0 text-[#4f4743]">
+                        {anonymousOrderName}
+                      </strong>
                     </span>
                   </label>
                   <span className="text-[9px] font-extrabold uppercase tracking-[.13em] text-[#9c928d]">
@@ -3117,7 +3185,11 @@ export default function PoolPetiscosApp() {
                       )}
                     </label>
                   )}
-                  <div className="mt-4 flex items-end justify-between">
+                </div>
+                </div>
+
+                <div className="shrink-0 border-t border-[#ebe5e1] bg-white pt-3 shadow-[0_-10px_20px_rgba(66,45,37,.035)]">
+                  <div className="flex items-end justify-between">
                     <div>
                       <span className="block text-[9px] text-[#776f6b]">
                         Total do pedido
@@ -3135,7 +3207,7 @@ export default function PoolPetiscosApp() {
                     onClick={finishSale}
                     data-testid="finish-sale"
                     disabled={!cartDetails.length || !cashOpen}
-                    className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#d9202c] px-4 text-xs font-extrabold text-white shadow-[0_10px_22px_rgba(217,32,44,.22)] transition hover:bg-[#b41622] disabled:cursor-not-allowed disabled:bg-[#d8cfcb] disabled:shadow-none"
+                    className="pool-primary-action mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-transparent bg-[#d9202c] px-4 text-xs font-extrabold text-white shadow-[0_10px_22px_rgba(217,32,44,.22)] transition hover:bg-[#b41622] disabled:cursor-not-allowed"
                   >
                     <Check size={18} />
                     Finalizar e criar comanda
@@ -3461,7 +3533,7 @@ export default function PoolPetiscosApp() {
                       return (
                         <tr
                           key={product.id}
-                          className="transition-colors hover:bg-[#fdfbf9]"
+                          className="pool-stock-row transition-colors hover:bg-[#fdfbf9]"
                         >
                           <td className="px-5 py-4">
                             <div className="flex items-center gap-3">
@@ -3661,10 +3733,12 @@ export default function PoolPetiscosApp() {
                 },
                 {
                   label: "Saldo em caixa",
-                  value: cashBalance,
+                  value: displayedCashBalance,
                   helper: cashOpen
                     ? `Abertura: ${currency.format(openingBalance)} • só dinheiro`
-                    : "Caixa fechado",
+                    : latestCashClosure
+                      ? `Caixa fechado • fundo: ${currency.format(cashFund)}`
+                      : "Caixa fechado",
                   icon: WalletCards,
                   colors: "bg-[#f1eefc] text-[#7458b4]",
                 },
@@ -4521,9 +4595,11 @@ export default function PoolPetiscosApp() {
             recoveryCredential={pinRecoveryCredential}
             displayPreferences={displayPreferences}
             resolvedTheme={resolvedTheme}
+            cashFund={cashFund}
             onCredentialChange={updateOperatorCredential}
             onRecoveryCredentialChange={setPinRecoveryCredential}
             onDisplayPreferencesChange={setDisplayPreferences}
+            onCashFundChange={setCashFund}
             onMessage={showToast}
           />
         )}
@@ -5017,8 +5093,9 @@ export default function PoolPetiscosApp() {
                   />
                 </label>
                 <div className="rounded-xl bg-[#f1eefc] p-3 text-[8px] leading-4 text-[#5e4893]">
-                  Este valor inicia uma nova sessão. Pix e cartão aparecem no
-                  financeiro, mas não entram no dinheiro físico do caixa.
+                  O fundo configurado é {currency.format(cashFund)}. Ajuste o
+                  campo apenas se houver outro valor físico na gaveta. Pix e
+                  cartão não entram no dinheiro do caixa.
                 </div>
                 <button
                   type="submit"
@@ -5029,64 +5106,14 @@ export default function PoolPetiscosApp() {
                 </button>
               </form>
             ) : modal === "cash-close" ? (
-              <form onSubmit={submitCashClose} className="mt-5 space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-xl bg-[#f7f5f2] p-3">
-                    <span className="block text-[8px] text-[#776f6b]">
-                      Saldo esperado
-                    </span>
-                    <strong className="mt-1 block text-lg">
-                      {currency.format(cashBalance)}
-                    </strong>
-                  </div>
-                  <div className="rounded-xl bg-[#f7f5f2] p-3">
-                    <span className="block text-[8px] text-[#776f6b]">
-                      Vendas em dinheiro
-                    </span>
-                    <strong className="mt-1 block text-lg">
-                      {currency.format(cashSalesTotal)}
-                    </strong>
-                  </div>
-                </div>
-                <label className="block">
-                  <span className="mb-1.5 block text-[9px] font-extrabold text-[#776f6b]">
-                    Valor contado na gaveta
-                  </span>
-                  <input
-                    required
-                    autoFocus
-                    inputMode="decimal"
-                    value={cashCloseForm}
-                    onChange={(event) => setCashCloseForm(event.target.value)}
-                    placeholder="R$ 0,00"
-                    className="h-11 w-full rounded-xl border border-[#ebe5e1] px-3 text-xs outline-none focus:border-[#d9202c]"
-                  />
-                </label>
-                {cashCloseForm.trim() &&
-                  Number.isFinite(parseAmount(cashCloseForm)) && (
-                  <div
-                    className={`rounded-xl p-3 text-[9px] font-bold ${
-                      Math.abs(
-                        roundMoney(parseAmount(cashCloseForm) - cashBalance),
-                      ) < 0.005
-                        ? "bg-[#eaf8f1] text-[#23734f]"
-                        : "bg-[#fff9e9] text-[#8d6100]"
-                    }`}
-                  >
-                    Diferença:{" "}
-                    {currency.format(
-                      roundMoney(parseAmount(cashCloseForm) - cashBalance),
-                    )}
-                  </div>
-                )}
-                <button
-                  type="submit"
-                  className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#302b29] text-xs font-extrabold text-white"
-                >
-                  <Check size={18} />
-                  Confirmar fechamento
-                </button>
-              </form>
+              <CashClosingForm
+                expectedBalance={cashBalance}
+                cashSalesTotal={cashSalesTotal}
+                cashFund={cashFund}
+                countedValue={cashCloseForm}
+                onCountedValueChange={setCashCloseForm}
+                onSubmit={submitCashClose}
+              />
             ) : (
               <form onSubmit={submitCashMovement} className="mt-5 space-y-4">
                 <div className="grid grid-cols-2 gap-2">

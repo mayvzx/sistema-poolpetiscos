@@ -42,6 +42,7 @@ def minimal_pool_state(number: int | None = None) -> dict[str, object]:
         "expenses": [],
         "cashOpen": False,
         "openingBalance": 0,
+        "cashFund": 130,
         "cashOpenedAt": 1,
         "cashMovements": [],
         "cashClosures": [],
@@ -246,6 +247,50 @@ class StateStorageTest(unittest.TestCase):
 
             self.assertEqual(storage.read().revision, 0)
 
+    def test_accepts_legacy_state_and_validates_new_cash_closing_fields(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            storage = self._storage(Path(directory))
+            legacy = minimal_pool_state()
+            legacy.pop("cashFund")
+            saved = storage.save(legacy, 0)
+            self.assertEqual(saved.revision, 1)
+
+            modern = minimal_pool_state()
+            modern["cashClosures"] = [
+                {
+                    "id": "FC-TESTE",
+                    "openedAt": 100,
+                    "closedAt": 200,
+                    "openingBalance": 130,
+                    "expectedBalance": 152,
+                    "countedBalance": 152,
+                    "difference": 0,
+                    "cashFund": 130,
+                    "withdrawalAmount": 22,
+                    "remainingBalance": 130,
+                }
+            ]
+            self.assertEqual(storage.save(modern, 1).revision, 2)
+
+            invalid = minimal_pool_state()
+            invalid["cashClosures"] = [
+                {
+                    "id": "FC-INVALIDO",
+                    "openedAt": 100,
+                    "closedAt": 200,
+                    "openingBalance": 130,
+                    "expectedBalance": 152,
+                    "countedBalance": 152,
+                    "difference": 0,
+                    "cashFund": 130,
+                    "withdrawalAmount": 22,
+                }
+            ]
+            with self.assertRaises(ValueError):
+                storage.save(invalid, 2)
+
     def test_read_rejects_externally_corrupted_state(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             storage = self._storage(Path(directory))
@@ -441,9 +486,23 @@ class StateStorageTest(unittest.TestCase):
                     "expenses": [],
                     "cashOpen": True,
                     "openingBalance": 100,
+                    "cashFund": 130,
                     "cashOpenedAt": 1_700_000_000_000,
                     "cashMovements": [],
-                    "cashClosures": [],
+                    "cashClosures": [
+                        {
+                            "id": "FC1",
+                            "openedAt": 1_700_000_000_000,
+                            "closedAt": 1_700_000_500_000,
+                            "openingBalance": 130,
+                            "expectedBalance": 152,
+                            "countedBalance": 152,
+                            "difference": 0,
+                            "cashFund": 130,
+                            "withdrawalAmount": 22,
+                            "remainingBalance": 130,
+                        }
+                    ],
                     "operatorCredentials": {
                         "elaine": {
                             "algorithm": "PBKDF2-SHA-256",
@@ -498,6 +557,14 @@ class StateStorageTest(unittest.TestCase):
                         "FROM vw_operadores ORDER BY id"
                     ).fetchall(),
                     [("Elaine", 1), ("Poolblay", 0)],
+                )
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT saldo_esperado, saldo_contado, diferenca, "
+                        "fundo_troco, retirada_fechamento, saldo_deixado "
+                        "FROM vw_fechamentos_caixa"
+                    ).fetchone(),
+                    (152.0, 152.0, 0.0, 130.0, 22.0, 130.0),
                 )
 
 

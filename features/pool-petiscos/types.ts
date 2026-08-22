@@ -106,6 +106,9 @@ export type CashClosure = {
   expectedBalance: number;
   countedBalance: number;
   difference: number;
+  cashFund: number;
+  withdrawalAmount: number;
+  remainingBalance: number;
 };
 
 export type Track = {
@@ -136,6 +139,7 @@ export type PersistedPoolState = {
   expenses: Expense[];
   cashOpen: boolean;
   openingBalance: number;
+  cashFund: number;
   cashOpenedAt: number;
   cashMovements: CashMovement[];
   cashClosures: CashClosure[];
