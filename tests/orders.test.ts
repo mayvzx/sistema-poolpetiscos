@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   formatOrderWait,
+  isActiveOrder,
   nextOrderStatus,
   previousOrderStatus,
   resolveOrderCustomerName,
@@ -53,6 +54,31 @@ test("mostra o tempo de espera em linguagem curta", () => {
   assert.equal(formatOrderWait(now - 30_000, now), "agora");
   assert.equal(formatOrderWait(now - 18 * 60_000, now), "há 18 min");
   assert.equal(formatOrderWait(now - 75 * 60_000, now), "há 1h 15min");
+});
+
+test("venda direta nunca entra na fila de comandas", () => {
+  const sale: Sale = {
+    id: "PV-DIRETA",
+    timestamp: 200,
+    subtotal: 10,
+    surchargeRate: 0,
+    surchargeAmount: 0,
+    total: 10,
+    payment: "Pix",
+    operatorId: "elaine",
+    operatorName: "Elaine",
+    customerName: "Balcão 01",
+    serviceMode: "venda-direta",
+    orderStatus: "entregue",
+    statusUpdatedAt: 200,
+    items: [{ productId: "P1", name: "Pastel", price: 10, quantity: 1 }],
+  };
+
+  assert.equal(isActiveOrder(sale), false);
+  assert.equal(
+    isActiveOrder({ ...sale, serviceMode: "comanda", orderStatus: "pronto" }),
+    true,
+  );
 });
 
 test("usa o nome informado ou cria uma identificação simples de balcão", () => {

@@ -22,7 +22,8 @@ vendas, estoque e controle gerencial da Pool Petiscos & Lanches.
 - baixa de estoque por produto;
 - reposição com custo opcional;
 - despesas e resumo financeiro;
-- fluxo de caixa em tabela com exportação Excel e PDF por período;
+- fluxo de caixa diário, semanal, mensal ou personalizado, com exportação Excel
+  e PDF, itens, quantidades e formas de pagamento;
 - abertura e fechamento do caixa;
 - sangria e suprimento;
 - conferência entre saldo esperado e contado;
@@ -39,6 +40,10 @@ vendas, estoque e controle gerencial da Pool Petiscos & Lanches.
   em Configurações;
 - escala de fonte ajustável em tempo real entre 90% e 135%;
 - temas automático, claro e escuro, com detecção do padrão do Windows;
+- acréscimo confirmado de 3% no débito e 6% no crédito, mostrado antes de
+  finalizar e preservado em cada venda;
+- fila de comandas opcional, com modo de venda direta para operações que não
+  precisam acompanhar etapas de preparo;
 
 ### Revisão de requisitos de 14/08/2026
 
@@ -169,7 +174,6 @@ Não implementar com dados inventados:
 
 - estoque por ingrediente;
 - fichas técnicas dos hambúrgueres e petiscos;
-- taxas das maquininhas;
 - fiado;
 - mesas, entrega, retirada e regras de cancelamento;
 - permissões para desconto e cancelamento;
@@ -185,6 +189,12 @@ Não implementar com dados inventados:
 - o valor excedente contado é retirado no fechamento e registrado como sangria;
 - a próxima abertura sugere novamente o fundo configurado, sem carregar as
   vendas em dinheiro da sessão anterior.
+- pagamentos em débito recebem acréscimo de 3% e pagamentos em crédito recebem
+  acréscimo de 6%, cobrados do cliente e incluídos no total da venda;
+- a integração com a maquininha Getnet fica adiada porque a proprietária
+  pretende trocar o equipamento; a confirmação continua manual;
+- o uso da fila de comandas é opcional e pode ser trocado por venda direta nas
+  Configurações, sem apagar o histórico anterior.
 
 ## Operação local em desenvolvimento
 
@@ -196,6 +206,7 @@ Não implementar com dados inventados:
 - [x] Automatizar backups diário, semanal e mensal e testar a restauração.
 - [x] Implementar conexão OAuth e sincronização com Google Drive.
 - [x] Persistir comandas e organizar a fila de preparo por etapa.
+- [x] Permitir desativar a fila e registrar vendas diretamente.
 - [ ] Assinar executável, instalador e desinstalador com certificado
       Authenticode emitido para o responsável pela distribuição.
 
@@ -203,9 +214,8 @@ Não implementar com dados inventados:
 
 - [x] Confirmar a marca atual: Getnet.
 - [x] Confirmar o modelo exato pela etiqueta traseira: Newland SP630 Pro.
-- [ ] Confirmar com a Getnet a contratação de POS TEF e o integrador indicado.
-- [ ] Decidir se vale integrar a Getnet atual ou aguardar a mudança prevista
-      para Mercado Pago em janeiro de 2027.
+- [ ] Retomar a integração somente depois que a proprietária escolher a nova
+      maquininha e confirmar o provedor.
 - [ ] Na troca, escolher um terminal Mercado Pago Point Smart/Pro compatível
       com a API oficial.
 - [ ] Implementar estados pendente, aprovado, recusado e cancelado.
@@ -237,9 +247,9 @@ Não implementar com dados inventados:
 - assinar o pacote após a aquisição do certificado;
 - testar instalação e restauração no computador da lanchonete.
 
-Antes da operação oficial, evoluir o estado SQLite para sessões de caixa
-explícitas. Cada venda, despesa e movimento deverá guardar o identificador da
-sessão, sem depender apenas do relógio do computador.
+O estado SQLite já usa sessões de caixa explícitas. Cada venda, despesa e
+movimento guarda o identificador da sessão, sem depender apenas do relógio do
+computador.
 
 ### 4. Operação assistida
 

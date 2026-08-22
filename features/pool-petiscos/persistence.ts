@@ -14,6 +14,7 @@ import type {
   Sale,
   SaleItem,
   SaleOperatorId,
+  SaleServiceMode,
 } from "./types";
 import { DEFAULT_CASH_FUND, roundMoney } from "./domain";
 import { operatorNameForSale } from "./operators";
@@ -38,6 +39,10 @@ const SALE_OPERATOR_IDS = new Set<SaleOperatorId>([
   "elaine",
   "poolblay",
   "nao-identificado",
+]);
+const SALE_SERVICE_MODES = new Set<SaleServiceMode>([
+  "comanda",
+  "venda-direta",
 ]);
 const PRODUCT_CATEGORIES = new Set<ProductCategory>([
   "Hambúrgueres",
@@ -143,7 +148,47 @@ function parseSale(value: unknown): Sale | null {
       0,
     ),
   );
-  if (Math.abs(itemTotal - roundMoney(value.total)) > 0.005) return null;
+  const pricingFields = [
+    value.subtotal,
+    value.surchargeRate,
+    value.surchargeAmount,
+  ];
+  const suppliedPricingFields = pricingFields.filter(
+    (field) => field !== undefined,
+  ).length;
+  if (suppliedPricingFields !== 0 && suppliedPricingFields !== 3) return null;
+
+  let subtotal = itemTotal;
+  let surchargeRate = 0;
+  let surchargeAmount = 0;
+  if (suppliedPricingFields === 3) {
+    if (
+      !isNonNegativeMoney(value.subtotal) ||
+      !isFiniteNumber(value.surchargeRate) ||
+      value.surchargeRate < 0 ||
+      value.surchargeRate > 0.5 ||
+      !isNonNegativeMoney(value.surchargeAmount)
+    ) {
+      return null;
+    }
+    subtotal = roundMoney(value.subtotal);
+    surchargeRate = value.surchargeRate;
+    surchargeAmount = roundMoney(value.surchargeAmount);
+    if (
+      Math.abs(itemTotal - subtotal) > 0.005 ||
+      Math.abs(
+        roundMoney(subtotal * surchargeRate) - surchargeAmount,
+      ) > 0.005 ||
+      ((value.payment !== "Débito" && value.payment !== "Crédito") &&
+        (surchargeRate > 0 || surchargeAmount > 0))
+    ) {
+      return null;
+    }
+  }
+  const total = roundMoney(value.total);
+  if (Math.abs(roundMoney(subtotal + surchargeAmount) - total) > 0.005) {
+    return null;
+  }
   const customerName = isNonEmptyString(value.customerName)
     ? value.customerName.trim()
     : "Cliente sem nome";
@@ -152,6 +197,14 @@ function parseSale(value: unknown): Sale | null {
     ORDER_STATUSES.has(value.orderStatus as OrderStatus)
       ? (value.orderStatus as OrderStatus)
       : "entregue";
+  const serviceMode =
+    typeof value.serviceMode === "string" &&
+    SALE_SERVICE_MODES.has(value.serviceMode as SaleServiceMode)
+      ? (value.serviceMode as SaleServiceMode)
+      : "comanda";
+  if (serviceMode === "venda-direta" && orderStatus !== "entregue") {
+    return null;
+  }
   const statusUpdatedAt =
     value.statusUpdatedAt === undefined
       ? value.timestamp
@@ -171,9 +224,13 @@ function parseSale(value: unknown): Sale | null {
     : undefined;
   return {
     ...(value as Sale),
-    total: itemTotal,
+    subtotal,
+    surchargeRate,
+    surchargeAmount,
+    total,
     items: items as SaleItem[],
     customerName,
+    serviceMode,
     orderStatus,
     statusUpdatedAt,
     operatorId,
@@ -480,6 +537,8 @@ export function parsePoolState(value: unknown): PersistedPoolState | null {
       : parseOperatorCredential(value.pinRecoveryCredential);
   const cashFund =
     value.cashFund === undefined ? DEFAULT_CASH_FUND : value.cashFund;
+  const ordersEnabled =
+    value.ordersEnabled === undefined ? true : value.ordersEnabled;
   if (
     products === null ||
     sales === null ||
@@ -487,6 +546,7 @@ export function parsePoolState(value: unknown): PersistedPoolState | null {
     typeof value.cashOpen !== "boolean" ||
     !isNonNegativeMoney(value.openingBalance) ||
     !isNonNegativeMoney(cashFund) ||
+    typeof ordersEnabled !== "boolean" ||
     !isTimestamp(value.cashOpenedAt) ||
     cashMovements === null ||
     cashClosures === null ||
@@ -576,6 +636,7 @@ export function parsePoolState(value: unknown): PersistedPoolState | null {
     activeCashSession,
     cashMovements: linkedCashMovements,
     cashClosures: normalizedCashClosures,
+    ordersEnabled,
     operatorCredentials,
     ...(pinRecoveryCredential ? { pinRecoveryCredential } : {}),
   };

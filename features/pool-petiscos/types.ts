@@ -68,16 +68,22 @@ export type OrderStatus =
   | "pronto"
   | "entregue";
 
+export type SaleServiceMode = "comanda" | "venda-direta";
+
 export type Sale = {
   id: string;
   cashSessionId?: string;
   timestamp: number;
+  subtotal?: number;
+  surchargeRate?: number;
+  surchargeAmount?: number;
   total: number;
   payment: PaymentMethod;
   operatorId: SaleOperatorId;
   operatorName: string;
   items: SaleItem[];
   customerName: string;
+  serviceMode?: SaleServiceMode;
   orderStatus: OrderStatus;
   statusUpdatedAt: number;
 };
@@ -160,6 +166,7 @@ export type PersistedPoolState = {
   activeCashSession: ActiveCashSession | null;
   cashMovements: CashMovement[];
   cashClosures: CashClosure[];
+  ordersEnabled: boolean;
   operatorCredentials: OperatorCredentials;
   pinRecoveryCredential?: OperatorCredential;
 };

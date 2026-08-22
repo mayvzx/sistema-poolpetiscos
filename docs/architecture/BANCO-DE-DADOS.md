@@ -32,8 +32,8 @@ botão **Baixar banco completo** gera o SQLite voltado à auditoria técnica.
 | Consulta | Conteúdo |
 | --- | --- |
 | `vw_produtos` | nome, categoria, preço e estoque |
-| `vw_vendas` | sessão de caixa, data, operador, total, pagamento e itens |
-| `vw_comandas` | sessão, cliente, operador, situação, horários e pagamento |
+| `vw_vendas` | sessão, data, operador, subtotal, acréscimo, total, pagamento e itens |
+| `vw_comandas` | sessão, cliente, operador, modo de atendimento, situação, horários e pagamento |
 | `vw_itens_venda` | sessão, itens, observações e valores de cada venda |
 | `vw_despesas` | sessão de caixa e despesas registradas |
 | `vw_movimentos_caixa` | sessão de caixa, sangrias e suprimentos |
@@ -42,6 +42,12 @@ botão **Baixar banco completo** gera o SQLite voltado à auditoria técnica.
 
 As tabelas internas `app_state` e `state_history` garantem gravação atômica e
 recuperação de revisões. Para leitura comum, prefira as consultas `vw_*`.
+
+Cada nova venda guarda o subtotal, a taxa aplicada, o valor do acréscimo e o
+total final. Vendas antigas são migradas com acréscimo zero, sem recalcular nem
+alterar os valores históricos. O estado também guarda se a fila de comandas
+está ativa; vendas diretas ficam concluídas e não aparecem como pedidos em
+andamento.
 
 Os arquivos exportados e os backups automáticos mantêm o `app_state` completo,
 mas removem os snapshots redundantes de `state_history` antes da verificação de

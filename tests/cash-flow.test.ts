@@ -31,7 +31,14 @@ function sale(
     payment,
     operatorId: "elaine",
     operatorName: "Elaine",
-    items: [],
+    items: [
+      {
+        productId: `PROD-${id}`,
+        name: id === "PV-DEBITO" ? "Refrigerante lata" : "Hambúrguer",
+        price: total,
+        quantity: 1,
+      },
+    ],
     customerName: "Cliente",
     orderStatus: "entregue",
     statusUpdatedAt: timestamp,
@@ -90,7 +97,12 @@ test("monta o fluxo de caixa por data e preserva a forma de pagamento", () => {
   );
   assert.match(
     entries.find((entry) => entry.id === "PV-DEBITO")!.observation,
-    /Débito/,
+    /Elaine/,
+  );
+  assert.match(entries.find((entry) => entry.id === "PV-DEBITO")!.payment, /Débito/);
+  assert.equal(
+    entries.find((entry) => entry.id === "PV-DEBITO")!.details,
+    "1x Refrigerante lata",
   );
   assert.equal(
     entries.find((entry) => entry.id === "DS-BEBIDA")!.movement,
@@ -110,6 +122,12 @@ test("filtra o mês e calcula entradas, saídas e saldo", () => {
   assert.equal(report.outgoing, 209.5);
   assert.equal(report.balance, 235.1);
   assert.equal(cashFlowReportHeading(report), "FLUXO DE CAIXA - AGOSTO DE 2026");
+});
+
+test("filtra a semana atual de segunda-feira até hoje", () => {
+  const range = createCashFlowRange("week", now);
+  assert.equal(range.fromKey, "2026-08-17");
+  assert.equal(range.toKey, "2026-08-20");
 });
 
 test("valida períodos personalizados antes de gerar o relatório", () => {
@@ -136,7 +154,14 @@ test("gera arquivos Excel e PDF reais e legíveis", async () => {
   assert.ok(sheet);
   assert.equal(sheet.getCell("A1").value, "FLUXO DE CAIXA - AGOSTO DE 2026");
   assert.equal(sheet.getCell("B8").value, "Entrada");
-  assert.equal(sheet.getCell("D8").value, 290);
+  assert.equal(sheet.getCell("D8").value, "1x Hambúrguer");
+  assert.equal(sheet.getCell("E8").value, "Pix");
+  assert.equal(sheet.getCell("F8").value, 290);
+  assert.equal(sheet.getCell("A8").numFmt, "dd/mm/yyyy hh:mm");
+  assert.ok(sheet.getCell("A8").value instanceof Date);
+  assert.equal((sheet.getCell("A8").value as Date).getUTCDate(), 19);
+  assert.equal((sheet.getCell("A8").value as Date).getUTCHours(), 12);
+  assert.ok((sheet.getColumn(1).width ?? 0) >= 20);
 
   const pdfBytes = await createCashFlowPdf(report);
   assert.equal(new TextDecoder().decode(pdfBytes.slice(0, 5)), "%PDF-");

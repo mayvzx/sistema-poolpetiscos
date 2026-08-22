@@ -212,6 +212,7 @@ export function createInitialPoolState(): PersistedPoolState {
     activeCashSession: null,
     cashMovements: [],
     cashClosures: [],
+    ordersEnabled: true,
     operatorCredentials: {},
   };
 }

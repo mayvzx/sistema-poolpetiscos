@@ -1,10 +1,10 @@
 import {
   cashFlowReportHeading,
-  formatCashFlowDate,
+  formatCashFlowDateTime,
   type CashFlowReport,
 } from "./cash-flow";
 import { downloadBytes } from "./browser-download";
-import { currency } from "./domain";
+import { currency, RECIFE_TIME_ZONE } from "./domain";
 
 const BRAND_ORANGE = "FFE66E22";
 const BRAND_DARK = "FF302B29";
@@ -14,8 +14,38 @@ const EXIT_PINK = "FFFDE7EC";
 const EXIT_PINK_TEXT = "FFB41622";
 const LIGHT_BORDER = "FFE0D9D5";
 
+const excelDateParts = new Intl.DateTimeFormat("en-CA", {
+  timeZone: RECIFE_TIME_ZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hourCycle: "h23",
+});
+
 function safeObservation(value: string) {
   return value.replaceAll("•", "-");
+}
+
+function excelLocalDate(timestamp: number) {
+  const parts = Object.fromEntries(
+    excelDateParts
+      .formatToParts(timestamp)
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value]),
+  );
+  return new Date(
+    Date.UTC(
+      Number(parts.year),
+      Number(parts.month) - 1,
+      Number(parts.day),
+      Number(parts.hour),
+      Number(parts.minute),
+      Number(parts.second),
+    ),
+  );
 }
 
 function thinBorder() {
@@ -58,14 +88,16 @@ export async function createCashFlowWorkbook(report: CashFlowReport) {
     properties: { defaultRowHeight: 21 },
   });
   sheet.columns = [
-    { key: "date", width: 15 },
-    { key: "movement", width: 17 },
-    { key: "description", width: 38 },
-    { key: "amount", width: 18 },
-    { key: "observation", width: 36 },
+    { key: "date", width: 22 },
+    { key: "movement", width: 16 },
+    { key: "description", width: 24 },
+    { key: "details", width: 46 },
+    { key: "payment", width: 21 },
+    { key: "amount", width: 17 },
+    { key: "observation", width: 28 },
   ];
 
-  sheet.mergeCells("A1:E1");
+  sheet.mergeCells("A1:G1");
   const title = sheet.getCell("A1");
   title.value = cashFlowReportHeading(report);
   title.font = { name: "Aptos Display", size: 22, bold: true, color: { argb: "FFFFFFFF" } };
@@ -80,8 +112,8 @@ export async function createCashFlowWorkbook(report: CashFlowReport) {
   business.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
   business.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND_DARK } };
 
-  sheet.mergeCells("D3:E3");
-  sheet.mergeCells("D4:E4");
+  sheet.mergeCells("D3:G3");
+  sheet.mergeCells("D4:G4");
   const summaryLabels = [
     { cell: "B3", text: "ENTRADAS", fill: ENTRY_GREEN, color: ENTRY_GREEN_TEXT },
     { cell: "C3", text: "SAÍDAS", fill: EXIT_PINK, color: EXIT_PINK_TEXT },
@@ -97,7 +129,7 @@ export async function createCashFlowWorkbook(report: CashFlowReport) {
 
   const firstDataRow = 8;
   const lastDataRow = firstDataRow + Math.max(report.entries.length - 1, 0);
-  const amountRange = `$D$${firstDataRow}:$D$${lastDataRow}`;
+  const amountRange = `$F$${firstDataRow}:$F$${lastDataRow}`;
   const movementRange = `$B$${firstDataRow}:$B$${lastDataRow}`;
   const incomingCell = sheet.getCell("B4");
   const outgoingCell = sheet.getCell("C4");
@@ -135,14 +167,22 @@ export async function createCashFlowWorkbook(report: CashFlowReport) {
   sheet.getRow(3).height = 23;
   sheet.getRow(4).height = 30;
 
-  sheet.mergeCells("A6:E6");
+  sheet.mergeCells("A6:G6");
   const period = sheet.getCell("A6");
   period.value = `Período: ${report.range.label} - ${report.entries.length} movimentação(ões)`;
   period.font = { name: "Aptos", size: 10, italic: true, color: { argb: "FF6D6561" } };
   period.alignment = { horizontal: "left", vertical: "middle" };
 
   const header = sheet.getRow(7);
-  header.values = ["DATA", "MOVIMENTAÇÃO", "DESCRIÇÃO", "VALOR", "OBSERVAÇÃO"];
+  header.values = [
+    "DATA E HORA",
+    "MOVIMENTAÇÃO",
+    "DESCRIÇÃO",
+    "ITENS / DETALHES",
+    "PAGAMENTO",
+    "VALOR",
+    "OBSERVAÇÃO",
+  ];
   header.height = 25;
   header.eachCell((cell) => {
     cell.font = { name: "Aptos", size: 10, bold: true, color: { argb: "FFFFFFFF" } };
@@ -154,14 +194,16 @@ export async function createCashFlowWorkbook(report: CashFlowReport) {
   report.entries.forEach((entry, index) => {
     const row = sheet.getRow(firstDataRow + index);
     row.values = [
-      new Date(entry.timestamp),
+      excelLocalDate(entry.timestamp),
       entry.movement,
       entry.description,
+      safeObservation(entry.details),
+      safeObservation(entry.payment),
       entry.amount,
       safeObservation(entry.observation),
     ];
     row.getCell(1).numFmt = "dd/mm/yyyy hh:mm";
-    row.getCell(4).numFmt = '"R$" #,##0.00';
+    row.getCell(6).numFmt = '"R$" #,##0.00';
     row.getCell(2).font = {
       name: "Aptos",
       size: 10,
@@ -172,7 +214,7 @@ export async function createCashFlowWorkbook(report: CashFlowReport) {
       const columnNumber = Number(cell.col);
       cell.alignment = {
         horizontal:
-          columnNumber === 4 ? "right" : columnNumber <= 2 ? "center" : "left",
+          columnNumber === 6 ? "right" : columnNumber <= 2 ? "center" : "left",
         vertical: "middle",
         wrapText: true,
       };
@@ -183,11 +225,15 @@ export async function createCashFlowWorkbook(report: CashFlowReport) {
       };
       cell.border = thinBorder();
     });
-    row.height = 24;
+    const estimatedDetailLines = Math.max(
+      1,
+      Math.ceil(entry.details.length / 54),
+    );
+    row.height = Math.min(72, Math.max(24, estimatedDetailLines * 16 + 8));
   });
 
   if (!report.entries.length) {
-    sheet.mergeCells("A8:E8");
+    sheet.mergeCells("A8:G8");
     const empty = sheet.getCell("A8");
     empty.value = "Nenhuma movimentação encontrada neste período.";
     empty.font = { name: "Aptos", size: 11, italic: true, color: { argb: "FF776F6B" } };
@@ -198,9 +244,9 @@ export async function createCashFlowWorkbook(report: CashFlowReport) {
 
   sheet.autoFilter = {
     from: { row: 7, column: 1 },
-    to: { row: Math.max(7, lastDataRow), column: 5 },
+    to: { row: Math.max(7, lastDataRow), column: 7 },
   };
-  sheet.pageSetup.printArea = `A1:E${Math.max(8, lastDataRow)}`;
+  sheet.pageSetup.printArea = `A1:G${Math.max(8, lastDataRow)}`;
   sheet.headerFooter.oddFooter = "Pool Petiscos & Lanches - Página &P de &N";
 
   const output = await workbook.xlsx.writeBuffer();
@@ -249,21 +295,31 @@ export async function createCashFlowPdf(report: CashFlowReport) {
   autoTable(document, {
     startY: 55,
     margin: { left: 12, right: 12, bottom: 14 },
-    head: [["DATA", "MOVIMENTAÇÃO", "DESCRIÇÃO", "VALOR", "OBSERVAÇÃO"]],
+    head: [[
+      "DATA E HORA",
+      "MOVIMENTAÇÃO",
+      "DESCRIÇÃO",
+      "ITENS / DETALHES",
+      "PAGAMENTO",
+      "VALOR",
+      "OBSERVAÇÃO",
+    ]],
     body: report.entries.length
       ? report.entries.map((entry) => [
-          formatCashFlowDate(entry.timestamp),
+          formatCashFlowDateTime(entry.timestamp),
           entry.movement,
           entry.description,
+          safeObservation(entry.details),
+          safeObservation(entry.payment),
           currency.format(entry.amount),
           safeObservation(entry.observation),
         ])
-      : [["", "", "Nenhuma movimentação encontrada neste período.", "", ""]],
+      : [["", "", "Nenhuma movimentação encontrada neste período.", "", "", "", ""]],
     theme: "grid",
     styles: {
       font: "helvetica",
-      fontSize: 8.5,
-      cellPadding: 2.6,
+      fontSize: 7.4,
+      cellPadding: 2.2,
       textColor: [48, 43, 41],
       lineColor: [224, 217, 213],
       lineWidth: 0.2,
@@ -277,10 +333,12 @@ export async function createCashFlowPdf(report: CashFlowReport) {
     },
     columnStyles: {
       0: { cellWidth: 28, halign: "center" },
-      1: { cellWidth: 34, halign: "center", fontStyle: "bold" },
-      2: { cellWidth: 75 },
-      3: { cellWidth: 34, halign: "right", fontStyle: "bold" },
-      4: { cellWidth: 102 },
+      1: { cellWidth: 27, halign: "center", fontStyle: "bold" },
+      2: { cellWidth: 38 },
+      3: { cellWidth: 78 },
+      4: { cellWidth: 29 },
+      5: { cellWidth: 27, halign: "right", fontStyle: "bold" },
+      6: { cellWidth: 46 },
     },
     didParseCell: (hook) => {
       if (hook.section !== "body" || !report.entries.length) return;

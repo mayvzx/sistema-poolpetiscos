@@ -37,6 +37,7 @@ const PERIOD_OPTIONS: Array<{
   label: string;
 }> = [
   { id: "today", label: "Hoje" },
+  { id: "week", label: "Esta semana" },
   { id: "month", label: "Este mês" },
   { id: "custom", label: "Escolher período" },
 ];
@@ -260,12 +261,14 @@ export function CashFlowPanel({
           </div>
 
           <div className="max-h-[520px] overflow-auto">
-            <table className="w-full min-w-[900px] border-collapse text-left">
+            <table className="w-full min-w-[1280px] border-collapse text-left">
               <thead className="sticky top-0 z-10 bg-[#e66e22] text-xs font-extrabold uppercase tracking-[.08em] text-white shadow-sm">
                 <tr>
                   <th className="px-5 py-4">Data</th>
                   <th className="px-4 py-4">Movimentação</th>
                   <th className="px-4 py-4">Descrição</th>
+                  <th className="px-4 py-4">Itens / detalhes</th>
+                  <th className="px-4 py-4">Pagamento</th>
                   <th className="px-4 py-4 text-right">Valor</th>
                   <th className="px-5 py-4">Observação</th>
                 </tr>
@@ -297,6 +300,12 @@ export function CashFlowPanel({
                     <td className="px-4 py-4 text-sm font-bold text-[#302b29]">
                       {entry.description}
                     </td>
+                    <td className="max-w-[430px] px-4 py-4 text-sm font-semibold leading-6 text-[#4f4743]">
+                      {entry.details}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-4 text-sm font-extrabold text-[#5f5753]">
+                      {entry.payment}
+                    </td>
                     <td className="px-4 py-4 text-right text-sm font-black text-[#302b29]">
                       {currency.format(entry.amount)}
                     </td>
@@ -307,7 +316,7 @@ export function CashFlowPanel({
                 ))}
                 {!report.entries.length && (
                   <tr>
-                    <td colSpan={5} className="px-6 py-14 text-center">
+                    <td colSpan={7} className="px-6 py-14 text-center">
                       <ReceiptText size={30} className="mx-auto text-[#c7beba]" />
                       <strong className="mt-3 block text-base">
                         Nenhuma movimentação neste período
