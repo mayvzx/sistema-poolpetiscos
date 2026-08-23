@@ -67,16 +67,19 @@ letras em outros dispositivos.
    **sem tomate**.
 4. Informe o nome da pessoa, se souber. Se deixar em branco, o sistema cria um
    identificador automático como **Balcão 01**.
-5. Selecione Pix, dinheiro, débito ou crédito.
+5. Selecione Pix, dinheiro, débito ou crédito. Em **Débito**, o sistema soma
+   3% ao subtotal; em **Crédito**, soma 6%. O acréscimo e o total a cobrar
+   aparecem antes da confirmação.
 6. Em dinheiro, informe o valor recebido e confira o **Troco**.
-7. Selecione **Finalizar e criar comanda**.
+7. Se as comandas estiverem ativas, selecione **Finalizar e criar comanda**.
+   No modo de venda direta, selecione **Finalizar e registrar venda**.
 
 O total e o botão de finalizar permanecem visíveis. Em pedidos maiores, role
 somente a lista de itens dentro do card **Pedido atual**.
 
-Pix, débito e crédito são registrados como forma de pagamento, mas ainda precisam ser
-confirmados na maquininha. O sistema não deve considerar uma transação aprovada
-automaticamente até a integração com o provedor ser contratada e homologada.
+O valor do débito ou crédito já inclui o acréscimo no caixa e nos relatórios.
+Mesmo assim, Pix e cartões ainda precisam ser confirmados manualmente na
+maquininha. O sistema não considera uma transação aprovada automaticamente.
 
 ## Acompanhar as comandas
 
@@ -91,6 +94,21 @@ As comandas entregues saem da fila principal, mas continuam disponíveis na aba
 **Reabrir**. A situação da comanda não altera novamente o estoque nem o valor
 registrado no financeiro. As observações aparecem destacadas logo abaixo do
 respectivo item.
+
+O botão **Reabrir** devolve a comanda à fila, mas não altera os produtos de uma
+venda já registrada. Se um item foi esquecido, registre uma nova venda para ele.
+
+### Usar venda direta sem fila de comandas
+
+Em **Configurações > Modo de atendimento**, escolha:
+
+- **Usar comandas** para enviar cada venda à fila de preparo;
+- **Venda direta** para registrar o pagamento, baixar o estoque e concluir a
+  venda imediatamente, sem criar uma comanda na fila.
+
+A alteração vale somente para as próximas vendas e não apaga o histórico. Para
+evitar pedidos esquecidos, o sistema só permite ativar a venda direta quando
+não existir nenhuma comanda em andamento.
 
 ## Cuidar do estoque
 
@@ -146,15 +164,21 @@ fechamento daquele caixa.
 
 ### Consultar e baixar o fluxo de caixa
 
-Em **Financeiro > Fluxo de caixa**, escolha **Hoje**, **Este mês** ou
-**Escolher período**. A tabela mostra data, tipo de movimentação, descrição,
-valor e observação. Vendas e suprimentos aparecem como entradas; despesas e
-sangrias aparecem como saídas.
+Em **Financeiro > Fluxo de caixa**, escolha **Hoje**, **Esta semana**, **Este
+mês** ou **Escolher período**. A semana começa na segunda-feira e termina no dia
+atual. A tabela mostra data e hora, tipo de movimentação, descrição, itens ou
+detalhes, forma de pagamento, valor e observação. Em cada venda aparecem os
+produtos, as quantidades e as observações do pedido.
+
+Vendas e suprimentos aparecem como entradas; despesas e sangrias aparecem como
+saídas. Nas vendas por débito ou crédito, a forma de pagamento mostra a taxa e
+o valor da entrada já contém o acréscimo cobrado.
 
 Use **Baixar Excel** para obter uma planilha `.xlsx` com filtros, cores, fórmulas
 e totais. Use **Baixar PDF** para salvar, imprimir ou enviar um relatório pronto.
 Os dois arquivos incluem apenas o período escolhido e não alteram os dados do
-sistema.
+sistema. A coluna de data da planilha tem largura própria e usa o formato
+**dia/mês/ano hora:minuto**, evitando a exibição de `########` do Excel.
 
 ## Usar músicas
 

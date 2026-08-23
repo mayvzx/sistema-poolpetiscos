@@ -2,6 +2,43 @@
 
 Todas as mudanças relevantes do Pool Petiscos são registradas neste arquivo.
 
+## 1.8.0 — 2026-08-23
+
+### Relatórios detalhados
+
+- adiciona filtros rápidos para hoje, semana atual e mês atual, além do período
+  personalizado já existente;
+- inclui em cada venda os produtos, quantidades, observações dos itens e forma
+  de pagamento tanto na tela quanto nos arquivos Excel e PDF;
+- amplia a coluna de data da planilha e mostra data e hora, corrigindo o
+  `########` exibido pelo Excel quando a coluna era estreita;
+- reorganiza as colunas e fórmulas da planilha para manter totais e filtros
+  corretos com o novo detalhamento.
+
+### Acréscimos de cartão e atendimento
+
+- calcula e mostra 3% de acréscimo no débito e 6% no crédito antes de finalizar
+  a venda, preservando subtotal, taxa, acréscimo e total final no histórico;
+- migra vendas antigas com taxa zero, sem alterar valores já registrados;
+- permite escolher entre fila de comandas e venda direta nas Configurações;
+- impede desativar a fila enquanto houver comandas em andamento e preserva todo
+  o histórico ao mudar de modo;
+- registra vendas diretas como concluídas, com baixa normal no estoque e sem
+  poluir a fila de preparo.
+
+### Atualização e confiabilidade
+
+- repete a verificação automática enquanto o aplicativo permanece aberto,
+  respeitando o intervalo de 24 horas do serviço local;
+- consulta novamente ao voltar para uma janela que ficou em segundo plano,
+  sem interromper o atendimento quando não houver internet;
+- vincula o estado de download à versão exata, evitando mostrar um instalador
+  antigo como pronto para uma publicação mais nova;
+- remove arquivos incompletos ou inválidos e só mantém o instalador depois de
+  conferir tamanho e SHA-256;
+- amplia os testes do atualizador para cache diário, consulta forçada, download
+  válido e rejeição de conteúdo corrompido.
+
 ## 1.7.0 — 2026-08-22
 
 ### Sessões de caixa e resumo de fechamento

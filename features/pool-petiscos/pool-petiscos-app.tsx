@@ -130,6 +130,10 @@ import {
 } from "./music-companion";
 import { MusicProgress } from "./music-progress";
 import {
+  calculateSalePricing,
+  formatSurchargePercent,
+} from "./payment-surcharge";
+import {
   checkForAppUpdate,
   type AppUpdateStatus,
 } from "./update-companion";
@@ -237,6 +241,8 @@ export default function PoolPetiscosApp() {
     useState<ActiveCashSession | null>(null);
   const [cashMovements, setCashMovements] = useState<CashMovement[]>([]);
   const [cashClosures, setCashClosures] = useState<CashClosure[]>([]);
+  const [ordersEnabled, setOrdersEnabled] = useState(true);
+  const ordersEnabledRef = useRef(true);
   const [operatorCredentials, setOperatorCredentials] =
     useState<OperatorCredentials>({});
   const [pinRecoveryCredential, setPinRecoveryCredential] =
@@ -428,9 +434,11 @@ export default function PoolPetiscosApp() {
   }, []);
 
   const navigateTo = useCallback((view: View) => {
-    setActiveView(view);
-    if (window.location.hash !== `#${view}`) {
-      window.history.pushState(null, "", `#${view}`);
+    const nextView =
+      view === "comandas" && !ordersEnabledRef.current ? "inicio" : view;
+    setActiveView(nextView);
+    if (window.location.hash !== `#${nextView}`) {
+      window.history.pushState(null, "", `#${nextView}`);
     }
   }, []);
 
@@ -501,6 +509,14 @@ export default function PoolPetiscosApp() {
     setActiveCashSession(state.activeCashSession);
     setCashMovements(state.cashMovements);
     setCashClosures(state.cashClosures);
+    ordersEnabledRef.current = state.ordersEnabled;
+    setOrdersEnabled(state.ordersEnabled);
+    setActiveView((current) =>
+      current === "comandas" && !state.ordersEnabled ? "inicio" : current,
+    );
+    if (!state.ordersEnabled && window.location.hash === "#comandas") {
+      window.history.replaceState(null, "", "#inicio");
+    }
     setOperatorCredentials(state.operatorCredentials);
     setPinRecoveryCredential(state.pinRecoveryCredential);
     setCart([]);
@@ -608,7 +624,11 @@ export default function PoolPetiscosApp() {
   useEffect(() => {
     const syncViewWithLocation = () => {
       const view = viewFromLocation();
-      if (view) setActiveView(view);
+      if (view) {
+        setActiveView(
+          view === "comandas" && !ordersEnabledRef.current ? "inicio" : view,
+        );
+      }
     };
     syncViewWithLocation();
     window.addEventListener("popstate", syncViewWithLocation);
@@ -807,6 +827,7 @@ export default function PoolPetiscosApp() {
       activeCashSession,
       cashMovements,
       cashClosures,
+      ordersEnabled,
       operatorCredentials,
       ...(pinRecoveryCredential ? { pinRecoveryCredential } : {}),
     } satisfies PersistedPoolState;
@@ -868,6 +889,7 @@ export default function PoolPetiscosApp() {
     hydrated,
     openingBalance,
     operatorCredentials,
+    ordersEnabled,
     pinRecoveryCredential,
     products,
     sales,
@@ -884,15 +906,25 @@ export default function PoolPetiscosApp() {
       return;
     }
     let cancelled = false;
-    void checkForAppUpdate()
-      .then((status) => {
-        if (!cancelled) setUpdateStatus(status);
-      })
-      .catch(() => {
-        // A checagem silenciosa não interrompe o atendimento.
-      });
+    const refreshUpdateStatus = () => {
+      void checkForAppUpdate()
+        .then((status) => {
+          if (!cancelled) setUpdateStatus(status);
+        })
+        .catch(() => {
+          // A checagem silenciosa não interrompe o atendimento.
+        });
+    };
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") refreshUpdateStatus();
+    };
+    refreshUpdateStatus();
+    const timer = window.setInterval(refreshUpdateStatus, 60 * 60 * 1000);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
   }, [hydrated]);
 
@@ -1148,7 +1180,11 @@ export default function PoolPetiscosApp() {
   const completedOrders = useMemo(
     () =>
       sortOrdersNewestFirst(
-        sales.filter((sale) => sale.orderStatus === "entregue"),
+        sales.filter(
+          (sale) =>
+            sale.orderStatus === "entregue" &&
+            sale.serviceMode !== "venda-direta",
+        ),
       ),
     [sales],
   );
@@ -1164,6 +1200,14 @@ export default function PoolPetiscosApp() {
     }),
     [activeOrders],
   );
+  const visibleNavigation = useMemo(
+    () =>
+      ordersEnabled
+        ? navigation
+        : navigation.filter((item) => item.id !== "comandas"),
+    [ordersEnabled],
+  );
+
   const todayExpenses = useMemo(
     () =>
       todayKey
@@ -1295,11 +1339,15 @@ export default function PoolPetiscosApp() {
       ),
     [cartDetails],
   );
+  const cartPricing = useMemo(
+    () => calculateSalePricing(cartTotal, paymentMethod),
+    [cartTotal, paymentMethod],
+  );
   const cashReceivedAmount = parseAmount(cashReceived);
   const cashPaymentInvalid =
     paymentMethod === "Dinheiro" &&
     (!Number.isFinite(cashReceivedAmount) ||
-      cashReceivedAmount + Number.EPSILON < cartTotal);
+      cashReceivedAmount + Number.EPSILON < cartPricing.total);
 
   const filteredProducts = useMemo(() => {
     const query = normalizeText(saleSearch);
@@ -1600,13 +1648,17 @@ export default function PoolPetiscosApp() {
         ? { cashSessionId: activeCashSession.id }
         : {}),
       timestamp,
-      total: cartTotal,
+      subtotal: cartPricing.subtotal,
+      surchargeRate: cartPricing.surchargeRate,
+      surchargeAmount: cartPricing.surchargeAmount,
+      total: cartPricing.total,
       payment: paymentMethod,
       operatorId: activeOperator.id,
       operatorName: activeOperator.name,
       items,
       customerName: orderCustomerName,
-      orderStatus: "aguardando",
+      serviceMode: ordersEnabled ? "comanda" : "venda-direta",
+      orderStatus: ordersEnabled ? "aguardando" : "entregue",
       statusUpdatedAt: timestamp,
     };
     setProducts((current) =>
@@ -1621,10 +1673,35 @@ export default function PoolPetiscosApp() {
     setCart([]);
     setCustomerName("");
     setCashReceived("");
-    setOrdersMode("andamento");
-    navigateTo("comandas");
+    if (ordersEnabled) {
+      setOrdersMode("andamento");
+      navigateTo("comandas");
+      showToast(
+        `Comanda de ${sale.customerName} adicionada em Aguardando.`,
+      );
+    } else {
+      showToast(
+        `Venda de ${sale.customerName} registrada sem criar comanda.`,
+      );
+    }
+  }
+
+  function updateOrdersEnabled(enabled: boolean) {
+    if (!enabled && activeOrders.length > 0) {
+      showToast(
+        "Conclua as comandas em andamento antes de desativar a fila.",
+        "warning",
+      );
+      return;
+    }
+    ordersEnabledRef.current = enabled;
+    setOrdersEnabled(enabled);
+    if (!enabled && activeView === "comandas") navigateTo("venda");
     showToast(
-      `Comanda de ${sale.customerName} adicionada em Aguardando.`,
+      enabled
+        ? "Comandas ativadas. As próximas vendas entrarão na fila."
+        : "Comandas desativadas. As próximas vendas serão concluídas diretamente.",
+      "info",
     );
   }
 
@@ -2218,6 +2295,7 @@ export default function PoolPetiscosApp() {
       activeCashSession,
       cashMovements,
       cashClosures,
+      ordersEnabled,
       operatorCredentials,
       ...(pinRecoveryCredential ? { pinRecoveryCredential } : {}),
     };
@@ -2471,7 +2549,7 @@ export default function PoolPetiscosApp() {
           <span className="mb-2 px-3 text-[9px] font-bold uppercase tracking-[0.18em] text-white/35">
             Menu principal
           </span>
-          {navigation.map((item) => {
+          {visibleNavigation.map((item) => {
             const Icon = item.icon;
             const active = activeView === item.id;
             return (
@@ -2669,7 +2747,10 @@ export default function PoolPetiscosApp() {
         </header>
 
         {updateStatus?.available && (
-          <div className="border-b border-[#f0d7b4] bg-[#fff8ec] px-4 py-3 sm:px-6 lg:px-9">
+          <div
+            data-testid="update-banner"
+            className="border-b border-[#f0d7b4] bg-[#fff8ec] px-4 py-3 sm:px-6 lg:px-9"
+          >
             <div className="mx-auto flex w-full max-w-[1480px] flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-start gap-3">
                 <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#d9202c] text-white">
@@ -2721,16 +2802,18 @@ export default function PoolPetiscosApp() {
                     <Plus size={18} />
                     Registrar nova venda
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => navigateTo("comandas")}
-                    className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[#ebe5e1] bg-white px-4 text-xs font-bold transition hover:border-[#d9202c] hover:text-[#d9202c]"
-                  >
-                    <ReceiptText size={17} />
-                    {activeOrders.length > 0
-                      ? `${activeOrders.length} comanda(s) na fila`
-                      : "Ver comandas"}
-                  </button>
+                  {ordersEnabled && (
+                    <button
+                      type="button"
+                      onClick={() => navigateTo("comandas")}
+                      className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[#ebe5e1] bg-white px-4 text-xs font-bold transition hover:border-[#d9202c] hover:text-[#d9202c]"
+                    >
+                      <ReceiptText size={17} />
+                      {activeOrders.length > 0
+                        ? `${activeOrders.length} comanda(s) na fila`
+                        : "Ver comandas"}
+                    </button>
+                  )}
                 </div>
               </div>
               <div className="absolute bottom-3 right-3 z-10 hidden rounded-full border border-white/30 bg-white/10 p-2 shadow-2xl sm:bottom-auto sm:right-[6%] sm:block">
@@ -3215,7 +3298,8 @@ export default function PoolPetiscosApp() {
                   <label className="mb-4 block">
                     <span className="mb-1.5 flex items-center gap-2 text-sm font-extrabold text-[#4f4743]">
                       <UserRound size={17} className="text-[#d9202c]" />
-                      Nome na comanda <em className="font-normal not-italic text-[#8d8581]">(opcional)</em>
+                      {ordersEnabled ? "Nome na comanda" : "Nome na venda"}{" "}
+                      <em className="font-normal not-italic text-[#8d8581]">(opcional)</em>
                     </span>
                     <input
                       value={customerName}
@@ -3230,7 +3314,10 @@ export default function PoolPetiscosApp() {
                       id="anonymous-order-help"
                       className="mt-2 flex items-center justify-between gap-3 rounded-xl bg-[#f7f5f2] px-3 py-2 text-xs leading-5 text-[#776f6b]"
                     >
-                      <span>Sem nome, a identificação será automática.</span>
+                      <span>
+                        Sem nome, a identificação será automática
+                        {ordersEnabled ? " na fila" : " no relatório"}.
+                      </span>
                       <strong className="shrink-0 text-[#4f4743]">
                         {anonymousOrderName}
                       </strong>
@@ -3265,6 +3352,24 @@ export default function PoolPetiscosApp() {
                       );
                     })}
                   </div>
+                  {cartPricing.surchargeRate > 0 && (
+                    <div
+                      className="mt-3 rounded-2xl border border-[#f0cf93] bg-[#fff8de] p-4 text-[#704d00]"
+                      role="status"
+                      aria-live="polite"
+                    >
+                      <div className="flex items-center justify-between gap-3 text-sm font-extrabold">
+                        <span>
+                          Acréscimo no {paymentMethod.toLocaleLowerCase("pt-BR")}
+                          {" "}({formatSurchargePercent(cartPricing.surchargeRate)})
+                        </span>
+                        <strong>{currency.format(cartPricing.surchargeAmount)}</strong>
+                      </div>
+                      <p className="mt-1 text-xs font-semibold leading-5 text-[#8d6100]">
+                        O valor já será somado ao total cobrado e aparecerá no relatório.
+                      </p>
+                    </div>
+                  )}
                   {paymentMethod === "Dinheiro" && (
                     <label className="mt-3 block">
                       <span className="mb-1.5 block text-sm font-extrabold text-[#5f5753]">
@@ -3278,8 +3383,8 @@ export default function PoolPetiscosApp() {
                         className="h-12 w-full rounded-xl border border-[#ded7d2] px-4 text-lg font-bold outline-none transition focus:border-[#d9202c] focus:ring-4 focus:ring-[#d9202c]/10"
                       />
                       {Number.isFinite(cashReceivedAmount) &&
-                        cashReceivedAmount >= cartTotal &&
-                        cartTotal > 0 && (
+                        cashReceivedAmount >= cartPricing.total &&
+                        cartPricing.total > 0 && (
                           <span
                             className="pool-emphasis mt-3 block rounded-2xl border-2 border-[#9bd0b6] bg-[#eaf8f1] p-4 text-[#185c3e] shadow-[0_10px_24px_rgba(39,134,93,.12)]"
                             role="status"
@@ -3290,7 +3395,7 @@ export default function PoolPetiscosApp() {
                             </span>
                             <strong className="mt-1 block text-3xl font-black tracking-[-.04em] sm:text-4xl">
                               {currency.format(
-                                roundMoney(cashReceivedAmount - cartTotal),
+                                roundMoney(cashReceivedAmount - cartPricing.total),
                               )}
                             </strong>
                           </span>
@@ -3308,14 +3413,29 @@ export default function PoolPetiscosApp() {
                 </div>
 
                 <div className="shrink-0 border-t border-[#ebe5e1] bg-white pt-3 shadow-[0_-10px_20px_rgba(66,45,37,.035)]">
-                  <div className="flex items-end justify-between">
-                    <div>
-                      <span className="block text-[9px] text-[#776f6b]">
-                        Total do pedido
-                      </span>
-                      <strong className="text-2xl tracking-[-.04em]">
-                        {currency.format(cartTotal)}
-                      </strong>
+                  <div className="flex items-end justify-between gap-4">
+                    <div className="min-w-0 flex-1">
+                      {cartPricing.surchargeAmount > 0 && (
+                        <div className="mb-1 flex items-center justify-between gap-3 text-[9px] font-semibold text-[#776f6b]">
+                          <span>Subtotal</span>
+                          <span>{currency.format(cartPricing.subtotal)}</span>
+                        </div>
+                      )}
+                      <div className="flex items-end justify-between gap-3">
+                        <div>
+                          <span className="block text-[9px] text-[#776f6b]">
+                            Total a cobrar
+                          </span>
+                          <strong className="text-2xl tracking-[-.04em]">
+                            {currency.format(cartPricing.total)}
+                          </strong>
+                        </div>
+                        {cartPricing.surchargeAmount > 0 && (
+                          <span className="rounded-full bg-[#fff8de] px-2.5 py-1 text-[9px] font-extrabold text-[#8d6100]">
+                            + {currency.format(cartPricing.surchargeAmount)}
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <span className="text-[9px] text-[#8d8581]">
                       {cart.reduce((sum, item) => sum + item.quantity, 0)} item(ns)
@@ -3329,7 +3449,9 @@ export default function PoolPetiscosApp() {
                     className="pool-primary-action mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-transparent bg-[#d9202c] px-4 text-xs font-extrabold text-white shadow-[0_10px_22px_rgba(217,32,44,.22)] transition hover:bg-[#b41622] disabled:cursor-not-allowed"
                   >
                     <Check size={18} />
-                    Finalizar e criar comanda
+                    {ordersEnabled
+                      ? "Finalizar e criar comanda"
+                      : "Finalizar e registrar venda"}
                   </button>
                 </div>
               </aside>
@@ -4724,11 +4846,14 @@ export default function PoolPetiscosApp() {
             displayPreferences={displayPreferences}
             resolvedTheme={resolvedTheme}
             cashFund={cashFund}
+            ordersEnabled={ordersEnabled}
+            activeOrderCount={activeOrders.length}
             updateStatus={updateStatus}
             onCredentialChange={updateOperatorCredential}
             onRecoveryCredentialChange={setPinRecoveryCredential}
             onDisplayPreferencesChange={setDisplayPreferences}
             onCashFundChange={setCashFund}
+            onOrdersEnabledChange={updateOrdersEnabled}
             onUpdateStatusChange={setUpdateStatus}
             onMessage={showToast}
           />
@@ -4736,10 +4861,12 @@ export default function PoolPetiscosApp() {
       </main>
 
       <nav
-        className="fixed bottom-[max(.75rem,env(safe-area-inset-bottom))] left-3 right-3 z-40 grid grid-cols-7 rounded-2xl border border-white/10 bg-[#211e1d]/96 p-1.5 text-white shadow-2xl backdrop-blur-xl lg:hidden"
+        className={`fixed bottom-[max(.75rem,env(safe-area-inset-bottom))] left-3 right-3 z-40 grid rounded-2xl border border-white/10 bg-[#211e1d]/96 p-1.5 text-white shadow-2xl backdrop-blur-xl lg:hidden ${
+          ordersEnabled ? "grid-cols-7" : "grid-cols-6"
+        }`}
         aria-label="Navegação móvel"
       >
-        {navigation.map((item) => {
+        {visibleNavigation.map((item) => {
           const Icon = item.icon;
           const active = activeView === item.id;
           return (

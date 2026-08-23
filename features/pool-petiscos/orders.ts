@@ -15,7 +15,7 @@ export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
 };
 
 export function isActiveOrder(sale: Sale) {
-  return sale.orderStatus !== "entregue";
+  return sale.serviceMode !== "venda-direta" && sale.orderStatus !== "entregue";
 }
 
 export function sortOrdersOldestFirst(sales: Sale[]) {

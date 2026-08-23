@@ -43,11 +43,15 @@ function validState(): PersistedPoolState {
         id: "PV-TESTE",
         cashSessionId: "CX-TESTE",
         timestamp,
+        subtotal: 18,
+        surchargeRate: 0,
+        surchargeAmount: 0,
         total: 18,
         payment: "Dinheiro",
         operatorId: "elaine",
         operatorName: "Elaine",
         customerName: "Cliente teste",
+        serviceMode: "comanda",
         orderStatus: "entregue",
         statusUpdatedAt: timestamp,
         items: [
@@ -75,6 +79,7 @@ function validState(): PersistedPoolState {
     },
     cashMovements: [],
     cashClosures: [],
+    ordersEnabled: true,
     operatorCredentials: {},
   };
 }
@@ -260,6 +265,7 @@ test("inicia uma instalação nova sem movimentações nem valores fictícios", 
   assert.deepEqual(state.cashMovements, []);
   assert.deepEqual(state.cashClosures, []);
   assert.deepEqual(state.operatorCredentials, {});
+  assert.equal(state.ordersEnabled, true);
   assert.ok(state.products.length > 0);
   assert.ok(
     state.products.every(
@@ -281,8 +287,13 @@ test("migra vendas antigas para o histórico de comandas", () => {
   delete legacy.sales[0].statusUpdatedAt;
   delete legacy.sales[0].operatorId;
   delete legacy.sales[0].operatorName;
+  delete legacy.sales[0].subtotal;
+  delete legacy.sales[0].surchargeRate;
+  delete legacy.sales[0].surchargeAmount;
+  delete legacy.sales[0].serviceMode;
   delete (legacy as { operatorCredentials?: unknown }).operatorCredentials;
   delete (legacy as { cashFund?: unknown }).cashFund;
+  delete (legacy as { ordersEnabled?: unknown }).ordersEnabled;
 
   const parsed = parsePoolState(legacy);
   assert.ok(parsed);
@@ -291,9 +302,31 @@ test("migra vendas antigas para o histórico de comandas", () => {
   assert.equal(parsed.sales[0].statusUpdatedAt, parsed.sales[0].timestamp);
   assert.equal(parsed.sales[0].operatorId, "nao-identificado");
   assert.equal(parsed.sales[0].operatorName, "Não identificado");
+  assert.equal(parsed.sales[0].subtotal, 18);
+  assert.equal(parsed.sales[0].surchargeRate, 0);
+  assert.equal(parsed.sales[0].surchargeAmount, 0);
+  assert.equal(parsed.sales[0].serviceMode, "comanda");
   assert.equal(parsed.sales[0].items[0].observation, "Sem cebola");
   assert.deepEqual(parsed.operatorCredentials, {});
   assert.equal(parsed.cashFund, 130);
+  assert.equal(parsed.ordersEnabled, true);
+});
+
+test("preserva acréscimos de cartão e rejeita totais inconsistentes", () => {
+  const state = validState();
+  state.sales[0] = {
+    ...state.sales[0],
+    payment: "Crédito",
+    subtotal: 18,
+    surchargeRate: 0.06,
+    surchargeAmount: 1.08,
+    total: 19.08,
+  };
+  assert.deepEqual(parsePoolState(state), state);
+
+  const inconsistent = structuredClone(state);
+  inconsistent.sales[0].surchargeAmount = 2;
+  assert.equal(parsePoolState(inconsistent), null);
 });
 
 test("migra fechamentos antigos sem inventar uma retirada", () => {

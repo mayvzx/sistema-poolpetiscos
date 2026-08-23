@@ -183,6 +183,7 @@ class UpdateChecker:
                         "file_path": str(destination),
                         "sha256": expected_digest,
                     }
+            destination.unlink(missing_ok=True)
             digest = hashlib.sha256()
             written = 0
             request = Request(

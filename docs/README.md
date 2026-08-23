@@ -22,8 +22,10 @@ ser colocado aqui ou enviado ao GitHub.
 
 ## Operação e implantação
 
-- [Entrega da versão 1.7.0](operations/ENTREGA-1.7.0.md): escopo, instalação,
+- [Entrega da versão 1.8.0](operations/ENTREGA-1.8.0.md): escopo, instalação,
   validação presencial, limitações e suporte da versão para teste.
+- [Guia visual de atualização](operations/assets/guia-atualizacao-pool-petiscos-1.8.0.png):
+  imagem simples para enviar à proprietária.
 - [Mensagem para a proprietária](operations/MENSAGEM-PARA-PROPRIETARIA.md):
   texto em linguagem simples, pronto para envio.
 - [Instalador Windows](operations/INSTALADOR-WINDOWS.md): geração, assinatura,

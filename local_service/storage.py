@@ -13,6 +13,7 @@ from collections.abc import Callable, Mapping
 from contextlib import closing
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any
 
@@ -50,6 +51,7 @@ PRODUCT_CATEGORIES = frozenset(
 )
 ORDER_STATUSES = frozenset({"aguardando", "em-preparo", "pronto", "entregue"})
 SALE_OPERATOR_IDS = frozenset({"elaine", "poolblay", "nao-identificado"})
+SALE_SERVICE_MODES = frozenset({"comanda", "venda-direta"})
 
 
 def _local_app_data(
@@ -136,6 +138,10 @@ def _is_timestamp(value: object) -> bool:
     return _is_finite_number(value) and float(value) > 0
 
 
+def _money(value: object) -> Decimal:
+    return Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
 def _is_base64(value: object, minimum_bytes: int) -> bool:
     if not isinstance(value, str) or not value:
         return False
@@ -211,10 +217,34 @@ def _is_sale(value: object) -> bool:
         or any(not _is_sale_item(item) for item in items)
     ):
         return False
-    expected_total = math.fsum(
+    expected_subtotal = math.fsum(
         float(item["price"]) * int(item["quantity"]) for item in items
     )
-    if abs(expected_total - float(value["total"])) > 0.005:
+    pricing_fields = ("subtotal", "surchargeRate", "surchargeAmount")
+    supplied_pricing_fields = [field in value for field in pricing_fields]
+    if any(supplied_pricing_fields) and not all(supplied_pricing_fields):
+        return False
+    if all(supplied_pricing_fields):
+        subtotal = value.get("subtotal")
+        surcharge_rate = value.get("surchargeRate")
+        surcharge_amount = value.get("surchargeAmount")
+        if not (
+            _is_finite_number(subtotal, non_negative=True)
+            and _is_finite_number(surcharge_rate, non_negative=True)
+            and float(surcharge_rate) <= 0.5
+            and _is_finite_number(surcharge_amount, non_negative=True)
+            and abs(expected_subtotal - float(subtotal)) <= 0.005
+            and _money(surcharge_amount)
+            == _money(Decimal(str(subtotal)) * Decimal(str(surcharge_rate)))
+            and _money(value["total"])
+            == _money(Decimal(str(subtotal)) + Decimal(str(surcharge_amount)))
+        ):
+            return False
+        if value.get("payment") not in {"Débito", "Crédito"} and (
+            float(surcharge_rate) > 0 or float(surcharge_amount) > 0
+        ):
+            return False
+    elif abs(expected_subtotal - float(value["total"])) > 0.005:
         return False
     operator_id = value.get("operatorId")
     if operator_id is not None and not _is_allowed_string(
@@ -225,6 +255,13 @@ def _is_sale(value: object) -> bool:
     if order_status is not None and not _is_allowed_string(
         order_status, ORDER_STATUSES
     ):
+        return False
+    service_mode = value.get("serviceMode")
+    if service_mode is not None and not _is_allowed_string(
+        service_mode, SALE_SERVICE_MODES
+    ):
+        return False
+    if service_mode == "venda-direta" and order_status != "entregue":
         return False
     status_updated_at = value.get("statusUpdatedAt")
     return bool(
@@ -405,6 +442,10 @@ def _is_pool_state(value: object) -> bool:
             and not _is_finite_number(value.get("cashFund"), non_negative=True)
         )
         or not _is_timestamp(value.get("cashOpenedAt"))
+        or (
+            "ordersEnabled" in value
+            and not isinstance(value.get("ordersEnabled"), bool)
+        )
     ):
         return False
     active_session = value.get("activeCashSession")
@@ -576,7 +617,7 @@ class StateStorage:
                         """
                     )
                     self._create_readable_views(connection)
-                    connection.execute("PRAGMA user_version = 4")
+                    connection.execute("PRAGMA user_version = 5")
                     connection.commit()
                 except Exception:
                     if connection.in_transaction:
@@ -626,6 +667,27 @@ class StateStorage:
                     'unixepoch',
                     'localtime'
                 ) AS data_hora,
+                CAST(
+                    COALESCE(
+                        json_extract(sale.value, '$.subtotal'),
+                        json_extract(sale.value, '$.total')
+                    ) AS REAL
+                ) AS subtotal,
+                ROUND(
+                    CAST(
+                        COALESCE(
+                            json_extract(sale.value, '$.surchargeRate'),
+                            0
+                        ) AS REAL
+                    ) * 100,
+                    2
+                ) AS acrescimo_percentual,
+                CAST(
+                    COALESCE(
+                        json_extract(sale.value, '$.surchargeAmount'),
+                        0
+                    ) AS REAL
+                ) AS acrescimo_valor,
                 CAST(json_extract(sale.value, '$.total') AS REAL) AS total,
                 json_extract(sale.value, '$.payment') AS forma_pagamento,
                 COALESCE(
@@ -667,6 +729,10 @@ class StateStorage:
                     ),
                     'Cliente sem nome'
                 ) AS cliente,
+                COALESCE(
+                    json_extract(sale.value, '$.serviceMode'),
+                    'comanda'
+                ) AS modo_atendimento,
                 COALESCE(
                     json_extract(sale.value, '$.orderStatus'),
                     'entregue'

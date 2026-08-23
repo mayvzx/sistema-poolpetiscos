@@ -1,14 +1,25 @@
-import { formatDateKey, RECIFE_TIME_ZONE, roundMoney } from "./domain";
+import {
+  currency,
+  formatDateKey,
+  RECIFE_TIME_ZONE,
+  roundMoney,
+} from "./domain";
+import {
+  formatSurchargePercent,
+  salePricing,
+} from "./payment-surcharge";
 import type { CashMovement, Expense, Sale } from "./types";
 
 export type CashFlowMovement = "Entrada" | "Saída";
-export type CashFlowPeriodMode = "today" | "month" | "custom";
+export type CashFlowPeriodMode = "today" | "week" | "month" | "custom";
 
 export type CashFlowEntry = {
   id: string;
   timestamp: number;
   movement: CashFlowMovement;
   description: string;
+  details: string;
+  payment: string;
   amount: number;
   observation: string;
   source: "sale" | "expense" | "cash-movement";
@@ -43,6 +54,36 @@ function dateFromKey(key: string) {
     return null;
   }
   return date;
+}
+
+function shiftDateKey(key: string, days: number) {
+  const date = dateFromKey(key);
+  if (!date) return key;
+  date.setUTCDate(date.getUTCDate() + days);
+  return [
+    String(date.getUTCFullYear()).padStart(4, "0"),
+    String(date.getUTCMonth() + 1).padStart(2, "0"),
+    String(date.getUTCDate()).padStart(2, "0"),
+  ].join("-");
+}
+
+export function formatSaleItems(sale: Sale) {
+  if (!sale.items.length) return "Itens não informados";
+  return sale.items
+    .map((item) => {
+      const observation = item.observation?.trim();
+      return `${item.quantity}x ${item.name}${
+        observation ? ` (${observation})` : ""
+      }`;
+    })
+    .join("; ");
+}
+
+function salePaymentDescription(sale: Sale) {
+  const pricing = salePricing(sale);
+  return pricing.surchargeRate > 0
+    ? `${sale.payment} (+${formatSurchargePercent(pricing.surchargeRate)})`
+    : sale.payment;
 }
 
 export function formatReportDateKey(key: string) {
@@ -86,24 +127,36 @@ export function buildCashFlowEntries({
   cashMovements: CashMovement[];
 }) {
   return [
-    ...sales.map<CashFlowEntry>((sale) => ({
-      id: sale.id,
-      timestamp: sale.timestamp,
-      movement: "Entrada",
-      description: sale.customerName
-        ? `Venda - ${sale.customerName}`
-        : `Venda ${sale.id}`,
-      amount: roundMoney(sale.total),
-      observation: `${sale.payment} • ${sale.operatorName}`,
-      source: "sale",
-    })),
+    ...sales.map<CashFlowEntry>((sale) => {
+      const pricing = salePricing(sale);
+      return {
+        id: sale.id,
+        timestamp: sale.timestamp,
+        movement: "Entrada",
+        description: sale.customerName
+          ? `Venda - ${sale.customerName}`
+          : `Venda ${sale.id}`,
+        details: formatSaleItems(sale),
+        payment: salePaymentDescription(sale),
+        amount: roundMoney(sale.total),
+        observation:
+          pricing.surchargeAmount > 0
+            ? `${sale.operatorName} • Acréscimo ${currency.format(
+                pricing.surchargeAmount,
+              )}`
+            : sale.operatorName,
+        source: "sale",
+      };
+    }),
     ...expenses.map<CashFlowEntry>((expense) => ({
       id: expense.id,
       timestamp: expense.timestamp,
       movement: "Saída",
       description: expense.description,
+      details: expense.category,
+      payment: expense.payment,
       amount: roundMoney(expense.amount),
-      observation: `${expense.category} • ${expense.payment}`,
+      observation: "Despesa registrada",
       source: "expense",
     })),
     ...cashMovements.map<CashFlowEntry>((movement) => ({
@@ -111,11 +164,13 @@ export function buildCashFlowEntries({
       timestamp: movement.timestamp,
       movement: movement.kind === "suprimento" ? "Entrada" : "Saída",
       description: movement.description,
-      amount: roundMoney(movement.amount),
-      observation:
+      details:
         movement.kind === "suprimento"
-          ? "Suprimento de caixa • Dinheiro"
-          : "Sangria de caixa • Dinheiro",
+          ? "Suprimento de caixa"
+          : "Sangria de caixa",
+      payment: "Dinheiro",
+      amount: roundMoney(movement.amount),
+      observation: "Movimento de caixa",
       source: "cash-movement",
     })),
   ].sort((left, right) =>
@@ -134,6 +189,12 @@ export function createCashFlowRange(
   const todayKey = formatDateKey(now);
   let fromKey = mode === "month" ? `${todayKey.slice(0, 7)}-01` : todayKey;
   let toKey = todayKey;
+
+  if (mode === "week") {
+    const today = dateFromKey(todayKey);
+    const daysSinceMonday = today ? (today.getUTCDay() + 6) % 7 : 0;
+    fromKey = shiftDateKey(todayKey, -daysSinceMonday);
+  }
 
   if (mode === "custom") {
     if (!dateFromKey(customFrom) || !dateFromKey(customTo)) {

@@ -48,6 +48,7 @@ def minimal_pool_state(number: int | None = None) -> dict[str, object]:
         "cashOpenedAt": 1,
         "cashMovements": [],
         "cashClosures": [],
+        "ordersEnabled": True,
         "operatorCredentials": {},
     }
     if number is not None:
@@ -581,11 +582,15 @@ class StateStorageTest(unittest.TestCase):
                             "id": "V1",
                             "cashSessionId": "CX-ATIVA",
                             "timestamp": 1_700_000_000_000,
-                            "total": 37,
-                            "payment": "Pix",
+                            "subtotal": 37,
+                            "surchargeRate": 0.06,
+                            "surchargeAmount": 2.22,
+                            "total": 39.22,
+                            "payment": "Crédito",
                             "operatorId": "elaine",
                             "operatorName": "Elaine",
                             "customerName": "Ana",
+                            "serviceMode": "comanda",
                             "orderStatus": "em-preparo",
                             "statusUpdatedAt": 1_700_000_300_000,
                             "items": [
@@ -626,6 +631,7 @@ class StateStorageTest(unittest.TestCase):
                             "remainingBalance": 130,
                         }
                     ],
+                    "ordersEnabled": True,
                     "operatorCredentials": {
                         "elaine": {
                             "algorithm": "PBKDF2-SHA-256",
@@ -655,19 +661,36 @@ class StateStorageTest(unittest.TestCase):
                 )
                 self.assertEqual(
                     connection.execute(
-                        "SELECT sessao_caixa_id, forma_pagamento, operador, "
-                        "quantidade_itens "
+                        "SELECT sessao_caixa_id, subtotal, "
+                        "acrescimo_percentual, acrescimo_valor, total, "
+                        "forma_pagamento, operador, quantidade_itens "
                         "FROM vw_vendas"
                     ).fetchone(),
-                    ("CX-ATIVA", "Pix", "Elaine", 2),
+                    (
+                        "CX-ATIVA",
+                        37.0,
+                        6.0,
+                        2.22,
+                        39.22,
+                        "Crédito",
+                        "Elaine",
+                        2,
+                    ),
                 )
                 self.assertEqual(
                     connection.execute(
-                        "SELECT sessao_caixa_id, cliente, situacao, operador, "
-                        "quantidade_itens "
+                        "SELECT sessao_caixa_id, cliente, modo_atendimento, "
+                        "situacao, operador, quantidade_itens "
                         "FROM vw_comandas"
                     ).fetchone(),
-                    ("CX-ATIVA", "Ana", "em-preparo", "Elaine", 2),
+                    (
+                        "CX-ATIVA",
+                        "Ana",
+                        "comanda",
+                        "em-preparo",
+                        "Elaine",
+                        2,
+                    ),
                 )
                 self.assertEqual(
                     connection.execute(

@@ -2,6 +2,7 @@
 
 import {
   Check,
+  ClipboardList,
   Download,
   Eye,
   EyeOff,
@@ -13,6 +14,7 @@ import {
   ShieldCheck,
   Sun,
   Type,
+  Zap,
 } from "lucide-react";
 import { type FormEvent, useMemo, useState } from "react";
 import { BackupSettings } from "./backup-settings";
@@ -50,6 +52,8 @@ type SettingsPanelProps = {
   displayPreferences: DisplayPreferences;
   resolvedTheme: ResolvedTheme;
   cashFund: number;
+  ordersEnabled: boolean;
+  activeOrderCount: number;
   updateStatus: AppUpdateStatus | null;
   onCredentialChange: (
     operatorId: OperatorId,
@@ -58,6 +62,7 @@ type SettingsPanelProps = {
   onRecoveryCredentialChange: (credential: OperatorCredential) => void;
   onDisplayPreferencesChange: (preferences: DisplayPreferences) => void;
   onCashFundChange: (cashFund: number) => void;
+  onOrdersEnabledChange: (enabled: boolean) => void;
   onUpdateStatusChange: (status: AppUpdateStatus) => void;
   onMessage: (
     message: string,
@@ -98,11 +103,14 @@ export function SettingsPanel({
   displayPreferences,
   resolvedTheme,
   cashFund,
+  ordersEnabled,
+  activeOrderCount,
   updateStatus,
   onCredentialChange,
   onRecoveryCredentialChange,
   onDisplayPreferencesChange,
   onCashFundChange,
+  onOrdersEnabledChange,
   onUpdateStatusChange,
   onMessage,
 }: SettingsPanelProps) {
@@ -362,6 +370,83 @@ export function SettingsPanel({
         onCashFundChange={onCashFundChange}
         onMessage={onMessage}
       />
+
+      <section className="pool-settings-card rounded-[24px] border border-[#ebe5e1] bg-white p-5 shadow-sm sm:p-7">
+        <div className="flex items-start gap-4">
+          <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-[#fff0f1] text-[#d9202c]">
+            <ClipboardList size={24} />
+          </span>
+          <div>
+            <h2 className="text-xl font-black">Modo de atendimento</h2>
+            <p className="mt-1 text-sm leading-6 text-[#6d6561]">
+              Escolha se cada venda deve entrar na fila de comandas ou ser
+              concluída imediatamente após o pagamento.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-6 grid gap-3 lg:grid-cols-2">
+          <button
+            type="button"
+            onClick={() => onOrdersEnabledChange(true)}
+            aria-pressed={ordersEnabled}
+            className={`flex min-h-24 items-start gap-4 rounded-2xl border-2 p-4 text-left transition ${
+              ordersEnabled
+                ? "border-[#d9202c] bg-[#fff7f7]"
+                : "border-[#e6dfdb] bg-[#faf8f6] hover:border-[#d5c9c3]"
+            }`}
+          >
+            <span className={`grid size-11 shrink-0 place-items-center rounded-xl ${
+              ordersEnabled
+                ? "bg-[#d9202c] text-white"
+                : "bg-white text-[#6d6561]"
+            }`}>
+              <ClipboardList size={21} />
+            </span>
+            <span>
+              <strong className="block text-base font-black">Usar comandas</strong>
+              <span className="mt-1 block text-sm leading-5 text-[#6d6561]">
+                A venda entra em Aguardando e pode avançar até Entregue.
+              </span>
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onOrdersEnabledChange(false)}
+            aria-pressed={!ordersEnabled}
+            className={`flex min-h-24 items-start gap-4 rounded-2xl border-2 p-4 text-left transition ${
+              !ordersEnabled
+                ? "border-[#23734f] bg-[#edf9f2]"
+                : "border-[#e6dfdb] bg-[#faf8f6] hover:border-[#d5c9c3]"
+            }`}
+          >
+            <span className={`grid size-11 shrink-0 place-items-center rounded-xl ${
+              !ordersEnabled
+                ? "bg-[#23734f] text-white"
+                : "bg-white text-[#6d6561]"
+            }`}>
+              <Zap size={21} />
+            </span>
+            <span>
+              <strong className="block text-base font-black">Venda direta</strong>
+              <span className="mt-1 block text-sm leading-5 text-[#6d6561]">
+                Registra a venda, baixa o estoque e não cria item na fila.
+              </span>
+            </span>
+          </button>
+        </div>
+
+        <p className={`mt-4 rounded-xl px-4 py-3 text-sm font-semibold ${
+          activeOrderCount > 0
+            ? "bg-[#fff8de] text-[#8d6100]"
+            : "bg-[#f7f5f2] text-[#6d6561]"
+        }`}>
+          {activeOrderCount > 0
+            ? `Existem ${activeOrderCount} comanda(s) em andamento. Conclua-as antes de usar Venda direta.`
+            : "A alteração vale somente para as próximas vendas e nunca apaga o histórico."}
+        </p>
+      </section>
 
       <UpdateSettings
         status={updateStatus}
