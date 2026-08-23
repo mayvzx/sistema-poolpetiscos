@@ -215,6 +215,22 @@ function Assert-WindowsIcon {
     Write-Host "Ícone Windows validado: $($sizes.Count) resoluções."
 }
 
+function Get-Sha256Hex {
+    param([Parameter(Mandatory)][string]$Path)
+
+    $resolvedPath = [System.IO.Path]::GetFullPath($Path)
+    $stream = [System.IO.File]::OpenRead($resolvedPath)
+    $algorithm = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = $algorithm.ComputeHash($stream)
+        return ([System.BitConverter]::ToString($bytes)).Replace('-', '')
+    }
+    finally {
+        $algorithm.Dispose()
+        $stream.Dispose()
+    }
+}
+
 function Get-VerifiedDownload {
     param(
         [Parameter(Mandatory)]
@@ -226,7 +242,7 @@ function Get-VerifiedDownload {
         [string]$Sha256
     )
     if (Test-Path -LiteralPath $Destination) {
-        $existingHash = (Get-FileHash -LiteralPath $Destination -Algorithm SHA256).Hash
+        $existingHash = Get-Sha256Hex -Path $Destination
         if ($existingHash -ieq $Sha256) {
             Write-Host "Usando download verificado em cache: $Destination"
             return
@@ -239,7 +255,7 @@ function Get-VerifiedDownload {
         -Uri $Uri `
         -OutFile $Destination `
         -Headers @{ 'User-Agent' = 'Pool-Petiscos-Installer/1.0' }
-    $downloadHash = (Get-FileHash -LiteralPath $Destination -Algorithm SHA256).Hash
+    $downloadHash = Get-Sha256Hex -Path $Destination
     if ($downloadHash -ine $Sha256) {
         Remove-Item -LiteralPath $Destination -Force
         throw "SHA256 inválido para '$Uri'. Esperado: $Sha256; recebido: $downloadHash."
@@ -1011,7 +1027,7 @@ if ($signingContext) {
         -FilePath $signingContext.SignTool `
         -Arguments @('verify', '/pa', '/all', $setupPath)
 }
-$setupHash = (Get-FileHash -LiteralPath $setupPath -Algorithm SHA256).Hash
+$setupHash = Get-Sha256Hex -Path $setupPath
 Set-Content `
     -LiteralPath $setupHashPath `
     -Value "$setupHash  $(Split-Path -Leaf $setupPath)" `
