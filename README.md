@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img alt="Versão" src="https://img.shields.io/badge/vers%C3%A3o-1.7.0-d9202c">
+  <img alt="Versão" src="https://img.shields.io/badge/vers%C3%A3o-1.8.0-d9202c">
   <img alt="Plataforma Windows" src="https://img.shields.io/badge/plataforma-Windows-302b29">
   <img alt="Banco SQLite" src="https://img.shields.io/badge/dados-SQLite-7458b4">
   <img alt="Status protótipo operacional" src="https://img.shields.io/badge/status-prot%C3%B3tipo%20operacional-dc9b19">
@@ -32,18 +32,21 @@ banco ou maquininha.
 
 ## Funcionalidades
 
-- vendas em Pix, dinheiro, débito ou crédito, com troco em destaque;
+- vendas em Pix, dinheiro, débito ou crédito, com troco em destaque e
+  acréscimos configurados de 3% no débito e 6% no crédito;
 - acesso de Elaine e Poolblay, com totais de vendas separados por operador;
 - PIN individual protegido, chave de recuperação e redefinição segura;
 - tamanho das letras ajustável e temas automático, claro e escuro;
 - sessões explícitas de caixa, ligando cada venda e movimento à sua abertura;
 - resumo de cada fechamento, com formas de pagamento, responsáveis e PDF;
 - cadastro, alteração, exclusão, reposição e alerta de estoque;
-- comandas em **Aguardando**, **Em preparo**, **Pronto** e histórico;
+- comandas em **Aguardando**, **Em preparo**, **Pronto** e histórico, ou modo
+  de venda direta sem fila;
 - observações por item, como **sem cebola** ou **sem tomate**;
 - histórico de vendas preservado quando um produto muda;
 - despesas e indicadores financeiros calculados dos registros;
-- fluxo de caixa visível por dia, mês ou período, exportável em Excel e PDF;
+- fluxo de caixa visível por dia, semana, mês ou período, com itens vendidos,
+  quantidades e pagamento, exportável em Excel e PDF;
 - SQLite com controle de revisão e consultas legíveis para auditoria;
 - cópia completa do banco e backup de restauração pela interface;
 - backups SQLite diários, semanais e mensais, com restauração validada;
@@ -60,7 +63,7 @@ banco ou maquininha.
 
 Baixe o instalador mais recente em
 [Releases](https://github.com/mayvzx/sistema-poolpetiscos/releases/latest). O
-usuário final executa apenas `PoolPetiscos-Setup-1.7.0.exe`; as dependências já
+usuário final executa apenas `PoolPetiscos-Setup-1.8.0.exe`; as dependências já
 estão incluídas.
 
 > O protótipo atual ainda não possui assinatura Authenticode. O Windows pode

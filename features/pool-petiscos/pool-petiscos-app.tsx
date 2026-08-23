@@ -906,15 +906,25 @@ export default function PoolPetiscosApp() {
       return;
     }
     let cancelled = false;
-    void checkForAppUpdate()
-      .then((status) => {
-        if (!cancelled) setUpdateStatus(status);
-      })
-      .catch(() => {
-        // A checagem silenciosa não interrompe o atendimento.
-      });
+    const refreshUpdateStatus = () => {
+      void checkForAppUpdate()
+        .then((status) => {
+          if (!cancelled) setUpdateStatus(status);
+        })
+        .catch(() => {
+          // A checagem silenciosa não interrompe o atendimento.
+        });
+    };
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") refreshUpdateStatus();
+    };
+    refreshUpdateStatus();
+    const timer = window.setInterval(refreshUpdateStatus, 60 * 60 * 1000);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
   }, [hydrated]);
 
@@ -2737,7 +2747,10 @@ export default function PoolPetiscosApp() {
         </header>
 
         {updateStatus?.available && (
-          <div className="border-b border-[#f0d7b4] bg-[#fff8ec] px-4 py-3 sm:px-6 lg:px-9">
+          <div
+            data-testid="update-banner"
+            className="border-b border-[#f0d7b4] bg-[#fff8ec] px-4 py-3 sm:px-6 lg:px-9"
+          >
             <div className="mx-auto flex w-full max-w-[1480px] flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-start gap-3">
                 <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#d9202c] text-white">

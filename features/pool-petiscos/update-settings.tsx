@@ -36,7 +36,10 @@ export function UpdateSettings({
 }: UpdateSettingsProps) {
   const [checking, setChecking] = useState(false);
   const [downloading, setDownloading] = useState(false);
-  const [downloaded, setDownloaded] = useState(false);
+  const [downloadedVersion, setDownloadedVersion] = useState<string | null>(
+    null,
+  );
+  const downloaded = downloadedVersion === status?.latest_version;
 
   async function checkNow() {
     setChecking(true);
@@ -60,7 +63,7 @@ export function UpdateSettings({
     setDownloading(true);
     try {
       const result = await downloadVerifiedAppUpdate();
-      setDownloaded(true);
+      setDownloadedVersion(result.version);
       onMessage(
         `Instalador ${result.version} baixado e verificado com SHA-256.`,
       );
@@ -80,7 +83,10 @@ export function UpdateSettings({
   }
 
   return (
-    <section className="pool-settings-card rounded-[24px] border border-[#ebe5e1] bg-white p-5 shadow-sm sm:p-7">
+    <section
+      data-testid="update-settings"
+      className="pool-settings-card rounded-[24px] border border-[#ebe5e1] bg-white p-5 shadow-sm sm:p-7"
+    >
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
         <div className="flex items-start gap-4">
           <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-[#eaf8f1] text-[#27865d]">
