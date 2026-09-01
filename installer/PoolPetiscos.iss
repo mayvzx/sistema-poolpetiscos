@@ -5,7 +5,7 @@
   #error AppOutput não foi informado.
 #endif
 #ifndef AppVersion
-  #define AppVersion "1.8.0"
+  #define AppVersion "1.9.0"
 #endif
 #ifndef AppIcon
   #error AppIcon não foi informado.
@@ -40,7 +40,9 @@ WizardStyle=modern
 SetupLogging=yes
 CloseApplications=force
 RestartApplications=no
-AppMutex={#AppMutexName}
+; O encerramento precisa acontecer em PrepareToInstall. Declarar AppMutex aqui
+; faria o Inno Setup bloquear a atualização antes de conseguir executar
+; PoolPetiscos.exe --shutdown.
 UninstallDisplayIcon={app}\PoolPetiscos-{#AppVersion}.ico
 SetupIconFile={#AppIcon}
 VersionInfoVersion={#AppVersion}

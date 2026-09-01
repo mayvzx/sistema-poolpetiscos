@@ -36,6 +36,17 @@ Todas as mudanças relevantes do Pool Petiscos são registradas neste arquivo.
 - adiciona testes do domínio, API, migração, cliente HTTPS, inbox/outbox,
   orquestrador e rotas do serviço local.
 
+### Atualização no Windows
+
+- corrige a ordem de encerramento que podia bloquear o instalador antes de o
+  Pool conseguir fechar o serviço executado em segundo plano;
+- adiciona instalação guiada em um clique depois do download e da validação
+  SHA-256, sem exigir que a proprietária use o Gerenciador de Tarefas;
+- consulta um manifesto no site oficial e mantém a release do GitHub como rota
+  alternativa, reduzindo falhas temporárias ao procurar novas versões;
+- cria e verifica um backup do banco antes de substituir os arquivos e reabre o
+  sistema ao terminar, preservando vendas, PIN, configurações e Google Drive.
+
 ## 1.8.0 — 2026-08-23
 
 ### Relatórios detalhados

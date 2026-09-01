@@ -1026,6 +1026,16 @@ class PoolCompanionHandler(BaseHTTPRequestHandler):
                 return
             self._send_json(result, HTTPStatus.CREATED)
             return
+        if parsed.path == "/api/update/install":
+            if self._reject_sensitive_origin():
+                return
+            try:
+                result = self.pool_server.update_checker.install_verified_update()
+            except UpdateCheckError as error:
+                self._send_json({"error": str(error)}, HTTPStatus.BAD_GATEWAY)
+                return
+            self._send_json(result, HTTPStatus.ACCEPTED)
+            return
         if parsed.path == "/api/update/open-folder":
             if self._reject_sensitive_origin():
                 return

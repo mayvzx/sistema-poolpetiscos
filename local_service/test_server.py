@@ -80,6 +80,9 @@ class FakeUpdateChecker:
     def open_update_folder(self) -> dict[str, str]:
         return {"folder": "C:\\PoolPetiscos\\updates"}
 
+    def install_verified_update(self) -> dict[str, object]:
+        return {"scheduled": True, "version": "1.7.1"}
+
 
 class FakeOnlineOrdersManager:
     def __init__(self) -> None:
@@ -899,7 +902,7 @@ class StateApiTest(unittest.TestCase):
                 0,
             )
 
-    def test_update_api_is_notice_first_and_does_not_run_an_installer(self) -> None:
+    def test_update_api_checks_downloads_and_schedules_verified_installer(self) -> None:
         status, update = self._request("GET", "/api/update/status?force=1")
         self.assertEqual(status, 200)
         self.assertEqual(update["latest_version"], "1.7.1")
@@ -908,6 +911,10 @@ class StateApiTest(unittest.TestCase):
         status, downloaded = self._request("POST", "/api/update/download")
         self.assertEqual(status, 201)
         self.assertEqual(downloaded["downloaded"], True)
+
+        status, installation = self._request("POST", "/api/update/install")
+        self.assertEqual(status, 202)
+        self.assertEqual(installation["scheduled"], True)
 
         status, opened = self._request("POST", "/api/update/open-folder")
         self.assertEqual(status, 200)
@@ -1080,6 +1087,7 @@ class StateApiTest(unittest.TestCase):
             ("POST", "/api/google-drive/connect", None),
             ("POST", "/api/google-drive/disconnect", None),
             ("POST", "/api/update/download", None),
+            ("POST", "/api/update/install", None),
             ("POST", "/api/update/open-folder", None),
             ("POST", "/api/online-orders/sync", {}),
             (

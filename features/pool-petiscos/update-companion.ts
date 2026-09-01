@@ -16,6 +16,12 @@ export type AppUpdateStatus = {
   published_at: string;
   notes: string;
   verified_installer: VerifiedUpdateInstaller | null;
+  downloaded_installer: {
+    version: string;
+    filename: string;
+    file_path: string;
+    sha256: string;
+  } | null;
   checked_at: number;
 };
 
@@ -63,4 +69,16 @@ export async function openAppUpdateFolder() {
     { method: "POST" },
   );
   return readResponse<{ folder: string }>(response);
+}
+
+export async function installVerifiedAppUpdate() {
+  const response = await fetch(
+    `${UPDATE_COMPANION_URL}/api/update/install`,
+    { method: "POST" },
+  );
+  return readResponse<{
+    scheduled: true;
+    version: string;
+    filename: string;
+  }>(response);
 }

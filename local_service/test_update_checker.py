@@ -1,6 +1,7 @@
 import hashlib
 import io
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -10,6 +11,7 @@ from local_service.update_checker import (
     UpdateChecker,
     is_newer_version,
     parse_latest_release,
+    parse_update_manifest,
     parse_version,
 )
 
@@ -59,6 +61,53 @@ class UpdateCheckerRulesTest(unittest.TestCase):
                     "assets": [],
                 },
                 "1.7.0",
+            )
+
+    def test_accepts_the_same_origin_manifest_with_exact_github_asset(self) -> None:
+        digest = "b" * 64
+        status = parse_update_manifest(
+            {
+                "version": "1.9.0",
+                "release_url": (
+                    "https://github.com/mayvzx/sistema-poolpetiscos/"
+                    "releases/tag/v1.9.0"
+                ),
+                "release_name": "Pool Petiscos 1.9.0",
+                "installer": {
+                    "name": "PoolPetiscos-Setup-1.9.0.exe",
+                    "size": 321,
+                    "sha256": digest,
+                    "download_url": (
+                        "https://github.com/mayvzx/sistema-poolpetiscos/"
+                        "releases/download/v1.9.0/"
+                        "PoolPetiscos-Setup-1.9.0.exe"
+                    ),
+                },
+            },
+            "1.8.0",
+        )
+
+        self.assertTrue(status["available"])
+        self.assertEqual(status["source"], "manifest")
+        self.assertEqual(status["verified_installer"]["digest"], f"sha256:{digest}")
+
+    def test_rejects_manifest_that_redirects_to_another_download(self) -> None:
+        with self.assertRaises(UpdateCheckError):
+            parse_update_manifest(
+                {
+                    "version": "1.9.0",
+                    "release_url": (
+                        "https://github.com/mayvzx/sistema-poolpetiscos/"
+                        "releases/tag/v1.9.0"
+                    ),
+                    "installer": {
+                        "name": "PoolPetiscos-Setup-1.9.0.exe",
+                        "size": 321,
+                        "sha256": "c" * 64,
+                        "download_url": "https://example.com/setup.exe",
+                    },
+                },
+                "1.8.0",
             )
 
     def test_uses_daily_cache_but_force_refreshes_immediately(self) -> None:
@@ -152,6 +201,55 @@ class UpdateCheckerRulesTest(unittest.TestCase):
 
             self.assertFalse(installer.exists())
             self.assertFalse(installer.with_suffix(".exe.part").exists())
+
+    def test_schedules_only_a_locally_verified_installer(self) -> None:
+        contents = b"installer-pronto-para-execucao"
+        digest = hashlib.sha256(contents).hexdigest()
+        launched = threading.Event()
+        launched_paths: list[str] = []
+
+        def launch(path: str) -> None:
+            launched_paths.append(path)
+            launched.set()
+
+        with tempfile.TemporaryDirectory() as directory:
+            update_directory = Path(directory)
+            installer = update_directory / "PoolPetiscos-Setup-1.9.0.exe"
+            installer.write_bytes(contents)
+            checker = UpdateChecker(
+                "1.8.0",
+                update_directory,
+                clock=lambda: 1000,
+                installer_launcher=launch,
+                install_launch_delay=0,
+            )
+            checker._cached_at = 1000
+            checker._cached_status = {
+                "current_version": "1.8.0",
+                "latest_version": "1.9.0",
+                "available": True,
+                "verified_installer": {
+                    "name": installer.name,
+                    "size": len(contents),
+                    "digest": f"sha256:{digest}",
+                    "download_url": (
+                        "https://github.com/mayvzx/sistema-poolpetiscos/"
+                        "releases/download/v1.9.0/"
+                        "PoolPetiscos-Setup-1.9.0.exe"
+                    ),
+                },
+            }
+
+            status = checker.check()
+            self.assertEqual(status["downloaded_installer"]["version"], "1.9.0")
+            result = checker.install_verified_update()
+            self.assertTrue(result["scheduled"])
+            self.assertTrue(launched.wait(1))
+            self.assertEqual(launched_paths, [str(installer)])
+
+            installer.write_bytes(b"alterado")
+            with self.assertRaises(UpdateCheckError):
+                checker.install_verified_update()
 
 
 if __name__ == "__main__":
