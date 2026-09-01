@@ -140,6 +140,16 @@ import {
 import { clampPlaybackTime } from "./music-player";
 import { CashFlowPanel } from "./cash-flow-panel";
 import { CashSessionHistoryPanel } from "./cash-session-history-panel";
+import { OnlineOrdersPanel } from "./online-orders-panel";
+import {
+  applyOnlineOrderAction,
+  createOnlineMutationId,
+  loadOnlineOrders,
+  syncOnlineOrdersNow,
+  type OnlineOrder,
+  type OnlineOrderAction,
+  type OnlineOrdersSnapshot,
+} from "./online-orders-companion";
 import {
   categories,
   createInitialPoolState,
@@ -317,6 +327,12 @@ export default function PoolPetiscosApp() {
   const [musicDownloadBusy, setMusicDownloadBusy] = useState(false);
   const [updateStatus, setUpdateStatus] =
     useState<AppUpdateStatus | null>(null);
+  const [onlineOrdersSnapshot, setOnlineOrdersSnapshot] =
+    useState<OnlineOrdersSnapshot | null>(null);
+  const [onlineOrdersLoading, setOnlineOrdersLoading] = useState(false);
+  const [onlineOrdersError, setOnlineOrdersError] = useState<string | null>(
+    null,
+  );
   const [youtubeSearchResults, setYoutubeSearchResults] = useState<
     YoutubeSearchResult[]
   >([]);
@@ -343,6 +359,7 @@ export default function PoolPetiscosApp() {
   const localFallbackWritableRef = useRef(true);
   const youtubeSearchQueueRef = useRef<Promise<void>>(Promise.resolve());
   const youtubeSearchSequenceRef = useRef(0);
+  const onlineOrderMutationsRef = useRef(new Map<string, string>());
 
   useEffect(() => {
     let cancelled = false;
@@ -455,6 +472,43 @@ export default function PoolPetiscosApp() {
     },
     [],
   );
+
+  const refreshOnlineOrders = useCallback(async (force = false) => {
+    if (!["127.0.0.1", "localhost"].includes(window.location.hostname)) {
+      setOnlineOrdersSnapshot({
+        orders: [],
+        status: {
+          configured: false,
+          enabled: false,
+          connected: false,
+          acceptingOrders: false,
+          lastSyncAt: null,
+          lastError: null,
+          publicMenuUrl: null,
+          pendingCount: 0,
+        },
+      });
+      setOnlineOrdersError(null);
+      return;
+    }
+
+    setOnlineOrdersLoading(true);
+    try {
+      const snapshot = force
+        ? await syncOnlineOrdersNow()
+        : await loadOnlineOrders();
+      setOnlineOrdersSnapshot(snapshot);
+      setOnlineOrdersError(snapshot.status.lastError);
+    } catch (error) {
+      setOnlineOrdersError(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível consultar os pedidos online.",
+      );
+    } finally {
+      setOnlineOrdersLoading(false);
+    }
+  }, []);
 
   const syncMusicCompanion = useCallback(
     async (showFeedback = false) => {
@@ -927,6 +981,24 @@ export default function PoolPetiscosApp() {
       document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
   }, [hydrated]);
+
+  useEffect(() => {
+    if (!hydrated || !operatorSessionReady) return;
+    let cancelled = false;
+    const refresh = () => {
+      if (!cancelled && document.visibilityState === "visible") {
+        void refreshOnlineOrders(false);
+      }
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 8_000);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [hydrated, operatorSessionReady, refreshOnlineOrders]);
 
   useEffect(() => {
     const flushBeforeLeaving = () => {
@@ -1682,6 +1754,226 @@ export default function PoolPetiscosApp() {
     } else {
       showToast(
         `Venda de ${sale.customerName} registrada sem criar comanda.`,
+      );
+    }
+  }
+
+  async function runOnlineOrderAction(
+    order: OnlineOrder,
+    action: OnlineOrderAction,
+    options?: { reason?: string },
+  ) {
+    const mutationKey = `${order.id}:${order.version}:${action}:${options?.reason ?? ""}`;
+    const localMutationId =
+      onlineOrderMutationsRef.current.get(mutationKey) ??
+      createOnlineMutationId();
+    onlineOrderMutationsRef.current.set(mutationKey, localMutationId);
+    try {
+      const result = await applyOnlineOrderAction({
+        orderId: order.id,
+        expectedVersion: order.version,
+        action,
+        localMutationId,
+        ...(options?.reason ? { reason: options.reason } : {}),
+      });
+      onlineOrderMutationsRef.current.delete(mutationKey);
+      await refreshOnlineOrders(false);
+      if (result.queued) {
+        showToast(
+          `A ação do pedido #${order.number} foi salva e será sincronizada automaticamente quando a internet voltar.`,
+          "info",
+        );
+        return;
+      }
+      const feedback: Record<OnlineOrderAction, string> = {
+        accept: `Pedido #${order.number} aceito.`,
+        reject: `Pedido #${order.number} recusado.`,
+        start: `Preparo do pedido #${order.number} iniciado.`,
+        ready: `Pedido #${order.number} marcado como pronto.`,
+        complete: `Pedido #${order.number} concluído.`,
+        cancel: `Pedido #${order.number} cancelado.`,
+      };
+      showToast(feedback[action]);
+    } catch (error) {
+      showToast(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível atualizar o pedido online.",
+        "warning",
+      );
+    }
+  }
+
+  async function persistCompletedOnlineSale(sale: Sale) {
+    const nextProducts = products.map((product) => {
+      const sold = sale.items.find((item) => item.productId === product.id);
+      return sold
+        ? { ...product, stock: Math.max(0, product.stock - sold.quantity) }
+        : product;
+    });
+    const nextSales = [sale, ...sales];
+    const nextState = {
+      products: nextProducts,
+      sales: nextSales,
+      expenses,
+      cashOpen,
+      openingBalance,
+      cashFund,
+      cashOpenedAt,
+      activeCashSession,
+      cashMovements,
+      cashClosures,
+      ordersEnabled,
+      operatorCredentials,
+      ...(pinRecoveryCredential ? { pinRecoveryCredential } : {}),
+    } satisfies PersistedPoolState;
+
+    if (!primaryStorageReadyRef.current) {
+      throw new Error(
+        "O banco local precisa estar disponível antes de registrar esta venda.",
+      );
+    }
+
+    const waitStartedAt = Date.now();
+    while (
+      primaryStorageWriteRef.current &&
+      Date.now() - waitStartedAt < 2_500
+    ) {
+      await new Promise((resolve) => window.setTimeout(resolve, 50));
+    }
+    if (primaryStorageWriteRef.current) {
+      throw new Error(
+        "O caixa ainda está salvando outra alteração. Tente novamente em instantes.",
+      );
+    }
+    if (primaryStorageTimerRef.current !== null) {
+      window.clearTimeout(primaryStorageTimerRef.current);
+      primaryStorageTimerRef.current = null;
+    }
+    pendingPrimaryStateRef.current = null;
+    primaryStorageWriteRef.current = true;
+    try {
+      const result = await saveLocalPoolState(
+        nextState,
+        primaryStorageRevisionRef.current,
+      );
+      const serialized = JSON.stringify(nextState);
+      primaryStorageRevisionRef.current = result.revision;
+      primaryStorageSnapshotRef.current = serialized;
+      try {
+        window.localStorage.setItem(STORAGE_KEY, serialized);
+        window.localStorage.removeItem(PENDING_SYNC_KEY);
+        localFallbackWritableRef.current = true;
+      } catch {
+        localFallbackWritableRef.current = false;
+      }
+      setProducts(nextProducts);
+      setSales(nextSales);
+    } finally {
+      primaryStorageWriteRef.current = false;
+    }
+  }
+
+  async function completeOnlineOrder(
+    order: OnlineOrder,
+    selectedPaymentMethod: PaymentMethod,
+  ) {
+    if (!activeOperator) {
+      showToast("Escolha o operador antes de concluir o pedido.", "warning");
+      return;
+    }
+    if (!cashOpen || !activeCashSession) {
+      showToast("Abra o caixa antes de registrar a venda.", "warning");
+      return;
+    }
+
+    let sale = sales.find(
+      (candidate) => candidate.externalOrderId === order.id,
+    );
+    if (!sale) {
+      const subtotal = roundMoney(order.subtotalCents / 100);
+      const pricing = calculateSalePricing(subtotal, selectedPaymentMethod);
+      const timestamp = Date.now();
+      sale = {
+        id: createRecordId("PV"),
+        cashSessionId: activeCashSession.id,
+        timestamp,
+        subtotal: pricing.subtotal,
+        surchargeRate: pricing.surchargeRate,
+        surchargeAmount: pricing.surchargeAmount,
+        total: pricing.total,
+        payment: selectedPaymentMethod,
+        operatorId: activeOperator.id,
+        operatorName: activeOperator.name,
+        items: order.items.map((item) => ({
+          productId: item.productId,
+          name: item.name,
+          price: roundMoney(item.unitPriceCents / 100),
+          quantity: item.quantity,
+          ...(item.note ? { observation: item.note } : {}),
+        })),
+        customerName:
+          order.customerName || order.tableLabel || `Pedido #${order.number}`,
+        source: "cardapio-online",
+        externalOrderId: order.id,
+        ...(order.customerNote ? { customerNote: order.customerNote } : {}),
+        fulfillmentMode: order.fulfillmentMode,
+        ...(order.tableLabel ? { tableLabel: order.tableLabel } : {}),
+        serviceMode: "venda-direta",
+        orderStatus: "entregue",
+        statusUpdatedAt: timestamp,
+      };
+      try {
+        await persistCompletedOnlineSale(sale);
+      } catch (error) {
+        if (error instanceof LocalStateConflictError) {
+          const latestState = parsePoolState(error.state);
+          if (latestState) restorePoolState(latestState);
+        }
+        showToast(
+          error instanceof Error
+            ? error.message
+            : "Não foi possível registrar a venda no banco local.",
+          "warning",
+        );
+        return;
+      }
+    }
+
+    const mutationKey = `${order.id}:${order.version}:complete:${sale.id}:${sale.payment}`;
+    const localMutationId =
+      onlineOrderMutationsRef.current.get(mutationKey) ??
+      createOnlineMutationId();
+    onlineOrderMutationsRef.current.set(mutationKey, localMutationId);
+    try {
+      const result = await applyOnlineOrderAction({
+        orderId: order.id,
+        expectedVersion: order.version,
+        action: "complete",
+        localMutationId,
+        localSaleId: sale.id,
+        paymentMethod: sale.payment,
+      });
+      onlineOrderMutationsRef.current.delete(mutationKey);
+      await refreshOnlineOrders(false);
+      if (result.queued) {
+        showToast(
+          `A venda ${sale.id} foi salva. A confirmação do pedido #${order.number} será sincronizada automaticamente quando a internet voltar.`,
+          "info",
+        );
+        return;
+      }
+      showToast(
+        `Pedido #${order.number} entregue e venda ${sale.id} registrada.`,
+      );
+    } catch (error) {
+      showToast(
+        `A venda ${sale.id} foi salva. ${
+          error instanceof Error
+            ? error.message
+            : "A confirmação online ficará pendente para nova tentativa."
+        }`,
+        "warning",
       );
     }
   }
@@ -2572,6 +2864,12 @@ export default function PoolPetiscosApp() {
                     {activeOrders.length}
                   </span>
                 )}
+                {item.id === "pedidos-online" &&
+                  (onlineOrdersSnapshot?.status.pendingCount ?? 0) > 0 && (
+                    <span className="grid min-h-6 min-w-6 place-items-center rounded-full bg-white px-1.5 text-xs font-black text-[#d9202c]">
+                      {onlineOrdersSnapshot?.status.pendingCount}
+                    </span>
+                  )}
               </button>
             );
           })}
@@ -3456,6 +3754,20 @@ export default function PoolPetiscosApp() {
                 </div>
               </aside>
             </div>
+          </div>
+        )}
+
+        {activeView === "pedidos-online" && (
+          <div className="pool-view-enter mx-auto w-full max-w-[1560px] p-4 sm:p-6 lg:p-9">
+            <OnlineOrdersPanel
+              snapshot={onlineOrdersSnapshot}
+              loading={onlineOrdersLoading}
+              error={onlineOrdersError}
+              cashOpen={cashOpen}
+              onRefresh={() => refreshOnlineOrders(true)}
+              onAction={runOnlineOrderAction}
+              onComplete={completeOnlineOrder}
+            />
           </div>
         )}
 
@@ -4849,21 +5161,21 @@ export default function PoolPetiscosApp() {
             ordersEnabled={ordersEnabled}
             activeOrderCount={activeOrders.length}
             updateStatus={updateStatus}
+            onlineOrdersStatus={onlineOrdersSnapshot?.status ?? null}
             onCredentialChange={updateOperatorCredential}
             onRecoveryCredentialChange={setPinRecoveryCredential}
             onDisplayPreferencesChange={setDisplayPreferences}
             onCashFundChange={setCashFund}
             onOrdersEnabledChange={updateOrdersEnabled}
             onUpdateStatusChange={setUpdateStatus}
+            onOnlineOrdersRefresh={() => refreshOnlineOrders(true)}
             onMessage={showToast}
           />
         )}
       </main>
 
       <nav
-        className={`fixed bottom-[max(.75rem,env(safe-area-inset-bottom))] left-3 right-3 z-40 grid rounded-2xl border border-white/10 bg-[#211e1d]/96 p-1.5 text-white shadow-2xl backdrop-blur-xl lg:hidden ${
-          ordersEnabled ? "grid-cols-7" : "grid-cols-6"
-        }`}
+        className="fixed bottom-[max(.75rem,env(safe-area-inset-bottom))] left-3 right-3 z-40 flex overflow-x-auto rounded-2xl border border-white/10 bg-[#211e1d]/96 p-1.5 text-white shadow-2xl backdrop-blur-xl lg:hidden"
         aria-label="Navegação móvel"
       >
         {visibleNavigation.map((item) => {
@@ -4875,7 +5187,7 @@ export default function PoolPetiscosApp() {
               type="button"
               onClick={() => navigateTo(item.id)}
               aria-current={active ? "page" : undefined}
-              className={`relative flex min-h-[50px] flex-col items-center justify-center gap-1 rounded-xl text-[7px] font-bold ${
+              className={`relative flex min-h-[50px] min-w-[64px] flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[7px] font-bold ${
                 active ? "bg-[#d9202c] text-white" : "text-white/45"
               }`}
             >
@@ -4890,6 +5202,12 @@ export default function PoolPetiscosApp() {
                   {activeOrders.length}
                 </span>
               )}
+              {item.id === "pedidos-online" &&
+                (onlineOrdersSnapshot?.status.pendingCount ?? 0) > 0 && (
+                  <span className="absolute right-1 top-1 grid min-h-4 min-w-4 place-items-center rounded-full bg-white px-1 text-[9px] font-black text-[#d9202c]">
+                    {onlineOrdersSnapshot?.status.pendingCount}
+                  </span>
+                )}
             </button>
           );
         })}

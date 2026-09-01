@@ -192,6 +192,26 @@ function parseSale(value: unknown): Sale | null {
   const customerName = isNonEmptyString(value.customerName)
     ? value.customerName.trim()
     : "Cliente sem nome";
+  const source =
+    value.source === "cardapio-online" || value.source === "caixa"
+      ? value.source
+      : undefined;
+  if (value.source !== undefined && source === undefined) return null;
+  const externalOrderId = isNonEmptyString(value.externalOrderId)
+    ? value.externalOrderId.trim()
+    : undefined;
+  if (source === "cardapio-online" && !externalOrderId) return null;
+  const customerNote =
+    typeof value.customerNote === "string" && value.customerNote.trim()
+      ? value.customerNote.trim().slice(0, 300)
+      : undefined;
+  const fulfillmentMode =
+    value.fulfillmentMode === "table" || value.fulfillmentMode === "pickup"
+      ? value.fulfillmentMode
+      : undefined;
+  const tableLabel = isNonEmptyString(value.tableLabel)
+    ? value.tableLabel.trim().slice(0, 80)
+    : undefined;
   const orderStatus =
     typeof value.orderStatus === "string" &&
     ORDER_STATUSES.has(value.orderStatus as OrderStatus)
@@ -230,6 +250,11 @@ function parseSale(value: unknown): Sale | null {
     total,
     items: items as SaleItem[],
     customerName,
+    ...(source ? { source } : {}),
+    ...(externalOrderId ? { externalOrderId } : {}),
+    ...(customerNote ? { customerNote } : {}),
+    ...(fulfillmentMode ? { fulfillmentMode } : {}),
+    ...(tableLabel ? { tableLabel } : {}),
     serviceMode,
     orderStatus,
     statusUpdatedAt,

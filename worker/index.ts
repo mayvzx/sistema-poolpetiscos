@@ -1,8 +1,12 @@
 /** Cloudflare Worker entry point for the vinext-starter template. */
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
+import {
+  handleOnlineOrderApi,
+  type OnlineOrderEnv,
+} from "../cloud/online-order-api";
 
-interface Env {
+interface Env extends OnlineOrderEnv {
   ASSETS: {
     fetch(request: Request): Promise<Response>;
   };
@@ -29,6 +33,9 @@ interface ExecutionContext {
 const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+
+    const onlineOrderResponse = await handleOnlineOrderApi(request, env);
+    if (onlineOrderResponse) return onlineOrderResponse;
 
     if (url.pathname === "/_vinext/image") {
       const allowedWidths = [...DEFAULT_DEVICE_SIZES, ...DEFAULT_IMAGE_SIZES];

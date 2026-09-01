@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img alt="Versão" src="https://img.shields.io/badge/vers%C3%A3o-1.8.0-d9202c">
+  <img alt="Versão" src="https://img.shields.io/badge/vers%C3%A3o-1.9.0-d9202c">
   <img alt="Plataforma Windows" src="https://img.shields.io/badge/plataforma-Windows-302b29">
   <img alt="Banco SQLite" src="https://img.shields.io/badge/dados-SQLite-7458b4">
   <img alt="Status protótipo operacional" src="https://img.shields.io/badge/status-prot%C3%B3tipo%20operacional-dc9b19">
@@ -40,6 +40,8 @@ banco ou maquininha.
 - sessões explícitas de caixa, ligando cada venda e movimento à sua abertura;
 - resumo de cada fechamento, com formas de pagamento, responsáveis e PDF;
 - cadastro, alteração, exclusão, reposição e alerta de estoque;
+- cardápio digital móvel por QR Code, carrinho, observações e acompanhamento;
+- fila separada de pedidos online, com aceite, preparo, pronto e entrega;
 - comandas em **Aguardando**, **Em preparo**, **Pronto** e histórico, ou modo
   de venda direta sem fila;
 - observações por item, como **sem cebola** ou **sem tomate**;
@@ -63,7 +65,7 @@ banco ou maquininha.
 
 Baixe o instalador mais recente em
 [Releases](https://github.com/mayvzx/sistema-poolpetiscos/releases/latest). O
-usuário final executa apenas `PoolPetiscos-Setup-1.8.0.exe`; as dependências já
+usuário final executa apenas `PoolPetiscos-Setup-1.9.0.exe`; as dependências já
 estão incluídas.
 
 > O protótipo atual ainda não possui assinatura Authenticode. O Windows pode
@@ -109,8 +111,13 @@ PoolPetiscos.exe
   ├─ Interface React          http://127.0.0.1:14173
   └─ Serviço local Python     http://127.0.0.1:18765
        ├─ SQLite e revisões
+       ├─ inbox/outbox de pedidos online
        ├─ backups verificados
        └─ yt-dlp + FFmpeg + biblioteca local
+
+Cardápio público
+  ├─ API HTTPS própria
+  └─ banco D1 separado do caixa
 ```
 
 As portas aceitam apenas conexões da interface executada no próprio computador.

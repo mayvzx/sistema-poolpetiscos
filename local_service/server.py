@@ -24,6 +24,11 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from local_service.backups import BackupManager
 from local_service.google_drive import GoogleDriveError
+from local_service.online_orders import OnlineOrdersApiError, OnlineOrdersError
+from local_service.online_orders_manager import (
+    OnlineOrdersManager,
+    OnlineOrdersSettings,
+)
 from local_service.storage import (
     RevisionConflict,
     StateStorage,
@@ -43,7 +48,7 @@ from local_service.youtube_search import (
     validate_youtube_search_query,
 )
 
-SERVICE_VERSION = "1.8.0"
+SERVICE_VERSION = "1.9.0"
 DEFAULT_PORT = 18765
 MAX_BODY_BYTES = 32 * 1024
 MAX_STATE_BODY_BYTES = 10 * 1024 * 1024
@@ -386,6 +391,7 @@ class PoolCompanionServer(ThreadingHTTPServer):
         ) = None,
         youtube_search_timeout_seconds: float = YOUTUBE_SEARCH_TIMEOUT_SECONDS,
         update_checker: UpdateChecker | None = None,
+        online_orders_manager: OnlineOrdersManager | None = None,
     ) -> None:
         super().__init__(server_address, handler_class)
         self.music_directory = music_directory
@@ -404,6 +410,14 @@ class PoolCompanionServer(ThreadingHTTPServer):
         self.update_checker = update_checker or UpdateChecker(
             SERVICE_VERSION,
             home_directory / "updates",
+        )
+        self.online_orders_manager = (
+            online_orders_manager
+            or OnlineOrdersManager(
+                self.storage,
+                home_directory,
+                SERVICE_VERSION,
+            )
         )
 
 
@@ -664,6 +678,18 @@ class PoolCompanionHandler(BaseHTTPRequestHandler):
                 return
             self._send_json(status)
             return
+        if parsed.path == "/api/online-orders":
+            if self._reject_sensitive_origin():
+                return
+            try:
+                self._send_json(self.pool_server.online_orders_manager.snapshot())
+            except (OSError, ValueError, sqlite3.Error) as error:
+                self.log_error("falha ao ler pedidos online: %s", error)
+                self._send_json(
+                    {"error": "A fila de pedidos online não está disponível."},
+                    HTTPStatus.INTERNAL_SERVER_ERROR,
+                )
+            return
         if parsed.path == "/api/music/library":
             self._send_json(
                 {"tracks": list_library(self.pool_server.music_directory)}
@@ -767,6 +793,100 @@ class PoolCompanionHandler(BaseHTTPRequestHandler):
         if self._reject_origin():
             return
         parsed = urlparse(self.path)
+        if parsed.path == "/api/online-orders/sync":
+            if self._reject_sensitive_origin():
+                return
+            try:
+                self._read_json_body()
+                result = self.pool_server.online_orders_manager.sync_once()
+            except (ValueError, OnlineOrdersError) as error:
+                self._send_json({"error": str(error)}, HTTPStatus.BAD_GATEWAY)
+                return
+            except (OSError, sqlite3.Error) as error:
+                self.log_error("falha ao sincronizar pedidos online: %s", error)
+                self._send_json(
+                    {"error": "Não foi possível sincronizar os pedidos agora."},
+                    HTTPStatus.INTERNAL_SERVER_ERROR,
+                )
+                return
+            self._send_json(result)
+            return
+        if parsed.path == "/api/online-orders/actions":
+            if self._reject_sensitive_origin():
+                return
+            try:
+                payload = self._read_json_body()
+                result = self.pool_server.online_orders_manager.perform_action(
+                    str(payload.get("orderId", "")),
+                    action=str(payload.get("action", "")),
+                    expected_version=payload.get("expectedVersion"),
+                    mutation_id=str(payload.get("localMutationId", "")),
+                    reason=str(payload.get("reason", "")),
+                    local_sale_id=(
+                        str(payload["localSaleId"])
+                        if payload.get("localSaleId") is not None
+                        else None
+                    ),
+                    payment_method=(
+                        str(payload["paymentMethod"])
+                        if payload.get("paymentMethod") is not None
+                        else None
+                    ),
+                )
+            except OnlineOrdersApiError as error:
+                self._send_json({"error": str(error)}, HTTPStatus.CONFLICT)
+                return
+            except (ValueError, OnlineOrdersError) as error:
+                self._send_json({"error": str(error)}, HTTPStatus.BAD_REQUEST)
+                return
+            except (OSError, sqlite3.Error) as error:
+                self.log_error("falha ao atualizar pedido online: %s", error)
+                self._send_json(
+                    {"error": "A ação não pôde ser salva na fila local."},
+                    HTTPStatus.INTERNAL_SERVER_ERROR,
+                )
+                return
+            self._send_json(
+                result,
+                HTTPStatus.ACCEPTED if result.get("queued") else HTTPStatus.OK,
+            )
+            return
+        if parsed.path == "/api/online-orders/configure":
+            if self._reject_sensitive_origin():
+                return
+            try:
+                payload = self._read_json_body()
+                settings = OnlineOrdersSettings(
+                    api_base_url=str(payload.get("apiBaseUrl", "")),
+                    installation_token=str(
+                        payload.get("installationToken", "")
+                    ),
+                    public_menu_url=str(payload.get("publicMenuUrl", "")),
+                    enabled=payload.get("enabled") is not False,
+                )
+                status = self.pool_server.online_orders_manager.configure(
+                    settings
+                )
+            except (OSError, ValueError) as error:
+                self._send_json({"error": str(error)}, HTTPStatus.BAD_REQUEST)
+                return
+            self._send_json(status, HTTPStatus.CREATED)
+            return
+        if parsed.path == "/api/online-orders/enabled":
+            if self._reject_sensitive_origin():
+                return
+            try:
+                payload = self._read_json_body()
+                if not isinstance(payload.get("enabled"), bool):
+                    raise ValueError("Informe se os pedidos ficarão ativados.")
+                status = self.pool_server.online_orders_manager.update_enabled(
+                    payload["enabled"]
+                )
+            except (OSError, ValueError) as error:
+                self._send_json({"error": str(error)}, HTTPStatus.BAD_REQUEST)
+                return
+            self._send_json(status)
+            return
         if parsed.path == "/api/google-drive/connect":
             if self._reject_sensitive_origin():
                 return
@@ -1149,6 +1269,7 @@ def main() -> None:
         storage,
     )
     server.backup_manager.start()
+    server.online_orders_manager.start()
     print(
         f"Pool Companion em http://127.0.0.1:{arguments.port} "
         f"• biblioteca: {music_directory}"
@@ -1158,6 +1279,7 @@ def main() -> None:
     except KeyboardInterrupt:
         pass
     finally:
+        server.online_orders_manager.stop()
         server.backup_manager.stop()
         server.server_close()
 
