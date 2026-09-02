@@ -22,6 +22,8 @@ ser colocado aqui ou enviado ao GitHub.
 
 ## Operação e implantação
 
+- [Entrega da versão 1.9.0](operations/ENTREGA-1.9.0.md): cardápio por QR Code,
+  API própria, fila online e implantação.
 - [Entrega da versão 1.8.0](operations/ENTREGA-1.8.0.md): escopo, instalação,
   validação presencial, limitações e suporte da versão para teste.
 - [Guia visual de atualização](operations/assets/guia-atualizacao-pool-petiscos-1.8.0.png):

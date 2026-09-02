@@ -4,8 +4,8 @@ import {
   CheckCircle2,
   Download,
   ExternalLink,
-  FolderOpen,
   LoaderCircle,
+  PackageCheck,
   RefreshCw,
   ShieldCheck,
 } from "lucide-react";
@@ -13,7 +13,7 @@ import { useState } from "react";
 import {
   checkForAppUpdate,
   downloadVerifiedAppUpdate,
-  openAppUpdateFolder,
+  installVerifiedAppUpdate,
   type AppUpdateStatus,
 } from "./update-companion";
 
@@ -37,9 +37,11 @@ export function UpdateSettings({
   const [checking, setChecking] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [downloadedVersion, setDownloadedVersion] = useState<string | null>(
-    null,
+    status?.downloaded_installer?.version ?? null,
   );
-  const downloaded = downloadedVersion === status?.latest_version;
+  const downloaded =
+    downloadedVersion === status?.latest_version ||
+    status?.downloaded_installer?.version === status?.latest_version;
 
   async function checkNow() {
     setChecking(true);
@@ -74,9 +76,13 @@ export function UpdateSettings({
     }
   }
 
-  async function openFolder() {
+  async function installUpdate() {
     try {
-      await openAppUpdateFolder();
+      const result = await installVerifiedAppUpdate();
+      onMessage(
+        `O instalador ${result.version} vai abrir. Confirme o aviso do Windows; o Pool fechará e abrirá novamente sozinho.`,
+        "info",
+      );
     } catch (error) {
       onMessage(errorMessage(error), "warning");
     }
@@ -157,10 +163,10 @@ export function UpdateSettings({
               {downloaded && (
                 <button
                   type="button"
-                  onClick={() => void openFolder()}
-                  className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-[#302b29] px-5 font-extrabold text-white transition hover:bg-[#171514]"
+                  onClick={() => void installUpdate()}
+                  className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-[#27865d] px-5 font-extrabold text-white transition hover:bg-[#1f6f4c]"
                 >
-                  <FolderOpen size={19} /> Abrir pasta para instalar
+                  <PackageCheck size={19} /> Instalar atualização agora
                 </button>
               )}
               <a

@@ -1,6 +1,7 @@
 export type View =
   | "inicio"
   | "venda"
+  | "pedidos-online"
   | "comandas"
   | "estoque"
   | "financeiro"
@@ -83,6 +84,11 @@ export type Sale = {
   operatorName: string;
   items: SaleItem[];
   customerName: string;
+  source?: "caixa" | "cardapio-online";
+  externalOrderId?: string;
+  customerNote?: string;
+  fulfillmentMode?: "table" | "pickup";
+  tableLabel?: string;
   serviceMode?: SaleServiceMode;
   orderStatus: OrderStatus;
   statusUpdatedAt: number;

@@ -1,4 +1,4 @@
-"""Safe, notice-first update checks against the public GitHub release feed."""
+"""Safe update checks and verified installer hand-off for Pool Petiscos."""
 
 from __future__ import annotations
 
@@ -16,6 +16,13 @@ from urllib.request import Request, urlopen
 GITHUB_LATEST_RELEASE_URL = (
     "https://api.github.com/repos/mayvzx/sistema-poolpetiscos/releases/latest"
 )
+UPDATE_MANIFEST_URL = (
+    "https://pool-petiscos-caixa.mayrom.chatgpt.site/update/latest.json"
+)
+OFFICIAL_RELEASES_URL = (
+    "https://github.com/mayvzx/sistema-poolpetiscos/releases/"
+)
+OFFICIAL_DOWNLOADS_URL = f"{OFFICIAL_RELEASES_URL}download/"
 CHECK_INTERVAL_SECONDS = 24 * 60 * 60
 MAX_INSTALLER_BYTES = 250 * 1024 * 1024
 VERSION_PATTERN = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
@@ -60,7 +67,7 @@ def parse_latest_release(payload: object, current_version: str) -> dict[str, Any
     latest_version = tag.removeprefix("v")
     release_url = payload.get("html_url")
     if not isinstance(release_url, str) or not release_url.startswith(
-        "https://github.com/mayvzx/sistema-poolpetiscos/releases/"
+        OFFICIAL_RELEASES_URL
     ):
         raise UpdateCheckError("O endereço da atualização não é confiável.")
 
@@ -81,9 +88,7 @@ def parse_latest_release(payload: object, current_version: str) -> dict[str, Any
                 and not isinstance(size, bool)
                 and 0 < size <= MAX_INSTALLER_BYTES
                 and isinstance(download_url, str)
-                and download_url.startswith(
-                    "https://github.com/mayvzx/sistema-poolpetiscos/releases/download/"
-                )
+                and download_url.startswith(OFFICIAL_DOWNLOADS_URL)
             ):
                 selected_asset = {
                     "name": expected_name,
@@ -105,6 +110,69 @@ def parse_latest_release(payload: object, current_version: str) -> dict[str, Any
     }
 
 
+def parse_update_manifest(payload: object, current_version: str) -> dict[str, Any]:
+    """Parse the static manifest while enforcing official release paths."""
+
+    if not isinstance(payload, dict):
+        raise UpdateCheckError("O manifesto de atualização é inválido.")
+    latest_version = payload.get("version")
+    if not isinstance(latest_version, str) or parse_version(latest_version) is None:
+        raise UpdateCheckError("A versão publicada não pôde ser reconhecida.")
+    latest_version = latest_version.removeprefix("v")
+
+    release_url = payload.get("release_url")
+    expected_release_url = f"{OFFICIAL_RELEASES_URL}tag/v{latest_version}"
+    if release_url != expected_release_url:
+        raise UpdateCheckError("O endereço da atualização não é confiável.")
+
+    installer = payload.get("installer")
+    selected_asset: dict[str, Any] | None = None
+    expected_name = f"PoolPetiscos-Setup-{latest_version}.exe"
+    if isinstance(installer, dict):
+        name = installer.get("name")
+        size = installer.get("size")
+        sha256 = installer.get("sha256")
+        download_url = installer.get("download_url")
+        if isinstance(sha256, str) and not sha256.startswith("sha256:"):
+            sha256 = f"sha256:{sha256}"
+        expected_download_url = (
+            f"{OFFICIAL_DOWNLOADS_URL}v{latest_version}/{expected_name}"
+        )
+        if (
+            name == expected_name
+            and isinstance(size, int)
+            and not isinstance(size, bool)
+            and 0 < size <= MAX_INSTALLER_BYTES
+            and isinstance(sha256, str)
+            and SHA256_PATTERN.fullmatch(sha256)
+            and download_url == expected_download_url
+        ):
+            selected_asset = {
+                "name": expected_name,
+                "size": size,
+                "digest": sha256.lower(),
+                "download_url": download_url,
+            }
+    if selected_asset is None:
+        raise UpdateCheckError(
+            "O manifesto não contém um instalador oficial verificável."
+        )
+
+    return {
+        "current_version": current_version,
+        "latest_version": latest_version,
+        "available": is_newer_version(latest_version, current_version),
+        "release_url": release_url,
+        "release_name": str(
+            payload.get("release_name") or f"Versão {latest_version}"
+        ),
+        "published_at": str(payload.get("published_at") or ""),
+        "notes": str(payload.get("notes") or "")[:4000],
+        "verified_installer": selected_asset,
+        "source": "manifest",
+    }
+
+
 class UpdateChecker:
     def __init__(
         self,
@@ -112,33 +180,102 @@ class UpdateChecker:
         update_directory: Path,
         *,
         clock: Callable[[], float] | None = None,
+        installer_launcher: Callable[[str], None] | None = None,
+        install_launch_delay: float = 0.75,
     ) -> None:
         if parse_version(current_version) is None:
             raise ValueError("Versão atual inválida.")
         self.current_version = current_version
         self.update_directory = update_directory.expanduser().resolve()
         self._clock = clock or time.time
+        self._installer_launcher = installer_launcher
+        self._install_launch_delay = max(0.0, install_launch_delay)
         self._cached_at = 0.0
         self._cached_status: dict[str, Any] | None = None
         self._lock = threading.RLock()
 
-    def _read_release(self) -> dict[str, Any]:
+    def _read_json(self, url: str, *, github: bool = False) -> object:
+        headers = {"User-Agent": f"PoolPetiscos/{self.current_version}"}
+        if github:
+            headers.update(
+                {
+                    "Accept": "application/vnd.github+json",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                }
+            )
         request = Request(
-            GITHUB_LATEST_RELEASE_URL,
-            headers={
-                "Accept": "application/vnd.github+json",
-                "User-Agent": f"PoolPetiscos/{self.current_version}",
-                "X-GitHub-Api-Version": "2022-11-28",
-            },
+            url,
+            headers=headers,
         )
+        with urlopen(request, timeout=8) as response:  # noqa: S310
+            return json.loads(response.read().decode("utf-8"))
+
+    def _read_release(self) -> dict[str, Any]:
+        # The same-origin manifest avoids GitHub API rate limits. The official
+        # release feed remains the trusted fallback.
         try:
-            with urlopen(request, timeout=8) as response:  # noqa: S310
-                payload = json.loads(response.read().decode("utf-8"))
-        except (HTTPError, URLError, TimeoutError, UnicodeDecodeError, json.JSONDecodeError) as error:
+            payload = self._read_json(UPDATE_MANIFEST_URL)
+            return parse_update_manifest(payload, self.current_version)
+        except (
+            HTTPError,
+            URLError,
+            TimeoutError,
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+            UpdateCheckError,
+        ):
+            pass
+        try:
+            payload = self._read_json(GITHUB_LATEST_RELEASE_URL, github=True)
+            status = parse_latest_release(payload, self.current_version)
+            status["source"] = "github"
+            return status
+        except (
+            HTTPError,
+            URLError,
+            TimeoutError,
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+            UpdateCheckError,
+        ) as error:
             raise UpdateCheckError(
                 "Não foi possível consultar atualizações agora."
             ) from error
-        return parse_latest_release(payload, self.current_version)
+
+    def _verified_local_installer(
+        self,
+        status: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        asset = status.get("verified_installer")
+        if not status.get("available") or not isinstance(asset, dict):
+            return None
+        digest_match = SHA256_PATTERN.fullmatch(str(asset.get("digest", "")))
+        if digest_match is None:
+            return None
+        destination = self.update_directory / str(asset.get("name", ""))
+        try:
+            expected_size = int(asset["size"])
+            if not destination.is_file() or destination.stat().st_size != expected_size:
+                return None
+            actual_digest = _sha256_file(destination)
+        except (KeyError, OSError, TypeError, ValueError):
+            return None
+        if actual_digest != digest_match.group(1).lower():
+            return None
+        return {
+            "version": status["latest_version"],
+            "filename": destination.name,
+            "file_path": str(destination),
+            "sha256": actual_digest,
+        }
+
+    def _status_with_local_installer(
+        self,
+        status: dict[str, Any],
+    ) -> dict[str, Any]:
+        result = dict(status)
+        result["downloaded_installer"] = self._verified_local_installer(status)
+        return result
 
     def check(self, *, force: bool = False) -> dict[str, Any]:
         with self._lock:
@@ -148,12 +285,12 @@ class UpdateChecker:
                 and self._cached_status is not None
                 and now - self._cached_at < CHECK_INTERVAL_SECONDS
             ):
-                return dict(self._cached_status)
+                return self._status_with_local_installer(self._cached_status)
             status = self._read_release()
             status["checked_at"] = int(now * 1000)
             self._cached_status = status
             self._cached_at = now
-            return dict(status)
+            return self._status_with_local_installer(status)
 
     def download_verified_installer(self) -> dict[str, Any]:
         with self._lock:
@@ -233,3 +370,38 @@ class UpdateChecker:
                 "Não foi possível abrir a pasta de atualizações."
             ) from error
         return {"folder": str(self.update_directory)}
+
+    def install_verified_update(self) -> dict[str, Any]:
+        """Schedule the trusted installer after the HTTP response can finish."""
+
+        with self._lock:
+            status = self.check()
+            installer = self._verified_local_installer(status)
+            if installer is None:
+                raise UpdateCheckError(
+                    "Baixe e verifique o instalador antes de iniciar a atualização."
+                )
+            if self._installer_launcher is None and os.name != "nt":
+                raise UpdateCheckError(
+                    "A instalação automática está disponível somente no Windows."
+                )
+            path = str(installer["file_path"])
+
+            def launch() -> None:
+                try:
+                    if self._installer_launcher is not None:
+                        self._installer_launcher(path)
+                    else:
+                        os.startfile(path)  # type: ignore[attr-defined]
+                except OSError:
+                    # The HTTP response has already completed at this point.
+                    return
+
+            timer = threading.Timer(self._install_launch_delay, launch)
+            timer.daemon = True
+            timer.start()
+            return {
+                "scheduled": True,
+                "version": installer["version"],
+                "filename": installer["filename"],
+            }

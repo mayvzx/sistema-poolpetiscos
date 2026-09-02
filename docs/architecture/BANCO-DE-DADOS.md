@@ -43,6 +43,12 @@ botão **Baixar banco completo** gera o SQLite voltado à auditoria técnica.
 As tabelas internas `app_state` e `state_history` garantem gravação atômica e
 recuperação de revisões. Para leitura comum, prefira as consultas `vw_*`.
 
+As tabelas `external_sync_state`, `external_orders`,
+`external_order_items` e `external_outbox` pertencem à integração do cardápio
+online. Elas formam uma caixa de entrada e uma fila de envio isoladas: um pedido
+remoto não entra no fechamento nem baixa estoque até virar uma venda válida no
+`app_state`. Não edite essas tabelas manualmente.
+
 Cada nova venda guarda o subtotal, a taxa aplicada, o valor do acréscimo e o
 total final. Vendas antigas são migradas com acréscimo zero, sem recalcular nem
 alterar os valores históricos. O estado também guarda se a fila de comandas

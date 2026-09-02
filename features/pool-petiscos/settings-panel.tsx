@@ -38,6 +38,8 @@ import {
 import { getOperatorProfile } from "./operators";
 import { PinGuidance } from "./pin-guidance";
 import { UpdateSettings } from "./update-settings";
+import { OnlineOrdersSettings } from "./online-orders-settings";
+import type { OnlineOrdersStatus } from "./online-orders-companion";
 import type { AppUpdateStatus } from "./update-companion";
 import type {
   OperatorCredential,
@@ -55,6 +57,7 @@ type SettingsPanelProps = {
   ordersEnabled: boolean;
   activeOrderCount: number;
   updateStatus: AppUpdateStatus | null;
+  onlineOrdersStatus: OnlineOrdersStatus | null;
   onCredentialChange: (
     operatorId: OperatorId,
     credential: OperatorCredential,
@@ -64,6 +67,7 @@ type SettingsPanelProps = {
   onCashFundChange: (cashFund: number) => void;
   onOrdersEnabledChange: (enabled: boolean) => void;
   onUpdateStatusChange: (status: AppUpdateStatus) => void;
+  onOnlineOrdersRefresh: () => Promise<void>;
   onMessage: (
     message: string,
     tone?: "success" | "warning" | "info",
@@ -106,12 +110,14 @@ export function SettingsPanel({
   ordersEnabled,
   activeOrderCount,
   updateStatus,
+  onlineOrdersStatus,
   onCredentialChange,
   onRecoveryCredentialChange,
   onDisplayPreferencesChange,
   onCashFundChange,
   onOrdersEnabledChange,
   onUpdateStatusChange,
+  onOnlineOrdersRefresh,
   onMessage,
 }: SettingsPanelProps) {
   const operator = getOperatorProfile(activeOperatorId);
@@ -451,6 +457,12 @@ export function SettingsPanel({
       <UpdateSettings
         status={updateStatus}
         onStatusChange={onUpdateStatusChange}
+        onMessage={onMessage}
+      />
+
+      <OnlineOrdersSettings
+        status={onlineOrdersStatus}
+        onChanged={onOnlineOrdersRefresh}
         onMessage={onMessage}
       />
 

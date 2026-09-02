@@ -15,6 +15,9 @@ flowchart LR
     BK --> GD["Google Drive<br/>OAuth drive.file"]
     API --> YT["yt-dlp"]
     API --> GH["GitHub Releases<br/>aviso e SHA-256"]
+    API -->|"HTTPS de saída<br/>heartbeat, catálogo e eventos"| OA["API própria de pedidos"]
+    QR["Cliente pelo QR Code"] --> OA
+    OA --> OD[("D1<br/>cardápio e pedidos")]
     YT --> FF["FFmpeg"]
     FF --> MU["Biblioteca local<br/>de músicas"]
     LA["PoolPetiscos.exe"] --> UI
@@ -33,6 +36,9 @@ automaticamente junto com o launcher, evitando servidores locais órfãos.
 | --- | --- |
 | `app/` | entrada da aplicação, metadados e estilos globais |
 | `features/pool-petiscos/` | telas, estado de interface e regras do negócio |
+| `features/online-orders/` | cardápio público e regras de pedidos remotos |
+| `cloud/` | API HTTPS própria executada no Worker |
+| `db/` e `drizzle/` | esquema e migrações do banco de pedidos D1 |
 | `local_service/` | API local, SQLite, músicas e launcher Windows |
 | `installer/` | definição do instalador, ícone e dependências fixadas |
 | `scripts/` | build, inspeção e empacotamento reproduzível |
@@ -56,6 +62,13 @@ computador instalado, SQLite é a fonte principal. A cópia do navegador serve
 somente para recuperar uma gravação pendente se o processo for fechado no
 momento errado.
 
+Pedidos recebidos pela internet ficam em tabelas `external_*`, separadas do
+documento `app_state`. Um pedido pendente não altera venda, caixa nem estoque.
+Somente a ação **Entregar e registrar venda** grava uma venda local com
+`externalOrderId`; esse identificador impede duplicidade após repetição de
+clique ou falha de rede. A confirmação remota usa uma outbox durável e pode ser
+reenviada com segurança.
+
 ## Segurança local
 
 - os serviços escutam somente em `127.0.0.1`;
@@ -77,6 +90,12 @@ momento errado.
   conta do Windows nem a criptografia do computador;
 - nenhuma credencial de banco, maquininha ou certificado fica no frontend ou no
   repositório.
+- o token da instalação do cardápio é protegido pela DPAPI do usuário Windows,
+  nunca aparece no QR Code e só é enviado em conexões HTTPS de saída;
+- preços, acréscimos e totais do pedido são recalculados no servidor; valores
+  enviados pelo navegador do cliente não são aceitos como fonte de verdade;
+- criação e mudança de pedidos usam chaves idempotentes, limites contra spam e
+  uma máquina de estados validada também no banco.
 
 As preferências de tema e tamanho das letras são específicas do dispositivo e
 ficam no armazenamento do navegador. Elas não são dados do negócio e, por isso,
@@ -84,9 +103,11 @@ não entram no SQLite nem nos backups do caixa.
 
 ## Aplicação hospedada
 
-A Vercel publica a mesma interface para demonstração e validação visual. Sem o
-serviço instalado, essa versão trabalha apenas com o armazenamento do
-navegador. Ela não substitui o aplicativo Windows para operação real.
+A hospedagem publica o cardápio móvel e a API de pedidos. A área do caixa
+continua local; o computador nunca abre uma porta para a internet e inicia toda
+sincronização por HTTPS. Se a rede cair, vendas presenciais, caixa e estoque
+continuam funcionando e as ações remotas pendentes ficam na outbox para nova
+tentativa.
 
 ## Limites de escala
 

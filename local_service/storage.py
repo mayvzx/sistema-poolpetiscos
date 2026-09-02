@@ -246,6 +246,34 @@ def _is_sale(value: object) -> bool:
             return False
     elif abs(expected_subtotal - float(value["total"])) > 0.005:
         return False
+    source = value.get("source", "caixa")
+    if source not in {"caixa", "cardapio-online"}:
+        return False
+    external_order_id = value.get("externalOrderId")
+    if external_order_id is not None and not _is_non_empty_string(
+        external_order_id
+    ):
+        return False
+    if source == "cardapio-online" and not _is_non_empty_string(
+        external_order_id
+    ):
+        return False
+    customer_note = value.get("customerNote")
+    if customer_note is not None and (
+        not isinstance(customer_note, str) or len(customer_note) > 300
+    ):
+        return False
+    fulfillment_mode = value.get("fulfillmentMode")
+    if fulfillment_mode is not None and fulfillment_mode not in {
+        "table",
+        "pickup",
+    }:
+        return False
+    table_label = value.get("tableLabel")
+    if table_label is not None and (
+        not isinstance(table_label, str) or len(table_label) > 80
+    ):
+        return False
     operator_id = value.get("operatorId")
     if operator_id is not None and not _is_allowed_string(
         operator_id, SALE_OPERATOR_IDS

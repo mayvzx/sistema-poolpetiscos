@@ -2,6 +2,51 @@
 
 Todas as mudanças relevantes do Pool Petiscos são registradas neste arquivo.
 
+## 1.9.0 — 2026-09-01
+
+### Cardápio digital próprio
+
+- adiciona página móvel por QR Code com categorias, busca, carrinho,
+  observações, mesa ou retirada e acompanhamento do pedido;
+- aplica e exibe os mesmos acréscimos presenciais de 3% no débito e 6% no
+  crédito, com Pix e dinheiro sem taxa;
+- permite copiar o link e baixar o QR Code do cardápio em PNG.
+
+### API e fila online
+
+- cria API HTTPS própria com catálogo publicado pelo caixa, pedidos, tracking,
+  heartbeat e ações do operador;
+- recalcula preços e totais no servidor, limita spam e usa idempotência para
+  impedir pedidos ou ações duplicadas;
+- adiciona a tela **Pedidos online**, separada das comandas internas, com
+  aceite, preparo, pronto, entrega, recusa e histórico;
+- registra caixa, venda e estoque somente na entrega, salvando primeiro no
+  SQLite local;
+- mantém inbox/outbox SQLite isolada para retomar eventos e confirmações após
+  quedas de internet sem duplicar a venda;
+- identifica na tela ações ainda em sincronização e evita confirmar ao operador
+  uma conclusão que ficou apenas na fila local;
+- protege o token da instalação com DPAPI e mantém o serviço local acessível
+  somente pelo próprio computador.
+
+### Banco e validação
+
+- adiciona esquema D1 e migração com restrições de totais, pagamentos,
+  quantidades e transições de estado;
+- adiciona testes do domínio, API, migração, cliente HTTPS, inbox/outbox,
+  orquestrador e rotas do serviço local.
+
+### Atualização no Windows
+
+- corrige a ordem de encerramento que podia bloquear o instalador antes de o
+  Pool conseguir fechar o serviço executado em segundo plano;
+- adiciona instalação guiada em um clique depois do download e da validação
+  SHA-256, sem exigir que a proprietária use o Gerenciador de Tarefas;
+- consulta um manifesto no site oficial e mantém a release do GitHub como rota
+  alternativa, reduzindo falhas temporárias ao procurar novas versões;
+- cria e verifica um backup do banco antes de substituir os arquivos e reabre o
+  sistema ao terminar, preservando vendas, PIN, configurações e Google Drive.
+
 ## 1.8.0 — 2026-08-23
 
 ### Relatórios detalhados

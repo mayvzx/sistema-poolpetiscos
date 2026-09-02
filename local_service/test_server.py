@@ -80,6 +80,62 @@ class FakeUpdateChecker:
     def open_update_folder(self) -> dict[str, str]:
         return {"folder": "C:\\PoolPetiscos\\updates"}
 
+    def install_verified_update(self) -> dict[str, object]:
+        return {"scheduled": True, "version": "1.7.1"}
+
+
+class FakeOnlineOrdersManager:
+    def __init__(self) -> None:
+        self.actions: list[dict[str, object]] = []
+        self.configured = False
+
+    def _status(self) -> dict[str, object]:
+        return {
+            "configured": self.configured,
+            "enabled": self.configured,
+            "connected": self.configured,
+            "acceptingOrders": self.configured,
+            "lastSyncAt": None,
+            "lastError": None,
+            "publicMenuUrl": (
+                "https://pool.example/cardapio/pool-petiscos"
+                if self.configured
+                else None
+            ),
+            "pendingCount": 1,
+        }
+
+    def snapshot(self) -> dict[str, object]:
+        return {"orders": [], "status": self._status()}
+
+    def sync_once(self) -> dict[str, object]:
+        return self.snapshot()
+
+    def perform_action(self, order_id: str, **payload: object) -> dict[str, object]:
+        self.actions.append({"orderId": order_id, **payload})
+        return {
+            "order": {
+                "id": order_id,
+                "status": "accepted",
+                "version": 2,
+            },
+            "queued": False,
+        }
+
+    def configure(self, _: object) -> dict[str, object]:
+        self.configured = True
+        return self._status()
+
+    def update_enabled(self, enabled: bool) -> dict[str, object]:
+        self.configured = enabled
+        return self._status()
+
+    def start(self) -> None:
+        return
+
+    def stop(self) -> None:
+        return
+
 
 class CompanionRulesTest(unittest.TestCase):
     def test_service_version_matches_package(self) -> None:
@@ -724,12 +780,14 @@ class StateApiTest(unittest.TestCase):
             database_path=root / "data" / "state.db",
             backup_directory=root / "backups",
         )
+        self.online_orders_manager = FakeOnlineOrdersManager()
         self.server = PoolCompanionServer(
             ("127.0.0.1", 0),
             PoolCompanionHandler,
             root / "music",
             self.storage,
             update_checker=FakeUpdateChecker(),
+            online_orders_manager=self.online_orders_manager,  # type: ignore[arg-type]
         )
         self.worker = threading.Thread(
             target=self.server.serve_forever,
@@ -844,7 +902,7 @@ class StateApiTest(unittest.TestCase):
                 0,
             )
 
-    def test_update_api_is_notice_first_and_does_not_run_an_installer(self) -> None:
+    def test_update_api_checks_downloads_and_schedules_verified_installer(self) -> None:
         status, update = self._request("GET", "/api/update/status?force=1")
         self.assertEqual(status, 200)
         self.assertEqual(update["latest_version"], "1.7.1")
@@ -854,9 +912,55 @@ class StateApiTest(unittest.TestCase):
         self.assertEqual(status, 201)
         self.assertEqual(downloaded["downloaded"], True)
 
+        status, installation = self._request("POST", "/api/update/install")
+        self.assertEqual(status, 202)
+        self.assertEqual(installation["scheduled"], True)
+
         status, opened = self._request("POST", "/api/update/open-folder")
         self.assertEqual(status, 200)
         self.assertIn("updates", opened["folder"])
+
+    def test_online_orders_api_lists_syncs_configures_and_applies_action(self) -> None:
+        status, initial = self._request("GET", "/api/online-orders")
+        self.assertEqual(status, 200)
+        self.assertFalse(initial["status"]["configured"])
+
+        status, configured = self._request(
+            "POST",
+            "/api/online-orders/configure",
+            {
+                "apiBaseUrl": "https://pool.example",
+                "installationToken": "test-token-that-is-longer-than-thirty-two",
+                "publicMenuUrl": (
+                    "https://pool.example/cardapio/pool-petiscos"
+                ),
+                "enabled": True,
+            },
+        )
+        self.assertEqual(status, 201)
+        self.assertTrue(configured["configured"])
+
+        status, synced = self._request(
+            "POST", "/api/online-orders/sync", {}
+        )
+        self.assertEqual(status, 200)
+        self.assertTrue(synced["status"]["connected"])
+
+        status, action = self._request(
+            "POST",
+            "/api/online-orders/actions",
+            {
+                "orderId": "remote-1",
+                "action": "accept",
+                "expectedVersion": 1,
+                "localMutationId": "test-action-00000001",
+            },
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(action["order"]["status"], "accepted")
+        self.assertEqual(
+            self.online_orders_manager.actions[0]["orderId"], "remote-1"
+        )
 
     def test_state_api_rejects_incomplete_state_without_writing(self) -> None:
         status, invalid = self._request(
@@ -971,6 +1075,7 @@ class StateApiTest(unittest.TestCase):
             ("GET", "/api/backups/status", None),
             ("GET", "/api/backups/google", None),
             ("GET", "/api/update/status", None),
+            ("GET", "/api/online-orders", None),
             ("POST", "/api/backups", None),
             ("POST", "/api/backups/run", None),
             ("POST", "/api/database/restore", {"invalid": True}),
@@ -982,7 +1087,28 @@ class StateApiTest(unittest.TestCase):
             ("POST", "/api/google-drive/connect", None),
             ("POST", "/api/google-drive/disconnect", None),
             ("POST", "/api/update/download", None),
+            ("POST", "/api/update/install", None),
             ("POST", "/api/update/open-folder", None),
+            ("POST", "/api/online-orders/sync", {}),
+            (
+                "POST",
+                "/api/online-orders/actions",
+                {
+                    "orderId": "remote-1",
+                    "action": "accept",
+                    "expectedVersion": 1,
+                    "localMutationId": "test-action-00000001",
+                },
+            ),
+            (
+                "POST",
+                "/api/online-orders/configure",
+                {
+                    "apiBaseUrl": "https://pool.example",
+                    "installationToken": "test-token-that-is-longer-than-thirty-two",
+                    "publicMenuUrl": "https://pool.example/cardapio/pool-petiscos",
+                },
+            ),
             (
                 "PUT",
                 "/api/state",
