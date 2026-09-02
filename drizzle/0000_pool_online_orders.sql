@@ -1,5 +1,6 @@
 PRAGMA foreign_keys = ON;
 
+--> statement-breakpoint
 CREATE TABLE `stores` (
   `id` text PRIMARY KEY NOT NULL,
   `slug` text NOT NULL UNIQUE,
@@ -14,8 +15,10 @@ CREATE TABLE `stores` (
   `created_at` integer NOT NULL,
   `updated_at` integer NOT NULL
 );
+--> statement-breakpoint
 CREATE UNIQUE INDEX `idx_stores_slug` ON `stores` (`slug`);
 
+--> statement-breakpoint
 CREATE TABLE `store_tables` (
   `id` text PRIMARY KEY NOT NULL,
   `store_id` text NOT NULL REFERENCES `stores`(`id`) ON DELETE CASCADE,
@@ -25,9 +28,12 @@ CREATE TABLE `store_tables` (
   `created_at` integer NOT NULL,
   `updated_at` integer NOT NULL
 );
+--> statement-breakpoint
 CREATE UNIQUE INDEX `idx_store_tables_store_label` ON `store_tables` (`store_id`, `label`);
+--> statement-breakpoint
 CREATE UNIQUE INDEX `idx_store_tables_token` ON `store_tables` (`public_token_hash`);
 
+--> statement-breakpoint
 CREATE TABLE `catalog_categories` (
   `id` text PRIMARY KEY NOT NULL,
   `store_id` text NOT NULL REFERENCES `stores`(`id`) ON DELETE CASCADE,
@@ -37,8 +43,10 @@ CREATE TABLE `catalog_categories` (
   `visible` integer NOT NULL DEFAULT 1 CHECK (`visible` IN (0, 1)),
   `updated_at` integer NOT NULL
 );
+--> statement-breakpoint
 CREATE UNIQUE INDEX `idx_categories_store_source` ON `catalog_categories` (`store_id`, `source_key`);
 
+--> statement-breakpoint
 CREATE TABLE `catalog_products` (
   `id` text PRIMARY KEY NOT NULL,
   `store_id` text NOT NULL REFERENCES `stores`(`id`) ON DELETE CASCADE,
@@ -54,9 +62,12 @@ CREATE TABLE `catalog_products` (
   `sort_order` integer NOT NULL DEFAULT 0,
   `updated_at` integer NOT NULL
 );
+--> statement-breakpoint
 CREATE UNIQUE INDEX `idx_products_store_source` ON `catalog_products` (`store_id`, `source_product_id`);
+--> statement-breakpoint
 CREATE INDEX `idx_products_store_visible` ON `catalog_products` (`store_id`, `visible`, `available`, `sort_order`);
 
+--> statement-breakpoint
 CREATE TABLE `installations` (
   `id` text PRIMARY KEY NOT NULL,
   `store_id` text NOT NULL REFERENCES `stores`(`id`) ON DELETE CASCADE,
@@ -68,8 +79,10 @@ CREATE TABLE `installations` (
   `created_at` integer NOT NULL,
   `updated_at` integer NOT NULL
 );
+--> statement-breakpoint
 CREATE INDEX `idx_installations_store_seen` ON `installations` (`store_id`, `enabled`, `last_seen_at`);
 
+--> statement-breakpoint
 CREATE TABLE `public_orders` (
   `order_number` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
   `id` text NOT NULL UNIQUE,
@@ -96,9 +109,12 @@ CREATE TABLE `public_orders` (
   CHECK ((`fulfillment_mode` = 'table' AND `table_id` IS NOT NULL) OR (`fulfillment_mode` = 'pickup' AND `table_id` IS NULL)),
   CHECK (`total_cents` = `subtotal_cents` + `surcharge_cents`)
 );
+--> statement-breakpoint
 CREATE UNIQUE INDEX `idx_public_orders_local_sale` ON `public_orders` (`local_sale_id`) WHERE `local_sale_id` IS NOT NULL;
+--> statement-breakpoint
 CREATE INDEX `idx_orders_store_status_created` ON `public_orders` (`store_id`, `status`, `created_at`);
 
+--> statement-breakpoint
 CREATE TABLE `public_order_items` (
   `id` text PRIMARY KEY NOT NULL,
   `order_id` text NOT NULL REFERENCES `public_orders`(`id`) ON DELETE CASCADE,
@@ -111,8 +127,10 @@ CREATE TABLE `public_order_items` (
   `line_total_cents` integer NOT NULL CHECK (`line_total_cents` = `unit_price_cents` * `quantity`),
   `sort_order` integer NOT NULL DEFAULT 0
 );
+--> statement-breakpoint
 CREATE INDEX `idx_order_items_order` ON `public_order_items` (`order_id`, `sort_order`);
 
+--> statement-breakpoint
 CREATE TABLE `order_events` (
   `id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
   `store_id` text NOT NULL REFERENCES `stores`(`id`),
@@ -124,8 +142,10 @@ CREATE TABLE `order_events` (
   `payload_json` text NOT NULL DEFAULT '{}',
   `created_at` integer NOT NULL
 );
+--> statement-breakpoint
 CREATE INDEX `idx_events_store_cursor` ON `order_events` (`store_id`, `id`);
 
+--> statement-breakpoint
 CREATE TABLE `request_idempotency` (
   `store_id` text NOT NULL REFERENCES `stores`(`id`) ON DELETE CASCADE,
   `key_hash` text NOT NULL,
@@ -135,8 +155,10 @@ CREATE TABLE `request_idempotency` (
   `expires_at` integer NOT NULL,
   PRIMARY KEY (`store_id`, `key_hash`)
 );
+--> statement-breakpoint
 CREATE INDEX `idx_request_idempotency_expiry` ON `request_idempotency` (`expires_at`);
 
+--> statement-breakpoint
 CREATE TABLE `installation_commands` (
   `installation_id` text NOT NULL REFERENCES `installations`(`id`) ON DELETE CASCADE,
   `mutation_id` text NOT NULL,
@@ -146,8 +168,10 @@ CREATE TABLE `installation_commands` (
   `created_at` integer NOT NULL,
   PRIMARY KEY (`installation_id`, `mutation_id`)
 );
+--> statement-breakpoint
 CREATE INDEX `idx_installation_commands_created` ON `installation_commands` (`created_at`);
 
+--> statement-breakpoint
 CREATE TABLE `catalog_publications` (
   `installation_id` text NOT NULL REFERENCES `installations`(`id`) ON DELETE CASCADE,
   `source_revision` integer NOT NULL,
@@ -157,6 +181,7 @@ CREATE TABLE `catalog_publications` (
   PRIMARY KEY (`installation_id`, `source_revision`)
 );
 
+--> statement-breakpoint
 CREATE TABLE `rate_limit_events` (
   `id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
   `store_id` text NOT NULL REFERENCES `stores`(`id`) ON DELETE CASCADE,
@@ -164,9 +189,12 @@ CREATE TABLE `rate_limit_events` (
   `actor_hash` text NOT NULL,
   `created_at` integer NOT NULL
 );
+--> statement-breakpoint
 CREATE INDEX `idx_rate_limit_lookup` ON `rate_limit_events` (`store_id`, `scope`, `actor_hash`, `created_at`);
+--> statement-breakpoint
 CREATE INDEX `idx_rate_limit_created` ON `rate_limit_events` (`created_at`);
 
+--> statement-breakpoint
 CREATE TRIGGER `trg_public_order_status_guard`
 BEFORE UPDATE OF `status` ON `public_orders`
 WHEN OLD.`status` <> NEW.`status` AND NOT (
@@ -179,6 +207,7 @@ BEGIN
   SELECT RAISE(ABORT, 'invalid_order_status_transition');
 END;
 
+--> statement-breakpoint
 CREATE TRIGGER `trg_public_order_status_event`
 AFTER UPDATE OF `status` ON `public_orders`
 WHEN OLD.`status` <> NEW.`status`
@@ -192,10 +221,3 @@ BEGIN
     NEW.`last_actor_id`, '{}', NEW.`updated_at`
   );
 END;
-
-INSERT INTO `stores` (
-  `id`, `slug`, `name`, `timezone`, `created_at`, `updated_at`
-) VALUES (
-  'pool-petiscos', 'pool-petiscos', 'Pool Petiscos & Lanches',
-  'America/Sao_Paulo', unixepoch('now') * 1000, unixepoch('now') * 1000
-);

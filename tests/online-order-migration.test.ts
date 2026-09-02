@@ -10,7 +10,16 @@ const migration = readFileSync(
 
 function migratedDatabase(): DatabaseSync {
   const database = new DatabaseSync(":memory:");
-  database.exec(migration);
+  for (const statement of migration.split("--> statement-breakpoint")) {
+    if (statement.trim()) database.exec(statement);
+  }
+  database
+    .prepare(
+      `INSERT INTO stores (id, slug, name, timezone, created_at, updated_at)
+       VALUES ('pool-petiscos', 'pool-petiscos', 'Pool Petiscos & Lanches',
+         'America/Sao_Paulo', 0, 0)`,
+    )
+    .run();
   return database;
 }
 
