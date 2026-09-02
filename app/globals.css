@@ -1591,6 +1591,133 @@ html[data-pool-theme="dark"] textarea:focus-visible {
   background: #d9202c;
 }
 
+.pool-order-print-sheet {
+  display: none;
+}
+
+@media print {
+  @page {
+    margin: 12mm;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  .pool-order-print-sheet,
+  .pool-order-print-sheet * {
+    visibility: visible !important;
+  }
+
+  .pool-order-print-sheet {
+    position: absolute;
+    inset: 0;
+    display: block;
+    width: 100%;
+    padding: 8px;
+    color: #211916;
+    background: #ffffff;
+    font-family: Arial, sans-serif;
+  }
+
+  .pool-order-print-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    border-bottom: 2px solid #211916;
+    padding-bottom: 12px;
+  }
+
+  .pool-order-print-header h1 {
+    margin: 2px 0 0;
+    font-size: 24px;
+  }
+
+  .pool-order-print-header p:last-child {
+    margin: 3px 0 0;
+    font-size: 12px;
+  }
+
+  .pool-order-print-eyebrow {
+    margin: 0;
+    color: #b41622;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .pool-order-print-meta {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 14px 0;
+    font-size: 14px;
+  }
+
+  .pool-order-print-meta span {
+    color: #5f5753;
+  }
+
+  .pool-order-print-sheet table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  .pool-order-print-sheet th,
+  .pool-order-print-sheet td {
+    border-bottom: 1px solid #ded7d2;
+    padding: 9px 6px;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .pool-order-print-sheet th:first-child,
+  .pool-order-print-sheet td:first-child {
+    width: 48px;
+    text-align: center;
+  }
+
+  .pool-order-print-sheet th:last-child,
+  .pool-order-print-sheet td:last-child {
+    width: 90px;
+    text-align: right;
+  }
+
+  .pool-order-print-sheet small {
+    display: block;
+    margin-top: 3px;
+    color: #6d6561;
+    font-size: 11px;
+  }
+
+  .pool-order-print-note {
+    margin: 16px 0;
+    padding: 10px 12px;
+    border: 1px solid #ead7c5;
+    border-radius: 8px;
+    color: #6c4a2f;
+    font-size: 12px;
+  }
+
+  .pool-order-print-total {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+    border-top: 2px solid #211916;
+    margin-top: 14px;
+    padding-top: 12px;
+    font-size: 13px;
+  }
+
+  .pool-order-print-total strong {
+    font-size: 22px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

@@ -4,6 +4,7 @@ import {
   type ChangeEvent,
   type FormEvent,
   useCallback,
+  useDeferredValue,
   useEffect,
   useMemo,
   useRef,
@@ -150,6 +151,11 @@ import {
   type OnlineOrderAction,
   type OnlineOrdersSnapshot,
 } from "./online-orders-companion";
+import {
+  findNewPendingOrderCount,
+  pendingOrderIds,
+  playOnlineOrderAlert,
+} from "./online-order-alert";
 import {
   categories,
   createInitialPoolState,
@@ -333,6 +339,8 @@ export default function PoolPetiscosApp() {
   const [onlineOrdersError, setOnlineOrdersError] = useState<string | null>(
     null,
   );
+  const [printOnlineOrder, setPrintOnlineOrder] =
+    useState<OnlineOrder | null>(null);
   const [youtubeSearchResults, setYoutubeSearchResults] = useState<
     YoutubeSearchResult[]
   >([]);
@@ -361,6 +369,9 @@ export default function PoolPetiscosApp() {
   const youtubeSearchSequenceRef = useRef(0);
   const onlineOrderMutationsRef = useRef(new Map<string, string>());
   const onlineOrdersRefreshRef = useRef<Promise<void> | null>(null);
+  const previousPendingOnlineOrderIdsRef = useRef<Set<string> | null>(null);
+  const onlineOrderAudioContextRef = useRef<AudioContext | null>(null);
+  const onlineOrderAudioUnlockedRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -398,6 +409,35 @@ export default function PoolPetiscosApp() {
       saveDisplayPreferences(displayPreferences);
     }
   }, [displayPreferences, displayPreferencesReady, resolvedTheme]);
+
+  useEffect(() => {
+    // O Chrome bloqueia áudio iniciado por código até a primeira interação do
+    // operador. Desbloqueamos de forma silenciosa para que um novo pedido
+    // possa tocar o alerta sem exigir uma configuração técnica.
+    const unlockOrderAudio = () => {
+      if (onlineOrderAudioUnlockedRef.current) return;
+      const AudioContextConstructor = window.AudioContext;
+      if (!AudioContextConstructor) return;
+      try {
+        const context =
+          onlineOrderAudioContextRef.current ?? new AudioContextConstructor();
+        onlineOrderAudioContextRef.current = context;
+        onlineOrderAudioUnlockedRef.current = true;
+        void context.resume().catch(() => undefined);
+      } catch {
+        // O aviso visual permanece disponível em navegadores sem Web Audio.
+      }
+    };
+    window.addEventListener("pointerdown", unlockOrderAudio, { passive: true });
+    window.addEventListener("keydown", unlockOrderAudio, { passive: true });
+    return () => {
+      window.removeEventListener("pointerdown", unlockOrderAudio);
+      window.removeEventListener("keydown", unlockOrderAudio);
+      const context = onlineOrderAudioContextRef.current;
+      onlineOrderAudioContextRef.current = null;
+      if (context && context.state !== "closed") void context.close();
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -496,6 +536,7 @@ export default function PoolPetiscosApp() {
             syncIntervalSeconds: 5,
           },
         });
+        previousPendingOnlineOrderIdsRef.current = null;
         setOnlineOrdersError(null);
         return;
       }
@@ -505,8 +546,32 @@ export default function PoolPetiscosApp() {
         const snapshot = force
           ? await syncOnlineOrdersNow()
           : await loadOnlineOrders();
+        const nextPendingIds = pendingOrderIds(snapshot.orders);
+        const newPendingCount = findNewPendingOrderCount(
+          previousPendingOnlineOrderIdsRef.current,
+          nextPendingIds,
+        );
+        previousPendingOnlineOrderIdsRef.current = nextPendingIds;
         setOnlineOrdersSnapshot(snapshot);
         setOnlineOrdersError(snapshot.status.lastError);
+        if (newPendingCount > 0) {
+          const context = onlineOrderAudioContextRef.current;
+          if (context && onlineOrderAudioUnlockedRef.current) {
+            void context.resume().then(() => {
+              try {
+                playOnlineOrderAlert(context);
+              } catch {
+                // O toast e o badge continuam sendo o fallback do alerta.
+              }
+            });
+          }
+          showToast(
+            newPendingCount === 1
+              ? "Novo pedido online aguardando confirmação."
+              : `${newPendingCount} novos pedidos online aguardando confirmação.`,
+            "info",
+          );
+        }
       } catch (error) {
         setOnlineOrdersError(
           error instanceof Error
@@ -525,6 +590,18 @@ export default function PoolPetiscosApp() {
         onlineOrdersRefreshRef.current = null;
       }
     }
+  }, [showToast]);
+
+  const printOnlineOrderReceipt = useCallback((order: OnlineOrder) => {
+    setPrintOnlineOrder(order);
+    // Aguarda a renderização da folha de impressão antes de abrir o diálogo.
+    window.setTimeout(() => window.print(), 80);
+  }, []);
+
+  useEffect(() => {
+    const clearPrintedOrder = () => setPrintOnlineOrder(null);
+    window.addEventListener("afterprint", clearPrintedOrder);
+    return () => window.removeEventListener("afterprint", clearPrintedOrder);
   }, []);
 
   const syncMusicCompanion = useCallback(
@@ -1438,14 +1515,18 @@ export default function PoolPetiscosApp() {
     (!Number.isFinite(cashReceivedAmount) ||
       cashReceivedAmount + Number.EPSILON < cartPricing.total);
 
+  // Mantém a digitação imediata mesmo quando o catálogo crescer bastante.
+  const deferredSaleSearch = useDeferredValue(saleSearch);
+  const deferredStockSearch = useDeferredValue(stockSearch);
+
   const filteredProducts = useMemo(() => {
-    const query = normalizeText(saleSearch);
+    const query = normalizeText(deferredSaleSearch);
     return products.filter(
       (product) =>
         (category === "Todos" || product.category === category) &&
         (!query || normalizeText(product.name).includes(query)),
     );
-  }, [category, products, saleSearch]);
+  }, [category, deferredSaleSearch, products]);
 
   const anonymousOrderName = useMemo(
     () =>
@@ -1458,7 +1539,7 @@ export default function PoolPetiscosApp() {
   );
 
   const filteredStock = useMemo(() => {
-    const query = normalizeText(stockSearch);
+    const query = normalizeText(deferredStockSearch);
     return products.filter((product) => {
       const matchesSearch =
         !query || normalizeText(product.name).includes(query);
@@ -1469,7 +1550,7 @@ export default function PoolPetiscosApp() {
         (stockFilter === "Normal" && !isLow);
       return matchesSearch && matchesStatus;
     });
-  }, [products, stockFilter, stockSearch]);
+  }, [deferredStockSearch, products, stockFilter]);
 
   const transactions = useMemo<Transaction[]>(
     () =>
@@ -3784,6 +3865,7 @@ export default function PoolPetiscosApp() {
               onRefresh={() => refreshOnlineOrders(true)}
               onAction={runOnlineOrderAction}
               onComplete={completeOnlineOrder}
+              onPrint={printOnlineOrderReceipt}
             />
           </div>
         )}
@@ -5190,6 +5272,64 @@ export default function PoolPetiscosApp() {
           />
         )}
       </main>
+
+      {printOnlineOrder && (
+        <section className="pool-order-print-sheet" aria-hidden="true">
+          <header className="pool-order-print-header">
+            <div>
+              <p className="pool-order-print-eyebrow">Pool Petiscos &amp; Lanches</p>
+              <h1>Pedido #{String(printOnlineOrder.number).padStart(3, "0")}</h1>
+            </div>
+            <p>{new Intl.DateTimeFormat("pt-BR", {
+              dateStyle: "short",
+              timeStyle: "short",
+            }).format(new Date(printOnlineOrder.createdAt))}</p>
+          </header>
+          <div className="pool-order-print-meta">
+            <strong>{printOnlineOrder.customerName || "Cliente"}</strong>
+            <span>
+              {printOnlineOrder.fulfillmentMode === "table"
+                ? printOnlineOrder.tableLabel || "Mesa"
+                : "Retirada no balcão"}
+            </span>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Qtd.</th>
+                <th>Item</th>
+                <th>Valor</th>
+              </tr>
+            </thead>
+            <tbody>
+              {printOnlineOrder.items.map((item) => (
+                <tr key={item.id}>
+                  <td>{item.quantity}×</td>
+                  <td>
+                    {item.name}
+                    {item.note ? <small>Obs.: {item.note}</small> : null}
+                  </td>
+                  <td>{currency.format(item.lineTotalCents / 100)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {printOnlineOrder.customerNote ? (
+            <p className="pool-order-print-note">
+              <strong>Observação:</strong> {printOnlineOrder.customerNote}
+            </p>
+          ) : null}
+          <div className="pool-order-print-total">
+            <span>
+              Pagamento: {printOnlineOrder.paymentMethod}
+              {printOnlineOrder.surchargeCents > 0
+                ? ` (+${currency.format(printOnlineOrder.surchargeCents / 100)})`
+                : ""}
+            </span>
+            <strong>{currency.format(printOnlineOrder.totalCents / 100)}</strong>
+          </div>
+        </section>
+      )}
 
       <nav
         className="fixed bottom-[max(.75rem,env(safe-area-inset-bottom))] left-3 right-3 z-40 flex overflow-x-auto rounded-2xl border border-white/10 bg-[#211e1d]/96 p-1.5 text-white shadow-2xl backdrop-blur-xl lg:hidden"

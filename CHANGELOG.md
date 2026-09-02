@@ -2,6 +2,22 @@
 
 Todas as mudanças relevantes do Pool Petiscos são registradas neste arquivo.
 
+## 2.1.0 — 2026-09-02
+
+### Operação e conferência
+
+- alerta sonoro e visual para novos pedidos online, sem repetir pedidos já
+  existentes na abertura;
+- impressão individual de pedidos com itens, quantidades, observações,
+  pagamento e total;
+- resumo por forma de pagamento na tela, em uma aba dedicada do Excel e no PDF;
+- monitoramento da última sincronização e do último erro conhecido;
+- atualizador do Windows separado do serviço local para permitir a atualização
+  sem uso do Gerenciador de Tarefas.
+
+As receitas de ingredientes, permissões detalhadas e impressão fiscal continuam
+dependendo de dados e equipamentos confirmados pela lanchonete.
+
 ## 2.0.0 — 2026-09-02
 
 ### Sincronização contínua

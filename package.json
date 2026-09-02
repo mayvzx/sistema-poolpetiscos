@@ -1,6 +1,6 @@
 {
   "name": "pool-petiscos-caixa",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "private": true,
   "engines": {
     "node": ">=22.13.0"
@@ -10,7 +10,7 @@
     "dev": "vite",
     "build": "node scripts/build.mjs",
     "start": "vinext start",
-    "test": "node --import tsx --test tests/domain.test.ts tests/orders.test.ts tests/security-preferences.test.ts tests/payment-surcharge.test.ts tests/cash-flow.test.ts tests/cash-session-summary.test.ts tests/local-storage-companion.test.ts tests/online-orders-domain.test.ts tests/online-order-api.test.ts tests/online-order-migration.test.ts && node --test tests/standalone-patch.test.mjs && npm run build && node --test tests/rendered-html.test.mjs",
+    "test": "node --import tsx --test tests/domain.test.ts tests/orders.test.ts tests/security-preferences.test.ts tests/payment-surcharge.test.ts tests/cash-flow.test.ts tests/cash-session-summary.test.ts tests/local-storage-companion.test.ts tests/online-orders-domain.test.ts tests/online-order-api.test.ts tests/online-order-migration.test.ts tests/online-order-alert.test.ts && node --test tests/standalone-patch.test.mjs && npm run build && node --test tests/rendered-html.test.mjs",
     "typecheck": "tsc --noEmit",
     "validate:artifact": "node scripts/validate-artifact.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",

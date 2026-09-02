@@ -168,6 +168,17 @@ vendas, estoque e controle gerencial da Pool Petiscos & Lanches.
 - código, documentação e arquivos de distribuição foram separados por
   responsabilidade.
 
+### Revisão de recomendações de 02/09/2026
+
+- novos pedidos online podem emitir um alerta sonoro curto após a primeira
+  interação do operador, sem repetir alertas de pedidos antigos;
+- o operador pode imprimir qualquer pedido pela janela padrão do Windows;
+- o relatório de fluxo de caixa mostra totais por forma de pagamento e os
+  exporta na planilha Excel e no PDF;
+- o painel de pedidos exibe a última sincronização e o último erro conhecido;
+- o atualizador é iniciado fora da supervisão do serviço local, reduzindo o
+  risco de a atualização ficar presa em segundo plano.
+
 ## Itens bloqueados pela visita presencial
 
 Não implementar com dados inventados:

@@ -11,6 +11,7 @@ import {
   Download,
   MapPin,
   PackageCheck,
+  Printer,
   QrCode,
   RefreshCw,
   ShoppingBag,
@@ -44,6 +45,7 @@ type OnlineOrdersPanelProps = {
     order: OnlineOrder,
     paymentMethod: PaymentMethod,
   ) => Promise<void>;
+  onPrint: (order: OnlineOrder) => void;
 };
 
 const ACTIVE_STATUSES = new Set<OnlineOrderStatus>([
@@ -137,18 +139,31 @@ function paymentHelper(payment: PaymentMethod, surchargeRate: number) {
   return payment;
 }
 
+function formatSyncTimestamp(value: string | null) {
+  if (!value) return "Ainda não sincronizado nesta sessão";
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return "Horário da última sincronização indisponível";
+  return `Última atualização: ${new Intl.DateTimeFormat("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(new Date(timestamp))}`;
+}
+
 function OrderCard({
   order,
   busy,
   cashOpen,
   onAction,
   onComplete,
+  onPrint,
 }: {
   order: OnlineOrder;
   busy: boolean;
   cashOpen: boolean;
   onAction: OnlineOrdersPanelProps["onAction"];
   onComplete: OnlineOrdersPanelProps["onComplete"];
+  onPrint: OnlineOrdersPanelProps["onPrint"];
 }) {
   const [paymentMethod, setPaymentMethod] = useState(order.paymentMethod);
   const copy = STATUS_COPY[order.status];
@@ -292,6 +307,16 @@ function OrderCard({
 
       {ACTIVE_STATUSES.has(order.status) ? (
         <div className="flex flex-wrap gap-2 border-t border-[#eee8e3] bg-[#fcfaf8] px-5 py-4">
+          <button
+            type="button"
+            onClick={() => onPrint(order)}
+            disabled={busy}
+            className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-[#d8cec7] bg-white px-4 py-3 font-bold text-[#4f4743] transition hover:border-[#d9202c] hover:text-[#b41622] disabled:cursor-not-allowed disabled:opacity-60"
+            title="Imprimir pedido"
+          >
+            <Printer size={18} aria-hidden="true" />
+            Imprimir
+          </button>
           {next ? (
             <button
               type="button"
@@ -333,7 +358,18 @@ function OrderCard({
             </button>
           ) : null}
         </div>
-      ) : null}
+      ) : (
+        <div className="flex justify-end border-t border-[#eee8e3] bg-[#fcfaf8] px-5 py-4">
+          <button
+            type="button"
+            onClick={() => onPrint(order)}
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[#d8cec7] bg-white px-4 py-2.5 text-sm font-bold text-[#4f4743] transition hover:border-[#d9202c] hover:text-[#b41622]"
+          >
+            <Printer size={17} aria-hidden="true" />
+            Imprimir pedido
+          </button>
+        </div>
+      )}
     </article>
   );
 }
@@ -346,6 +382,7 @@ export function OnlineOrdersPanel({
   onRefresh,
   onAction,
   onComplete,
+  onPrint,
 }: OnlineOrdersPanelProps) {
   const [filter, setFilter] = useState<"active" | "history">("active");
   const [busyOrderId, setBusyOrderId] = useState<string | null>(null);
@@ -483,6 +520,14 @@ export function OnlineOrdersPanel({
                   ? `Atualiza automaticamente a cada ${Math.max(5, Math.round(status.syncIntervalSeconds || 5))} s`
                   : "Serviço local reiniciando…"}
               </p>
+              <p className="mt-1 text-xs font-semibold text-[#8d837d]">
+                {formatSyncTimestamp(status?.lastSyncAt ?? null)}
+              </p>
+              {status?.lastError ? (
+                <p className="mt-1 max-w-[230px] text-xs font-bold text-[#a34848]">
+                  Último aviso: {status.lastError}
+                </p>
+              ) : null}
             </div>
           </div>
         </div>
@@ -658,6 +703,7 @@ export function OnlineOrdersPanel({
               cashOpen={cashOpen}
               onAction={runAction}
               onComplete={complete}
+              onPrint={onPrint}
             />
           ))}
         </div>

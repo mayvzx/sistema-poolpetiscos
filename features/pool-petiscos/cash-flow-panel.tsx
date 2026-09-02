@@ -260,6 +260,34 @@ export function CashFlowPanel({
             })}
           </div>
 
+          <section className="border-b border-[#e7dfdb] bg-[#fcfaf8] p-5 sm:p-6" aria-labelledby="cash-flow-payment-title">
+            <div className="flex flex-wrap items-end justify-between gap-2">
+              <div>
+                <span className="text-xs font-extrabold uppercase tracking-[.08em] text-[#776f6b]">
+                  Conferência rápida
+                </span>
+                <h3 id="cash-flow-payment-title" className="mt-1 text-lg font-black text-[#302b29]">
+                  Vendas por forma de pagamento
+                </h3>
+              </div>
+              <span className="text-xs font-bold text-[#776f6b]">
+                {report.salesCount} venda(s) no período
+              </span>
+            </div>
+            <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+              {(Object.entries(report.paymentTotals) as Array<[string, number]>).map(
+                ([payment, total]) => (
+                  <div key={payment} className="rounded-xl border border-[#e7dfdb] bg-white px-3 py-3">
+                    <span className="block text-xs font-bold text-[#776f6b]">{payment}</span>
+                    <strong className="mt-1 block text-base font-black text-[#302b29]">
+                      {currency.format(total)}
+                    </strong>
+                  </div>
+                ),
+              )}
+            </div>
+          </section>
+
           <div className="max-h-[520px] overflow-auto">
             <table className="w-full min-w-[1280px] border-collapse text-left">
               <thead className="sticky top-0 z-10 bg-[#e66e22] text-xs font-extrabold uppercase tracking-[.08em] text-white shadow-sm">

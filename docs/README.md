@@ -22,6 +22,9 @@ ser colocado aqui ou enviado ao GitHub.
 
 ## Operação e implantação
 
+- [Recomendações da versão 2.1.0](operations/RECOMENDACOES-2.1.0.md): alertas,
+  impressão, conferência por pagamento e operação segura.
+
 - [Entrega da versão 2.0.0](operations/ENTREGA-2.0.0.md): sincronização
   contínua, cardápio atualizado e revisão visual da fila online.
 - [Entrega da versão 1.9.0](operations/ENTREGA-1.9.0.md): cardápio por QR Code,

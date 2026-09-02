@@ -8,7 +8,7 @@ import {
   formatSurchargePercent,
   salePricing,
 } from "./payment-surcharge";
-import type { CashMovement, Expense, Sale } from "./types";
+import type { CashMovement, Expense, PaymentMethod, Sale } from "./types";
 
 export type CashFlowMovement = "Entrada" | "Saída";
 export type CashFlowPeriodMode = "today" | "week" | "month" | "custom";
@@ -38,7 +38,17 @@ export type CashFlowReport = {
   incoming: number;
   outgoing: number;
   balance: number;
+  salesCount: number;
+  paymentTotals: Record<PaymentMethod, number>;
 };
+
+const REPORT_PAYMENT_METHODS: PaymentMethod[] = [
+  "Dinheiro",
+  "Pix",
+  "Débito",
+  "Crédito",
+  "Cartão",
+];
 
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -237,12 +247,25 @@ export function buildCashFlowReport(
       .filter((entry) => entry.movement === "Saída")
       .reduce((total, entry) => total + entry.amount, 0),
   );
+  const saleEntries = filtered.filter((entry) => entry.source === "sale");
+  const paymentTotals = Object.fromEntries(
+    REPORT_PAYMENT_METHODS.map((payment) => [
+      payment,
+      roundMoney(
+        saleEntries
+          .filter((entry) => entry.payment === payment || entry.payment.startsWith(`${payment} `))
+          .reduce((total, entry) => total + entry.amount, 0),
+      ),
+    ]),
+  ) as Record<PaymentMethod, number>;
   return {
     range,
     entries: filtered,
     incoming,
     outgoing,
     balance: roundMoney(incoming - outgoing),
+    salesCount: saleEntries.length,
+    paymentTotals,
   };
 }
 

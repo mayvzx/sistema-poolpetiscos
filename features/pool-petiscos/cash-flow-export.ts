@@ -249,6 +249,59 @@ export async function createCashFlowWorkbook(report: CashFlowReport) {
   sheet.pageSetup.printArea = `A1:G${Math.max(8, lastDataRow)}`;
   sheet.headerFooter.oddFooter = "Pool Petiscos & Lanches - Página &P de &N";
 
+  const paymentSheet = workbook.addWorksheet("Por pagamento", {
+    properties: { defaultRowHeight: 24 },
+    pageSetup: {
+      orientation: "portrait",
+      paperSize: 9,
+      fitToPage: true,
+      fitToWidth: 1,
+      fitToHeight: 1,
+    },
+  });
+  paymentSheet.columns = [
+    { key: "payment", width: 28 },
+    { key: "total", width: 22 },
+  ];
+  paymentSheet.mergeCells("A1:B1");
+  paymentSheet.getCell("A1").value = "VENDAS POR FORMA DE PAGAMENTO";
+  paymentSheet.getCell("A1").font = {
+    name: "Aptos Display",
+    size: 18,
+    bold: true,
+    color: { argb: "FFFFFFFF" },
+  };
+  paymentSheet.getCell("A1").alignment = { horizontal: "center", vertical: "middle" };
+  paymentSheet.getCell("A1").fill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: BRAND_ORANGE },
+  };
+  paymentSheet.getRow(1).height = 34;
+  paymentSheet.getCell("A3").value = "Forma";
+  paymentSheet.getCell("B3").value = "Total vendido";
+  paymentSheet.getRow(3).eachCell((cell) => {
+    cell.font = { name: "Aptos", size: 11, bold: true, color: { argb: "FFFFFFFF" } };
+    cell.alignment = { horizontal: "center", vertical: "middle" };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND_DARK } };
+    cell.border = thinBorder();
+  });
+  Object.entries(report.paymentTotals).forEach(([payment, total], index) => {
+    const row = paymentSheet.getRow(4 + index);
+    row.values = [payment, total];
+    row.getCell(2).numFmt = '"R$" #,##0.00';
+    row.eachCell((cell) => {
+      cell.border = thinBorder();
+      cell.alignment = {
+        horizontal: Number(cell.col) === 2 ? "right" : "left",
+        vertical: "middle",
+      };
+    });
+  });
+  paymentSheet.getCell("A10").value = `Período: ${report.range.label}`;
+  paymentSheet.getCell("A10").font = { name: "Aptos", size: 10, italic: true, color: { argb: "FF776F6B" } };
+  paymentSheet.mergeCells("A10:B10");
+
   const output = await workbook.xlsx.writeBuffer();
   return output instanceof Uint8Array
     ? output
@@ -291,9 +344,20 @@ export async function createCashFlowPdf(report: CashFlowReport) {
   document.setFontSize(8.5);
   document.text(`Período: ${report.range.label}`, 12, 51);
   document.text(`${report.entries.length} movimentação(ões)`, pageWidth - 12, 51, { align: "right" });
+  document.setFontSize(7.4);
+  const paymentLine = Object.entries(report.paymentTotals)
+    .filter(([, total]) => total > 0)
+    .map(([payment, total]) => `${payment}: ${currency.format(total)}`)
+    .join("   •   ");
+  document.text(
+    paymentLine || "Nenhuma venda no período",
+    12,
+    56,
+    { maxWidth: pageWidth - 24 },
+  );
 
   autoTable(document, {
-    startY: 55,
+    startY: 61,
     margin: { left: 12, right: 12, bottom: 14 },
     head: [[
       "DATA E HORA",

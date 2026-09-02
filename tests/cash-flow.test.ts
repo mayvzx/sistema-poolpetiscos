@@ -121,6 +121,10 @@ test("filtra o mês e calcula entradas, saídas e saldo", () => {
   assert.equal(report.incoming, 444.6);
   assert.equal(report.outgoing, 209.5);
   assert.equal(report.balance, 235.1);
+  assert.equal(report.salesCount, 2);
+  assert.equal(report.paymentTotals.Pix, 290);
+  assert.equal(report.paymentTotals.Débito, 54.6);
+  assert.equal(report.paymentTotals.Dinheiro, 0);
   assert.equal(cashFlowReportHeading(report), "FLUXO DE CAIXA - AGOSTO DE 2026");
 });
 
@@ -152,6 +156,10 @@ test("gera arquivos Excel e PDF reais e legíveis", async () => {
   await workbook.xlsx.load(Buffer.from(workbookBytes) as never);
   const sheet = workbook.getWorksheet("Fluxo de Caixa");
   assert.ok(sheet);
+  const paymentSheet = workbook.getWorksheet("Por pagamento");
+  assert.ok(paymentSheet);
+  assert.equal(paymentSheet.getCell("A4").value, "Dinheiro");
+  assert.equal(paymentSheet.getCell("B5").value, 290);
   assert.equal(sheet.getCell("A1").value, "FLUXO DE CAIXA - AGOSTO DE 2026");
   assert.equal(sheet.getCell("B8").value, "Entrada");
   assert.equal(sheet.getCell("D8").value, "1x Hambúrguer");
