@@ -335,25 +335,51 @@ async function cleanupExpiredRecords(db: D1Database, now: number): Promise<void>
 }
 
 async function expirePendingOrders(db: D1Database, storeId: string, now: number) {
-  await db
-    .prepare(
-      `UPDATE public_orders
-       SET status = 'expired', version = version + 1, updated_at = ?, last_actor_id = 'system'
-       WHERE store_id = ? AND status = 'pending' AND expires_at <= ?`,
-    )
-    .bind(now, storeId, now)
-    .run();
+  await db.batch([
+    db
+      .prepare(
+        `INSERT INTO order_events (
+          store_id, order_id, order_version, event_type, actor_type,
+          actor_id, payload_json, created_at
+        )
+        SELECT store_id, id, version + 1, 'order.expired', 'system',
+          'system', '{}', ?
+        FROM public_orders
+        WHERE store_id = ? AND status = 'pending' AND expires_at <= ?`,
+      )
+      .bind(now, storeId, now),
+    db
+      .prepare(
+        `UPDATE public_orders
+         SET status = 'expired', version = version + 1, updated_at = ?, last_actor_id = 'system'
+         WHERE store_id = ? AND status = 'pending' AND expires_at <= ?`,
+      )
+      .bind(now, storeId, now),
+  ]);
 }
 
 async function expirePendingOrder(db: D1Database, orderId: string, now: number) {
-  await db
-    .prepare(
-      `UPDATE public_orders
-       SET status = 'expired', version = version + 1, updated_at = ?, last_actor_id = 'system'
-       WHERE id = ? AND status = 'pending' AND expires_at <= ?`,
-    )
-    .bind(now, orderId, now)
-    .run();
+  await db.batch([
+    db
+      .prepare(
+        `INSERT INTO order_events (
+          store_id, order_id, order_version, event_type, actor_type,
+          actor_id, payload_json, created_at
+        )
+        SELECT store_id, id, version + 1, 'order.expired', 'system',
+          'system', '{}', ?
+        FROM public_orders
+        WHERE id = ? AND status = 'pending' AND expires_at <= ?`,
+      )
+      .bind(now, orderId, now),
+    db
+      .prepare(
+        `UPDATE public_orders
+         SET status = 'expired', version = version + 1, updated_at = ?, last_actor_id = 'system'
+         WHERE id = ? AND status = 'pending' AND expires_at <= ?`,
+      )
+      .bind(now, orderId, now),
+  ]);
 }
 
 async function orderSnapshot(db: D1Database, orderId: string) {
@@ -1216,7 +1242,7 @@ async function handleOrderAction(
   const now = Date.now();
   const actorMarker = `pool-primary:${mutationId}`;
   try {
-    const [updateResult, commandResult] = await db.batch([
+    const [updateResult, eventResult, commandResult] = await db.batch([
       db
         .prepare(
           `UPDATE public_orders SET
@@ -1252,6 +1278,27 @@ async function handleOrderAction(
         ),
       db
         .prepare(
+          `INSERT INTO order_events (
+            store_id, order_id, order_version, event_type, actor_type,
+            actor_id, payload_json, created_at
+          )
+          SELECT store_id, id, version, ?, 'installation', ?, '{}', ?
+          FROM public_orders
+          WHERE id = ? AND store_id = ? AND status = ? AND version = ?
+            AND last_actor_id = ?`,
+        )
+        .bind(
+          `order.${nextStatus}`,
+          actorMarker,
+          now,
+          orderId,
+          store.id,
+          nextStatus,
+          expectedVersion + 1,
+          actorMarker,
+        ),
+      db
+        .prepare(
           `INSERT INTO installation_commands (
             installation_id, mutation_id, order_id, request_hash, resulting_version, created_at
           )
@@ -1277,6 +1324,7 @@ async function handleOrderAction(
     ]);
     if (
       (updateResult.meta.changes ?? 0) !== 1 ||
+      (eventResult.meta.changes ?? 0) !== 1 ||
       (commandResult.meta.changes ?? 0) !== 1
     ) {
       const raced = await db
