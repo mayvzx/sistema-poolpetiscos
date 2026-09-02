@@ -265,7 +265,17 @@ async function getStoreBySlug(db: D1Database, slug: string): Promise<StoreRow> {
 }
 
 async function getConfiguredStore(db: D1Database, env: OnlineOrderEnv): Promise<StoreRow> {
-  return getStoreBySlug(db, env.POOL_STORE_SLUG?.trim() || "pool-petiscos");
+  const slug = env.POOL_STORE_SLUG?.trim() || "pool-petiscos";
+  const now = Date.now();
+  await db
+    .prepare(
+      `INSERT INTO stores (id, slug, name, timezone, created_at, updated_at)
+       VALUES (?, ?, 'Pool Petiscos & Lanches', 'America/Sao_Paulo', ?, ?)
+       ON CONFLICT(slug) DO NOTHING`,
+    )
+    .bind(slug, slug, now, now)
+    .run();
+  return getStoreBySlug(db, slug);
 }
 
 function acceptingOrders(store: StoreRow, now: number): boolean {
