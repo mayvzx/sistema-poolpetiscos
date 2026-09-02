@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import threading
 import time
 from pathlib import Path
@@ -27,10 +28,45 @@ CHECK_INTERVAL_SECONDS = 24 * 60 * 60
 MAX_INSTALLER_BYTES = 250 * 1024 * 1024
 VERSION_PATTERN = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
 SHA256_PATTERN = re.compile(r"^sha256:([0-9a-fA-F]{64})$")
+CREATE_BREAKAWAY_FROM_JOB = 0x01000000
+CREATE_NEW_PROCESS_GROUP = 0x00000200
+DETACHED_PROCESS = 0x00000008
 
 
 class UpdateCheckError(RuntimeError):
     """A safe, user-presentable update failure."""
+
+
+def launch_installer(path: str) -> None:
+    """Open an installer outside the launcher's kill-on-close job.
+
+    The local service is a child of the launcher. A normal child process can
+    therefore be terminated when the launcher shuts down, which would also
+    terminate the installer halfway through the update. Windows allows a
+    process to leave the job only when the launcher opted into breakaway; the
+    launcher configures that flag and this function requests it explicitly.
+    """
+
+    if os.name != "nt":
+        raise OSError("A instalação automática está disponível somente no Windows.")
+    try:
+        subprocess.Popen(  # noqa: S603
+            [path],
+            close_fds=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=(
+                CREATE_BREAKAWAY_FROM_JOB
+                | CREATE_NEW_PROCESS_GROUP
+                | DETACHED_PROCESS
+            ),
+        )
+    except OSError:
+        # Some locked-down Windows environments do not allow breakaway from
+        # a job. ShellExecute remains a useful fallback; the installer itself
+        # still performs the graceful shutdown handshake before copying files.
+        os.startfile(path)  # type: ignore[attr-defined]
 
 
 def parse_version(value: str) -> tuple[int, int, int] | None:
@@ -392,7 +428,7 @@ class UpdateChecker:
                     if self._installer_launcher is not None:
                         self._installer_launcher(path)
                     else:
-                        os.startfile(path)  # type: ignore[attr-defined]
+                        launch_installer(path)
                 except OSError:
                     # The HTTP response has already completed at this point.
                     return

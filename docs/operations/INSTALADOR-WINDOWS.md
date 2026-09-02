@@ -47,6 +47,10 @@ dois processos e reinicia um componente que encerre inesperadamente. O atalho
 normal abre o navegador. A inicialização automática aguarda os serviços locais
 e abre o caixa no navegador após o login do Windows.
 
+Durante uma atualização iniciada pelas configurações, o instalador é aberto em
+um processo destacado da supervisão do launcher. Assim, o Pool pode ser
+encerrado com segurança para liberar os arquivos sem encerrar o instalador junto.
+
 O grupo **Pool Petiscos** no menu Iniciar também oferece **Dados e backups**,
 **Manual do sistema**, **Encerrar Pool Petiscos** e **Desinstalar Pool
 Petiscos**.

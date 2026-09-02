@@ -36,6 +36,7 @@ ERROR_ALREADY_EXISTS = 183
 EVENT_MODIFY_STATE = 0x0002
 CREATE_NO_WINDOW = 0x08000000
 JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
+JOB_OBJECT_LIMIT_BREAKAWAY_OK = 0x00000800
 JOB_OBJECT_EXTENDED_LIMIT_INFORMATION = 9
 
 
@@ -174,6 +175,7 @@ class WindowsProcessJob:
         information = _JobObjectExtendedLimitInformation()
         information.basic_limit_information.limit_flags = (
             JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+            | JOB_OBJECT_LIMIT_BREAKAWAY_OK
         )
         kernel32.SetInformationJobObject.argtypes = (
             ctypes.c_void_p,

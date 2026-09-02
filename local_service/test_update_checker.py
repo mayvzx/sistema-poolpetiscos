@@ -9,7 +9,11 @@ from unittest.mock import patch
 from local_service.update_checker import (
     UpdateCheckError,
     UpdateChecker,
+    CREATE_BREAKAWAY_FROM_JOB,
+    CREATE_NEW_PROCESS_GROUP,
+    DETACHED_PROCESS,
     is_newer_version,
+    launch_installer,
     parse_latest_release,
     parse_update_manifest,
     parse_version,
@@ -17,6 +21,40 @@ from local_service.update_checker import (
 
 
 class UpdateCheckerRulesTest(unittest.TestCase):
+    def test_launches_installer_detached_from_launcher_job(self) -> None:
+        with (
+            patch("local_service.update_checker.os.name", "nt"),
+            patch("local_service.update_checker.subprocess.Popen") as popen,
+        ):
+            launch_installer(r"C:\PoolPetiscos\updates\PoolPetiscos-Setup-2.0.0.exe")
+
+        popen.assert_called_once()
+        arguments, options = popen.call_args
+        self.assertEqual(
+            arguments[0],
+            [r"C:\PoolPetiscos\updates\PoolPetiscos-Setup-2.0.0.exe"],
+        )
+        self.assertTrue(options["close_fds"])
+        self.assertEqual(
+            options["creationflags"],
+            CREATE_BREAKAWAY_FROM_JOB | CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS,
+        )
+
+    def test_falls_back_to_shell_when_breakaway_is_rejected(self) -> None:
+        with (
+            patch("local_service.update_checker.os.name", "nt"),
+            patch(
+                "local_service.update_checker.subprocess.Popen",
+                side_effect=OSError("breakaway recusado"),
+            ),
+            patch("local_service.update_checker.os.startfile", create=True) as startfile,
+        ):
+            launch_installer(r"C:\PoolPetiscos\updates\PoolPetiscos-Setup-2.0.0.exe")
+
+        startfile.assert_called_once_with(
+            r"C:\PoolPetiscos\updates\PoolPetiscos-Setup-2.0.0.exe"
+        )
+
     def test_compares_only_strict_semantic_versions(self) -> None:
         self.assertEqual(parse_version("v1.7.0"), (1, 7, 0))
         self.assertTrue(is_newer_version("1.7.1", "1.7.0"))
