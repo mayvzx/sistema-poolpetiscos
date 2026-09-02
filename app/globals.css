@@ -1360,7 +1360,9 @@ html[data-pool-theme="dark"] [class*="border-[#e6dfdb]"],
 html[data-pool-theme="dark"] [class*="border-[#e5deda]"],
 html[data-pool-theme="dark"] [class*="border-[#e2dad5]"],
 html[data-pool-theme="dark"] [class*="border-[#ded7d2]"],
-html[data-pool-theme="dark"] [class*="border-[#d9d2ce]"] {
+html[data-pool-theme="dark"] [class*="border-[#d9d2ce]"],
+html[data-pool-theme="dark"] [class*="border-[#dfd8d2]"],
+html[data-pool-theme="dark"] [class*="border-[#d9d0ca]"] {
   border-color: #504844 !important;
 }
 
@@ -1370,7 +1372,9 @@ html[data-pool-theme="dark"] [class*="divide-[#eee9e5]"] > :not(:last-child) {
 }
 
 html[data-pool-theme="dark"] [class*="text-[#24201f]"],
-html[data-pool-theme="dark"] [class*="text-[#302b29]"] {
+html[data-pool-theme="dark"] [class*="text-[#302b29]"],
+html[data-pool-theme="dark"] [class*="text-[#211916]"],
+html[data-pool-theme="dark"] [class*="text-[#403530]"] {
   color: #f7f3f0 !important;
 }
 
@@ -1378,7 +1382,9 @@ html[data-pool-theme="dark"] [class*="text-[#4b4542]"],
 html[data-pool-theme="dark"] [class*="text-[#4f4743]"],
 html[data-pool-theme="dark"] [class*="text-[#5f5753]"],
 html[data-pool-theme="dark"] [class*="text-[#6d6561]"],
+html[data-pool-theme="dark"] [class*="text-[#766d68]"],
 html[data-pool-theme="dark"] [class*="text-[#776f6b]"],
+html[data-pool-theme="dark"] [class*="text-[#8d837d]"],
 html[data-pool-theme="dark"] [class*="text-[#8d8581]"],
 html[data-pool-theme="dark"] [class*="text-[#9c928d]"] {
   color: #c8bfba !important;

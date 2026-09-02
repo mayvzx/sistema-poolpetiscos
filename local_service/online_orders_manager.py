@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import threading
 import time
@@ -31,6 +32,7 @@ ONLINE_API_URL_ENVIRONMENT_KEY = "POOL_ONLINE_API_URL"
 ONLINE_INSTALLATION_TOKEN_ENVIRONMENT_KEY = "POOL_ONLINE_INSTALLATION_TOKEN"
 ONLINE_PUBLIC_MENU_URL_ENVIRONMENT_KEY = "POOL_ONLINE_PUBLIC_MENU_URL"
 ACTIVE_ORDER_STATUSES = ("pending", "accepted", "preparing", "ready")
+logger = logging.getLogger("pool_petiscos.online_orders")
 
 
 @dataclass(frozen=True)
@@ -256,10 +258,33 @@ class OnlineOrdersManager:
         while not self._stop_event.is_set():
             try:
                 self.sync_once()
-            except (OSError, ValueError, OnlineOrdersError) as error:
-                self.storage.record_error(str(error))
+            except Exception as error:
+                # Uma falha inesperada não pode encerrar silenciosamente o
+                # recebimento de pedidos. Registra o diagnóstico e tenta de
+                # novo no próximo ciclo; BaseException continua reservada para
+                # encerramentos reais do processo.
+                logger.exception("Falha no ciclo automático de pedidos online.")
+                message = str(error).strip() or "Falha inesperada na sincronização."
+                try:
+                    self.storage.record_error(message)
+                except Exception:
+                    logger.exception(
+                        "Não foi possível registrar a falha da sincronização."
+                    )
             self._wake_event.wait(self._sync_interval_seconds)
             self._wake_event.clear()
+
+    def sync_now(self) -> dict[str, Any]:
+        """Synchronize immediately and restore the worker if it had stopped."""
+
+        try:
+            return self.sync_once()
+        finally:
+            # Mesmo quando a consulta manual falha, a próxima tentativa
+            # automática deve continuar agendada.
+            thread = self._thread
+            if thread is None or not thread.is_alive():
+                self.start()
 
     def _settings_snapshot(self) -> OnlineOrdersSettings | None:
         with self._settings_lock:

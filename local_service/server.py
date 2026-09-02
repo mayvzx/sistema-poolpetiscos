@@ -798,7 +798,7 @@ class PoolCompanionHandler(BaseHTTPRequestHandler):
                 return
             try:
                 self._read_json_body()
-                result = self.pool_server.online_orders_manager.sync_once()
+                result = self.pool_server.online_orders_manager.sync_now()
             except (ValueError, OnlineOrdersError) as error:
                 self._send_json({"error": str(error)}, HTTPStatus.BAD_GATEWAY)
                 return

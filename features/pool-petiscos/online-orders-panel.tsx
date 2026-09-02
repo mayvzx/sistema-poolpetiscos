@@ -444,7 +444,7 @@ export function OnlineOrdersPanel({
           type="button"
           onClick={() => void onRefresh()}
           disabled={loading}
-          className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-[#d9d0ca] bg-white px-5 py-3 font-black text-[#403530] transition hover:border-[#d9202c] hover:text-[#b41622] disabled:cursor-wait disabled:opacity-60"
+          className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-[#d9202c] bg-[#d9202c] px-5 py-3 font-black text-white shadow-[0_10px_24px_rgba(217,32,44,0.18)] transition hover:border-[#b91520] hover:bg-[#b91520] disabled:cursor-wait disabled:border-[#6f625d] disabled:bg-[#6f625d] disabled:text-white disabled:shadow-none disabled:opacity-100"
         >
           <RefreshCw
             size={18}

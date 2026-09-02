@@ -111,6 +111,9 @@ class FakeOnlineOrdersManager:
     def sync_once(self) -> dict[str, object]:
         return self.snapshot()
 
+    def sync_now(self) -> dict[str, object]:
+        return self.sync_once()
+
     def perform_action(self, order_id: str, **payload: object) -> dict[str, object]:
         self.actions.append({"orderId": order_id, **payload})
         return {

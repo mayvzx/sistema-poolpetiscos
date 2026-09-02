@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from typing import Any
@@ -137,6 +138,18 @@ class FakeClient:
         }
 
 
+class FailsOnceClient(FakeClient):
+    def __init__(self, clock: list[float]) -> None:
+        super().__init__(clock)
+        self.heartbeat_attempts = 0
+
+    def heartbeat(self, **values: Any) -> dict[str, Any]:
+        self.heartbeat_attempts += 1
+        if self.heartbeat_attempts == 1:
+            raise RuntimeError("falha inesperada de teste")
+        return super().heartbeat(**values)
+
+
 class OnlineOrdersManagerTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
@@ -228,6 +241,38 @@ class OnlineOrdersManagerTest(unittest.TestCase):
         self.assertFalse(snapshot["status"]["configured"])
         self.assertEqual(snapshot["orders"], [])
         self.assertEqual(self.client.catalog_revisions, [])
+
+    def test_background_worker_survives_unexpected_failure(self) -> None:
+        self.configure()
+        client = FailsOnceClient(self.clock)
+        self.manager.stop()
+        self.manager = OnlineOrdersManager(
+            self.state_storage,
+            self.root,
+            "1.9.0",
+            clock=lambda: self.clock[0],
+            sync_interval_seconds=5,
+            client_factory=lambda _: client,  # type: ignore[arg-type]
+        )
+        # Mantém o teste rápido sem reduzir o intervalo mínimo de produção.
+        self.manager._sync_interval_seconds = 0.01
+
+        self.manager.start()
+        deadline = time.monotonic() + 1
+        while client.heartbeat_attempts < 2 and time.monotonic() < deadline:
+            time.sleep(0.01)
+
+        self.assertGreaterEqual(client.heartbeat_attempts, 2)
+        self.assertIsNotNone(self.manager._thread)
+        assert self.manager._thread is not None
+        self.assertTrue(self.manager._thread.is_alive())
+
+    def test_manual_sync_restarts_stopped_worker(self) -> None:
+        self.configure()
+        self.manager.sync_now()
+        self.assertIsNotNone(self.manager._thread)
+        assert self.manager._thread is not None
+        self.assertTrue(self.manager._thread.is_alive())
 
 
 if __name__ == "__main__":
