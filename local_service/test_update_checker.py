@@ -245,7 +245,10 @@ class UpdateCheckerRulesTest(unittest.TestCase):
             result = checker.install_verified_update()
             self.assertTrue(result["scheduled"])
             self.assertTrue(launched.wait(1))
-            self.assertEqual(launched_paths, [str(installer)])
+            self.assertEqual(
+                [Path(path).resolve() for path in launched_paths],
+                [installer.resolve()],
+            )
 
             installer.write_bytes(b"alterado")
             with self.assertRaises(UpdateCheckError):
