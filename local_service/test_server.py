@@ -103,6 +103,8 @@ class FakeOnlineOrdersManager:
                 else None
             ),
             "pendingCount": 1,
+            "workerRunning": True,
+            "syncIntervalSeconds": 5,
         }
 
     def snapshot(self) -> dict[str, object]:
@@ -963,6 +965,19 @@ class StateApiTest(unittest.TestCase):
         self.assertEqual(action["order"]["status"], "accepted")
         self.assertEqual(
             self.online_orders_manager.actions[0]["orderId"], "remote-1"
+        )
+
+    def test_online_orders_sync_returns_json_when_manager_fails_unexpectedly(self) -> None:
+        with mock.patch.object(
+            self.online_orders_manager,
+            "sync_now",
+            side_effect=RuntimeError("falha inesperada"),
+        ):
+            status, payload = self._request("POST", "/api/online-orders/sync", {})
+        self.assertEqual(status, 500)
+        self.assertEqual(
+            payload["error"],
+            "Não foi possível sincronizar os pedidos agora.",
         )
 
     def test_state_api_rejects_incomplete_state_without_writing(self) -> None:

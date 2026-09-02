@@ -183,6 +183,17 @@ test("heartbeat, catálogo e consulta preservam versão e revisão da instalaç�
     ),
   );
   assert.equal(events.status, 200);
+  const menu = await requiredResponse(
+    handleOnlineOrderApi(
+      new Request("https://pool.example/api/v1/public/stores/pool-petiscos/menu", {
+        method: "GET",
+      }),
+      env,
+    ),
+  );
+  assert.equal(menu.status, 200);
+  assert.equal(menu.headers.get("cache-control"), "no-store");
+  assert.equal(menu.headers.get("x-pool-catalog-version"), "1");
   const installation = database.sqlite
     .prepare(
       "SELECT app_version, local_revision FROM installations WHERE id = 'pool-primary'",

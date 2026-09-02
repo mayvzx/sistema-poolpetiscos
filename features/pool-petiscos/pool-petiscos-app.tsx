@@ -360,6 +360,7 @@ export default function PoolPetiscosApp() {
   const youtubeSearchQueueRef = useRef<Promise<void>>(Promise.resolve());
   const youtubeSearchSequenceRef = useRef(0);
   const onlineOrderMutationsRef = useRef(new Map<string, string>());
+  const onlineOrdersRefreshRef = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -473,40 +474,56 @@ export default function PoolPetiscosApp() {
     [],
   );
 
-  const refreshOnlineOrders = useCallback(async (force = false) => {
-    if (!["127.0.0.1", "localhost"].includes(window.location.hostname)) {
-      setOnlineOrdersSnapshot({
-        orders: [],
-        status: {
-          configured: false,
-          enabled: false,
-          connected: false,
-          acceptingOrders: false,
-          lastSyncAt: null,
-          lastError: null,
-          publicMenuUrl: null,
-          pendingCount: 0,
-        },
-      });
-      setOnlineOrdersError(null);
+  const refreshOnlineOrders = useCallback(async (force = false, silent = false) => {
+    if (onlineOrdersRefreshRef.current) {
+      await onlineOrdersRefreshRef.current;
       return;
     }
+    const request = (async () => {
+      if (!["127.0.0.1", "localhost"].includes(window.location.hostname)) {
+        setOnlineOrdersSnapshot({
+          orders: [],
+          status: {
+            configured: false,
+            enabled: false,
+            connected: false,
+            acceptingOrders: false,
+            lastSyncAt: null,
+            lastError: null,
+            publicMenuUrl: null,
+            pendingCount: 0,
+            workerRunning: false,
+            syncIntervalSeconds: 5,
+          },
+        });
+        setOnlineOrdersError(null);
+        return;
+      }
 
-    setOnlineOrdersLoading(true);
+      if (!silent) setOnlineOrdersLoading(true);
+      try {
+        const snapshot = force
+          ? await syncOnlineOrdersNow()
+          : await loadOnlineOrders();
+        setOnlineOrdersSnapshot(snapshot);
+        setOnlineOrdersError(snapshot.status.lastError);
+      } catch (error) {
+        setOnlineOrdersError(
+          error instanceof Error
+            ? error.message
+            : "Não foi possível consultar os pedidos online.",
+        );
+      } finally {
+        if (!silent) setOnlineOrdersLoading(false);
+      }
+    })();
+    onlineOrdersRefreshRef.current = request;
     try {
-      const snapshot = force
-        ? await syncOnlineOrdersNow()
-        : await loadOnlineOrders();
-      setOnlineOrdersSnapshot(snapshot);
-      setOnlineOrdersError(snapshot.status.lastError);
-    } catch (error) {
-      setOnlineOrdersError(
-        error instanceof Error
-          ? error.message
-          : "Não foi possível consultar os pedidos online.",
-      );
+      await request;
     } finally {
-      setOnlineOrdersLoading(false);
+      if (onlineOrdersRefreshRef.current === request) {
+        onlineOrdersRefreshRef.current = null;
+      }
     }
   }, []);
 
@@ -987,11 +1004,11 @@ export default function PoolPetiscosApp() {
     let cancelled = false;
     const refresh = () => {
       if (!cancelled && document.visibilityState === "visible") {
-        void refreshOnlineOrders(false);
+        void refreshOnlineOrders(false, true);
       }
     };
     refresh();
-    const timer = window.setInterval(refresh, 8_000);
+    const timer = window.setInterval(refresh, 5_000);
     document.addEventListener("visibilitychange", refresh);
     return () => {
       cancelled = true;

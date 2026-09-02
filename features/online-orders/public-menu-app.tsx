@@ -243,10 +243,17 @@ export default function PublicMenuApp({ storeSlug }: { storeSlug: string }) {
   const pendingSubmission = useRef<PendingSubmission | null>(null);
   const deviceToken = useRef("");
   const checkoutRef = useRef<HTMLElement | null>(null);
+  const menuRefreshInFlight = useRef(false);
+  const menuRef = useRef<MenuPayload | null>(null);
 
-  const loadMenu = useCallback(async () => {
-    setLoading(true);
-    setError("");
+  const loadMenu = useCallback(async (options?: { silent?: boolean }) => {
+    if (menuRefreshInFlight.current) return;
+    const silent = options?.silent === true;
+    menuRefreshInFlight.current = true;
+    if (!silent) {
+      setLoading(true);
+      setError("");
+    }
     const parameters = new URLSearchParams(window.location.search);
     const isPreview = parameters.get("preview") === "1";
     const token = parameters.get("mesa")?.trim() ?? "";
@@ -255,13 +262,19 @@ export default function PublicMenuApp({ storeSlug }: { storeSlug: string }) {
     setFulfillmentMode(requestedMode);
     setPreview(isPreview);
     if (isPreview) {
-      setMenu(previewMenu(storeSlug, requestedMode));
-      setLoading(false);
+      const nextMenu = previewMenu(storeSlug, requestedMode);
+      menuRef.current = nextMenu;
+      setMenu(nextMenu);
+      if (!silent) setLoading(false);
+      menuRefreshInFlight.current = false;
       return;
     }
     if (!navigator.onLine) {
-      setError("Você está sem internet. Reconecte-se para abrir o cardápio e enviar pedidos.");
-      setLoading(false);
+      if (!menuRef.current) {
+        setError("Você está sem internet. Reconecte-se para abrir o cardápio e enviar pedidos.");
+      }
+      if (!silent) setLoading(false);
+      menuRefreshInFlight.current = false;
       return;
     }
     try {
@@ -276,17 +289,32 @@ export default function PublicMenuApp({ storeSlug }: { storeSlug: string }) {
         throw new Error(payload?.error?.message || "Não foi possível abrir o cardápio.");
       }
       setFulfillmentMode(payload.store.table ? "table" : "pickup");
+      menuRef.current = payload;
       setMenu(payload);
+      setError("");
+      // Remove somente itens que deixaram de existir no catálogo. Se um item
+      // ficou sem estoque, ele continua no carrinho para que o cliente veja a
+      // mudança e receba a validação correta ao enviar.
+      const validProductIds = new Set(payload.products.map((product) => product.id));
+      setCart((current) => {
+        const next = Object.fromEntries(
+          Object.entries(current).filter(([productId]) => validProductIds.has(productId)),
+        );
+        return Object.keys(next).length === Object.keys(current).length ? current : next;
+      });
     } catch (requestError) {
-      setError(
-        !navigator.onLine
-          ? "Você está sem internet. Reconecte-se para abrir o cardápio e enviar pedidos."
-          : requestError instanceof Error && requestError.message !== "Failed to fetch"
-            ? requestError.message
-            : "Não foi possível falar com a lanchonete agora. Tente novamente em instantes.",
-      );
+      if (!silent || !menuRef.current) {
+        setError(
+          !navigator.onLine
+            ? "Você está sem internet. Reconecte-se para abrir o cardápio e enviar pedidos."
+            : requestError instanceof Error && requestError.message !== "Failed to fetch"
+              ? requestError.message
+              : "Não foi possível falar com a lanchonete agora. Tente novamente em instantes.",
+        );
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
+      menuRefreshInFlight.current = false;
     }
   }, [storeSlug]);
 
@@ -294,6 +322,12 @@ export default function PublicMenuApp({ storeSlug }: { storeSlug: string }) {
     const timer = window.setTimeout(() => void loadMenu(), 0);
     return () => window.clearTimeout(timer);
   }, [loadMenu]);
+
+  useEffect(() => {
+    if (preview || !isOnline || !menu) return;
+    const timer = window.setInterval(() => void loadMenu({ silent: true }), 5_000);
+    return () => window.clearInterval(timer);
+  }, [isOnline, loadMenu, menu, preview]);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);

@@ -2,6 +2,28 @@
 
 Todas as mudanças relevantes do Pool Petiscos são registradas neste arquivo.
 
+## 2.0.0 — 2026-09-02
+
+### Sincronização contínua
+
+- mantém o catálogo, estoque disponível e fila online sincronizados
+  automaticamente em ciclos de 5 segundos, sem depender do botão manual;
+- recupera o serviço local após falhas inesperadas, registra o diagnóstico e
+  evita que o recebimento de pedidos pare silenciosamente;
+- atualiza o cardápio digital aberto no celular em até poucos segundos e evita
+  cache antigo na rota pública do catálogo;
+- impede requisições concorrentes desnecessárias no caixa e mantém as ações
+  pendentes na fila local para nova tentativa segura.
+
+### Clareza visual e operação
+
+- corrige textos escuros em cartões de pedidos, abas, totais e observações no
+  tema escuro;
+- apresenta o estado do serviço e o intervalo da sincronização na tela
+  **Pedidos online**;
+- adiciona cabeçalhos de versão do catálogo e logs estruturados para facilitar
+  diagnóstico da API.
+
 ## 1.9.0 — 2026-09-01
 
 ### Cardápio digital próprio

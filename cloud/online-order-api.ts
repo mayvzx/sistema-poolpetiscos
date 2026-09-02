@@ -510,7 +510,9 @@ async function handleMenu(
       })),
     },
     200,
-    { "Cache-Control": "public, max-age=15, stale-while-revalidate=30" },
+    // O catálogo pode mudar a qualquer momento (preço, estoque ou produto).
+    // O cliente faz polling curto e não pode receber uma cópia antiga do CDN.
+    { "Cache-Control": "no-store", "X-Pool-Catalog-Version": String(store.catalog_version) },
   );
 }
 
@@ -1433,7 +1435,11 @@ export async function handleOnlineOrderApi(
     if (error instanceof ApiFailure) {
       return apiError(error.status, error.code, error.message, error.headers);
     }
-    console.error("[online-orders] request failed", error instanceof Error ? error.message : "unknown");
+    console.error("[online-orders] request failed", {
+      method: request.method,
+      path: url.pathname,
+      error: error instanceof Error ? error.stack || error.message : error,
+    });
     return apiError(500, "INTERNAL_ERROR", "Não foi possível concluir a operação agora.");
   }
 }

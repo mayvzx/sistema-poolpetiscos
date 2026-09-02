@@ -48,7 +48,7 @@ from local_service.youtube_search import (
     validate_youtube_search_query,
 )
 
-SERVICE_VERSION = "1.9.0"
+SERVICE_VERSION = "2.0.0"
 DEFAULT_PORT = 18765
 MAX_BODY_BYTES = 32 * 1024
 MAX_STATE_BODY_BYTES = 10 * 1024 * 1024
@@ -804,6 +804,17 @@ class PoolCompanionHandler(BaseHTTPRequestHandler):
                 return
             except (OSError, sqlite3.Error) as error:
                 self.log_error("falha ao sincronizar pedidos online: %s", error)
+                self._send_json(
+                    {"error": "Não foi possível sincronizar os pedidos agora."},
+                    HTTPStatus.INTERNAL_SERVER_ERROR,
+                )
+                return
+            except Exception as error:
+                # Uma exceção inesperada não pode derrubar a conexão HTTP e
+                # aparecer no navegador apenas como “Failed to fetch”.
+                self.log_error(
+                    "falha inesperada ao sincronizar pedidos online: %s", error
+                )
                 self._send_json(
                     {"error": "Não foi possível sincronizar os pedidos agora."},
                     HTTPStatus.INTERNAL_SERVER_ERROR,

@@ -173,7 +173,7 @@ class OnlineOrdersManager:
         app_version: str,
         *,
         clock: Callable[[], float] = time.time,
-        sync_interval_seconds: float = 12.0,
+        sync_interval_seconds: float = 5.0,
         client_factory: Callable[
             [OnlineOrdersConfiguration], OnlineOrdersClient
         ] = OnlineOrdersClient,
@@ -190,6 +190,7 @@ class OnlineOrdersManager:
         self._sync_interval_seconds = max(5.0, sync_interval_seconds)
         self._client_factory = client_factory
         self._settings_lock = threading.RLock()
+        self._lifecycle_lock = threading.RLock()
         self._sync_lock = threading.Lock()
         self._stop_event = threading.Event()
         self._wake_event = threading.Event()
@@ -236,23 +237,40 @@ class OnlineOrdersManager:
         return self.configure(updated)
 
     def start(self) -> None:
-        if self._thread is not None and self._thread.is_alive():
-            return
-        self._stop_event.clear()
-        self._thread = threading.Thread(
-            target=self._run,
-            name="pool-online-orders",
-            daemon=True,
-        )
-        self._thread.start()
+        with self._lifecycle_lock:
+            if self._thread is not None and self._thread.is_alive():
+                return
+            self._stop_event.clear()
+            self._thread = threading.Thread(
+                target=self._run,
+                name="pool-online-orders",
+                daemon=True,
+            )
+            self._thread.start()
+
+    def ensure_running(self) -> bool:
+        """Ensure a crashed or interrupted worker is recreated before use."""
+
+        with self._lifecycle_lock:
+            running = self._thread is not None and self._thread.is_alive()
+        if not running:
+            self.start()
+        return self.is_running()
+
+    def is_running(self) -> bool:
+        with self._lifecycle_lock:
+            return self._thread is not None and self._thread.is_alive()
 
     def stop(self) -> None:
-        self._stop_event.set()
-        self._wake_event.set()
-        thread = self._thread
+        with self._lifecycle_lock:
+            self._stop_event.set()
+            self._wake_event.set()
+            thread = self._thread
         if thread is not None and thread.is_alive():
             thread.join(timeout=5)
-        self._thread = None
+        with self._lifecycle_lock:
+            if self._thread is thread:
+                self._thread = None
 
     def _run(self) -> None:
         while not self._stop_event.is_set():
@@ -304,9 +322,9 @@ class OnlineOrdersManager:
     def sync_once(self) -> dict[str, Any]:
         settings = self._settings_snapshot()
         if settings is None:
-            return self.snapshot()
+            return self._snapshot_data()
         if not self._sync_lock.acquire(blocking=False):
-            return self.snapshot()
+            return self._snapshot_data()
         try:
             self.storage.ensure_initialized()
             client = self._client()
@@ -349,7 +367,7 @@ class OnlineOrdersManager:
                 ingested = self.storage.ingest_event_page(page)
                 if not ingested.has_more:
                     break
-            return self.snapshot()
+            return self._snapshot_data()
         except (OSError, ValueError, OnlineOrdersError) as error:
             self.storage.record_error(str(error))
             raise
@@ -478,9 +496,15 @@ class OnlineOrdersManager:
             "lastError": self._settings_error or state.last_error,
             "publicMenuUrl": settings.public_menu_url if settings else None,
             "pendingCount": pending_count,
+            "workerRunning": self.is_running(),
+            "syncIntervalSeconds": self._sync_interval_seconds,
         }
 
     def snapshot(self) -> dict[str, Any]:
+        self.ensure_running()
+        return self._snapshot_data()
+
+    def _snapshot_data(self) -> dict[str, Any]:
         return {
             "orders": self.storage.list_orders(limit=200),
             "status": self.status(),

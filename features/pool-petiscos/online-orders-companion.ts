@@ -54,6 +54,8 @@ export type OnlineOrdersStatus = {
   lastError: string | null;
   publicMenuUrl: string | null;
   pendingCount: number;
+  workerRunning: boolean;
+  syncIntervalSeconds: number;
 };
 
 export type OnlineOrdersSnapshot = {

@@ -1362,7 +1362,8 @@ html[data-pool-theme="dark"] [class*="border-[#e2dad5]"],
 html[data-pool-theme="dark"] [class*="border-[#ded7d2]"],
 html[data-pool-theme="dark"] [class*="border-[#d9d2ce]"],
 html[data-pool-theme="dark"] [class*="border-[#dfd8d2]"],
-html[data-pool-theme="dark"] [class*="border-[#d9d0ca]"] {
+html[data-pool-theme="dark"] [class*="border-[#d9d0ca]"],
+html[data-pool-theme="dark"] [class*="border-[#eee8e3]"] {
   border-color: #504844 !important;
 }
 
@@ -1431,6 +1432,46 @@ html[data-pool-theme="dark"] [class*="hover:bg-[#fff7f7]"]:hover {
 
 html[data-pool-theme="dark"] .pool-stock-row:hover {
   background-color: #332e2b !important;
+}
+
+/* The online inbox uses a light palette in the default theme. Keep its
+   compact order cards readable when the operator chooses the dark theme. */
+html[data-pool-theme="dark"] .pool-online-tabs {
+  border: 1px solid #504844;
+  background-color: #302b29 !important;
+}
+
+html[data-pool-theme="dark"] .pool-online-order-summary {
+  border: 1px solid #504844;
+  background-color: #302b29 !important;
+}
+
+html[data-pool-theme="dark"] .pool-online-empty {
+  border-color: #504844 !important;
+  background-color: #272321 !important;
+}
+
+html[data-pool-theme="dark"] .pool-online-orders-panel [class*="text-[#2b211e]"],
+html[data-pool-theme="dark"] .pool-online-orders-panel [class*="text-[#352b27]"],
+html[data-pool-theme="dark"] .pool-online-orders-panel [class*="text-[#211916]"] {
+  color: #f7f3f0 !important;
+}
+
+html[data-pool-theme="dark"] .pool-online-orders-panel [class*="text-[#493d37]"],
+html[data-pool-theme="dark"] .pool-online-orders-panel [class*="text-[#5c514b]"],
+html[data-pool-theme="dark"] .pool-online-orders-panel [class*="text-[#6f625d]"],
+html[data-pool-theme="dark"] .pool-online-orders-panel [class*="text-[#81766f]"] {
+  color: #c8bfba !important;
+}
+
+html[data-pool-theme="dark"] .pool-online-orders-panel [class*="text-[#6c4a2f]"],
+html[data-pool-theme="dark"] .pool-online-orders-panel [class*="text-[#8a4f45]"] {
+  color: #efbca6 !important;
+}
+
+html[data-pool-theme="dark"] .pool-online-orders-panel [class*="bg-[#fff9ef]"] {
+  border-color: #5e4736 !important;
+  background-color: #3b2c25 !important;
 }
 
 html[data-pool-theme="dark"] .pool-settings-card,

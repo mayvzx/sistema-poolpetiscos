@@ -170,7 +170,7 @@ function OrderCard({
   }
 
   return (
-    <article className="overflow-hidden rounded-[24px] border border-[#dfd8d2] bg-white shadow-[0_16px_45px_rgba(45,31,25,0.07)]">
+    <article className="pool-online-order-card overflow-hidden rounded-[24px] border border-[#dfd8d2] bg-white shadow-[0_16px_45px_rgba(45,31,25,0.07)]">
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#eee8e3] px-5 py-4">
         <div>
           <div className="flex flex-wrap items-center gap-2">
@@ -250,7 +250,7 @@ function OrderCard({
           ) : null}
         </div>
 
-        <aside className="rounded-2xl bg-[#f7f2ee] p-4">
+        <aside className="pool-online-order-summary rounded-2xl bg-[#f7f2ee] p-4">
           <p className="text-xs font-black uppercase tracking-[0.12em] text-[#8d837d]">
             Pagamento no local
           </p>
@@ -426,7 +426,7 @@ export function OnlineOrdersPanel({
   }
 
   return (
-    <section className="space-y-6 pb-10">
+    <section className="pool-online-orders-panel space-y-6 pb-10">
       <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-end">
         <div>
           <p className="text-sm font-black uppercase tracking-[0.18em] text-[#d9202c]">
@@ -477,6 +477,11 @@ export function OnlineOrdersPanel({
                   : status?.configured
                     ? "Tentando conectar"
                     : "Ainda não configurada"}
+              </p>
+              <p className="mt-1 text-xs font-semibold text-[#766d68]">
+                {status?.workerRunning
+                  ? `Atualiza automaticamente a cada ${Math.max(5, Math.round(status.syncIntervalSeconds || 5))} s`
+                  : "Serviço local reiniciando…"}
               </p>
             </div>
           </div>
@@ -608,7 +613,7 @@ export function OnlineOrdersPanel({
       ) : null}
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#ded5cf] pb-3">
-        <div className="flex rounded-xl bg-[#eee8e3] p-1">
+        <div className="pool-online-tabs flex rounded-xl bg-[#eee8e3] p-1">
           {(
             [
               ["active", "Em andamento"],
@@ -622,7 +627,7 @@ export function OnlineOrdersPanel({
               aria-pressed={filter === id}
               className={`rounded-lg px-4 py-2.5 text-sm font-black transition ${
                 filter === id
-                  ? "bg-white text-[#211916] shadow-sm"
+                  ? "bg-[#d9202c] text-white shadow-sm"
                   : "text-[#766d68] hover:text-[#211916]"
               }`}
             >
@@ -657,7 +662,7 @@ export function OnlineOrdersPanel({
           ))}
         </div>
       ) : (
-        <div className="grid min-h-[310px] place-items-center rounded-[28px] border border-dashed border-[#d8cec7] bg-[#fbf8f5] p-8 text-center">
+        <div className="pool-online-empty grid min-h-[310px] place-items-center rounded-[28px] border border-dashed border-[#d8cec7] bg-[#fbf8f5] p-8 text-center">
           <div>
             <span className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-white text-[#d9202c] shadow-sm">
               {filter === "active" ? (
