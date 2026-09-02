@@ -1,0 +1,16 @@
+.git
+.vercel
+.next
+.sites-runtime
+.wrangler
+.playwright-cli
+node_modules
+dist
+build
+coverage
+outputs
+output
+work
+__pycache__
+*.py[cod]
+config/google-drive-oauth.json

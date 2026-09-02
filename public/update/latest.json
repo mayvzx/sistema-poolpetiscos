@@ -6,8 +6,8 @@
   "notes": "Sincronização contínua do cardápio e pedidos, alertas e impressão de pedidos online, totais por forma de pagamento e atualização mais confiável no Windows.",
   "installer": {
     "name": "PoolPetiscos-Setup-2.1.0.exe",
-    "size": 90443608,
-    "sha256": "17301e970785b7e4e746cff0eb10fa80a7ba3f9c8c3ebbfbc5fd34f553e20076",
+    "size": 90444676,
+    "sha256": "6be39940283a3939b555cedc64514963cbc2168ec42d4fb91c5bbbb14bcd6e72",
     "download_url": "https://github.com/mayvzx/sistema-poolpetiscos/releases/download/v2.1.0/PoolPetiscos-Setup-2.1.0.exe"
   }
 }
