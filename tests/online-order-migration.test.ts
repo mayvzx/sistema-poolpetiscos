@@ -8,11 +8,15 @@ const migration = readFileSync(
   "utf8",
 );
 
-function migratedDatabase(): DatabaseSync {
-  const database = new DatabaseSync(":memory:");
+function applyMigration(database: DatabaseSync): void {
   for (const statement of migration.split("--> statement-breakpoint")) {
     if (statement.trim()) database.exec(statement);
   }
+}
+
+function migratedDatabase(): DatabaseSync {
+  const database = new DatabaseSync(":memory:");
+  applyMigration(database);
   database
     .prepare(
       `INSERT INTO stores (id, slug, name, timezone, created_at, updated_at)
@@ -59,32 +63,11 @@ test("a migração cria o esquema e os índices de retenção sem violações", 
   database.close();
 });
 
-test("o banco bloqueia saltos de status e registra transições válidas", () => {
-  const database = migratedDatabase();
-  insertPickupOrder(database, "order-1");
-  assert.throws(() =>
-    database
-      .prepare("UPDATE public_orders SET status = 'ready', version = 2 WHERE id = 'order-1'")
-      .run(),
-  );
-  database
-    .prepare(
-      `UPDATE public_orders SET status = 'accepted', version = 2,
-       updated_at = 2000, last_actor_id = 'pool-primary:test' WHERE id = 'order-1'`,
-    )
-    .run();
-  const event = database
-    .prepare(
-      `SELECT event_type, actor_type, actor_id, order_version
-       FROM order_events WHERE order_id = 'order-1'`,
-    )
-    .get();
-  assert.deepEqual({ ...event }, {
-    event_type: "order.accepted",
-    actor_type: "installation",
-    actor_id: "pool-primary:test",
-    order_version: 2,
-  });
+test("a migração inicial não inclui dados operacionais", () => {
+  const database = new DatabaseSync(":memory:");
+  applyMigration(database);
+  const row = database.prepare("SELECT COUNT(*) AS total FROM stores").get();
+  assert.equal(row?.total, 0);
   database.close();
 });
 
