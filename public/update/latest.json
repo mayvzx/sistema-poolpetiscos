@@ -1,0 +1,13 @@
+{
+  "version": "1.9.0",
+  "release_url": "https://github.com/mayvzx/sistema-poolpetiscos/releases/tag/v1.9.0",
+  "release_name": "Pool Petiscos 1.9.0",
+  "published_at": "2026-09-02T00:31:39Z",
+  "notes": "Cardápio digital por QR Code, pedidos online e atualização guiada no Windows.",
+  "installer": {
+    "name": "PoolPetiscos-Setup-1.9.0.exe",
+    "size": 90439437,
+    "sha256": "8a71558735346524ee17387a5f8e1ac3071c3910ce97632183f1e3349018f31a",
+    "download_url": "https://github.com/mayvzx/sistema-poolpetiscos/releases/download/v1.9.0/PoolPetiscos-Setup-1.9.0.exe"
+  }
+}
