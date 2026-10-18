@@ -684,6 +684,10 @@ class BackupRecord:
         }
 
 
+class UnreadableStateError(RuntimeError):
+    """O banco tem um estado que esta versão não reconhece; nada é gravado."""
+
+
 class RevisionConflict(Exception):
     def __init__(self, snapshot: StateSnapshot) -> None:
         super().__init__("O estado foi alterado por outra sessão.")
@@ -1189,11 +1193,11 @@ class StateStorage:
             )
             parsed_revision = int(revision)
         except (TypeError, ValueError, json.JSONDecodeError) as error:
-            raise RuntimeError(
+            raise UnreadableStateError(
                 "O estado persistido no banco é inválido."
             ) from error
         if parsed_revision < 0 or (state is not None and not _is_pool_state(state)):
-            raise RuntimeError("O estado persistido no banco é inválido.")
+            raise UnreadableStateError("O estado persistido no banco é inválido.")
         return StateSnapshot(
             state=state,
             revision=parsed_revision,

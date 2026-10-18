@@ -12,6 +12,9 @@ type LocalStatePayload = {
   backup_error?: string | null;
 };
 
+/** O banco tem dados que esta versão não consegue ler; nada deve ser gravado. */
+export class UnreadableLocalStateError extends Error {}
+
 export type LocalStateSnapshot = {
   state: unknown | null;
   revision: number;
@@ -77,6 +80,17 @@ async function readPayload(response: Response): Promise<LocalStatePayload> {
       response.ok
         ? "A resposta de armazenamento não pôde ser validada."
         : "O serviço local retornou uma resposta inválida.",
+    );
+  }
+  if (
+    response.status === 422 &&
+    typeof payload === "object" &&
+    payload !== null &&
+    "code" in payload &&
+    payload.code === "unreadable_state"
+  ) {
+    throw new UnreadableLocalStateError(
+      "Os dados gravados não puderam ser lidos por esta versão.",
     );
   }
   if (response.status !== 409 && !response.ok) {

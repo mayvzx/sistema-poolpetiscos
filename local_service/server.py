@@ -31,6 +31,7 @@ from local_service.online_orders_manager import (
 )
 from local_service.storage import (
     RevisionConflict,
+    UnreadableStateError,
     StateStorage,
     default_database_path,
 )
@@ -756,6 +757,18 @@ class PoolCompanionHandler(BaseHTTPRequestHandler):
             try:
                 snapshot = self.pool_server.storage.read()
                 backup_info = self.pool_server.storage.backup_info()
+            except UnreadableStateError as error:
+                # A tela precisa saber que os dados existem mas não podem ser
+                # lidos, para não cair na cópia do navegador nem num caixa vazio.
+                self.log_error("estado local ilegível: %s", error)
+                self._send_json(
+                    {
+                        "error": "Os dados gravados não puderam ser lidos por esta versão.",
+                        "code": "unreadable_state",
+                    },
+                    HTTPStatus.UNPROCESSABLE_ENTITY,
+                )
+                return
             except (OSError, sqlite3.Error, RuntimeError) as error:
                 self.log_error("falha ao ler estado local: %s", error)
                 self._send_json(
@@ -1278,7 +1291,13 @@ def main() -> None:
         database_path=arguments.database,
         backup_directory=arguments.backup_dir,
     )
-    if storage.read().state is not None:
+    try:
+        has_state = storage.read().state is not None
+    except UnreadableStateError as error:
+        # Sobe mesmo assim para a tela avisar; o banco não é alterado.
+        print(f"[companion] aviso: dados gravados ilegíveis: {error}")
+        has_state = False
+    if has_state:
         try:
             storage.ensure_daily_backup(force=True)
         except (OSError, sqlite3.Error) as error:

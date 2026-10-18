@@ -31,6 +31,7 @@ from local_service.storage import (
     RevisionConflict,
     STATE_HISTORY_RETENTION,
     StateStorage,
+    UnreadableStateError,
     _is_pool_state,
     default_database_path,
     resolve_backup_directory,
@@ -870,6 +871,29 @@ class StateStorageTest(unittest.TestCase):
                     storage.save(invalid, 1)
             self.assertEqual(storage.read().revision, 1)
 
+
+    def test_never_overwrites_a_stored_state_it_cannot_read(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            storage = self._storage(Path(directory))
+            storage.save(minimal_pool_state(1), 0)
+            unreadable = json.dumps({"sales": "não é uma lista"})
+            with closing(sqlite3.connect(storage.database_path)) as connection:
+                connection.execute(
+                    "UPDATE app_state SET state_json = ?", (unreadable,)
+                )
+                connection.commit()
+
+            with self.assertRaises(UnreadableStateError):
+                storage.read()
+            with self.assertRaises(UnreadableStateError):
+                storage.save(minimal_pool_state(2), None)
+            with closing(sqlite3.connect(storage.database_path)) as connection:
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT state_json, revision FROM app_state"
+                    ).fetchone(),
+                    (unreadable, 1),
+                )
 
     def test_accepts_cancelled_sales_and_closing_method_checks(self) -> None:
         sale = {

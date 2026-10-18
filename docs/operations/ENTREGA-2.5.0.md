@@ -22,6 +22,24 @@
 Nada do histórico é reescrito. Vendas e fechamentos anteriores continuam
 válidos e aparecem como antes.
 
+## Proteção dos dados
+
+A atualização não pode apagar nem alterar nenhum dado. O que garante isso:
+
+- o instalador substitui só os arquivos do programa, em
+  `%LOCALAPPDATA%\Programs\Pool Petiscos`; os dados ficam em outra pasta,
+  `%LOCALAPPDATA%\PoolPetiscos`, que ele não apaga;
+- antes de trocar qualquer arquivo, ele copia o banco para `update-backups` e
+  compara o SHA-256 da cópia com o original; se não bater, para sem instalar;
+- ao abrir uma base antiga, a 2.5.0 não muda nenhum valor gravado: só
+  acrescenta campos novos quando algo for registrado (testado sobre uma base da
+  1.5.2; abrir o sistema até a tela de PIN não grava nada);
+- se a 2.5.0 encontrar dados que não consegue ler, ela mostra **Os dados não
+  foram abertos** e não grava nada: não usa a cópia do navegador nem cria um
+  caixa vazio. Nesse caso, feche o sistema e chame o suporte;
+- **nunca desinstale antes**: o desinstalador é o único caminho que pode apagar
+  dados (e só se alguém confirmar). Instale a 2.5.0 direto por cima.
+
 ## Antes de instalar na lanchonete
 
 1. Instale com o atendimento encerrado e o caixa **fechado**.
@@ -30,9 +48,10 @@ válidos e aparecem como antes.
    ela também aparece em **Configurações > Atualizações do aplicativo**). O
    último registro é a 1.5.2, mas precisa ser confirmado nessa tela.
 3. Em **Financeiro > Proteção dos dados**, use **Exportar backup** e guarde o
-   arquivo num pendrive ou no Google Drive. O instalador também copia o banco para
-   `%LOCALAPPDATA%\PoolPetiscos\update-backups`, mas a cópia externa é a sua
-   garantia.
+   arquivo num pendrive.
+4. Feche o sistema em **Menu Iniciar > Pool Petiscos > Encerrar Pool Petiscos**
+   e copie a pasta `%LOCALAPPDATA%\PoolPetiscos` inteira para o pendrive. Essa
+   cópia não depende de nenhum programa e é a garantia final.
 
 ## Instalação
 
@@ -68,19 +87,25 @@ no caixa do dia:
 ## Se algo der errado
 
 - O instalador interrompe a atualização se não conseguir copiar o banco.
-- Para voltar ao estado de antes, use **Restaurar backup** com o arquivo
-  exportado no passo 3 de "Antes de instalar", ou reinstale a versão anterior: os dados continuam na
-  mesma pasta.
+- Se aparecer **Os dados não foram abertos**, não tente de novo nem
+  desinstale: os dados não foram tocados. Chame o suporte.
+- Para voltar à versão anterior, feche o sistema, devolva a pasta
+  `%LOCALAPPDATA%\PoolPetiscos` copiada no passo 4 e reinstale o instalador
+  antigo. Vendas feitas na 2.5.0 depois da instalação não existem nessa cópia,
+  e uma venda dividida ou com débito/crédito não é lida pela 1.5.2.
 - Os registros de diagnóstico ficam em `%LOCALAPPDATA%\PoolPetiscos\logs`.
 
 ## Validação realizada
 
+- proteção contra dado ilegível: com uma base que a 2.5.0 não reconhece, o
+  sistema mostra o aviso e o banco fica idêntico (mesma revisão e mesmo
+  SHA-256), sem cópia do navegador nem caixa vazio;
 - atualização sobre base antiga: uma base gravada pelo código da 1.5.2 foi
   aberta pela 2.5.0, recebeu uma venda dividida e um cancelamento, foi
   exportada e restaurada numa base nova com o estado idêntico; um backup
   `.json` exportado pela 1.5.2 também é aceito;
-- 71 testes de regras de negócio da tela (vendas, pagamento dividido,
-  cancelamento, fechamento, fluxo de caixa, pedidos online) e 29 testes do
+- 72 testes de regras de negócio da tela (vendas, pagamento dividido,
+  cancelamento, fechamento, fluxo de caixa, pedidos online) e 30 testes do
   serviço local e do banco SQLite;
 - typecheck, lint e build de produção;
 - pagamento dividido testado pelo responsável técnico em uma cópia local com

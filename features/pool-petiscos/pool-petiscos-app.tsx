@@ -62,7 +62,7 @@ import {
 import Image from "next/image";
 import { downloadBlob } from "./browser-download";
 import { CashClosingForm } from "./cash-closing-form";
-import { StartupScreen } from "./startup-screen";
+import { StartupScreen, UnreadableDataScreen } from "./startup-screen";
 import { OperatorLogin } from "./operator-login";
 import { SettingsPanel } from "./settings-panel";
 import {
@@ -121,6 +121,7 @@ import {
   loadLocalPoolState,
   LocalStateConflictError,
   saveLocalPoolState,
+  UnreadableLocalStateError,
 } from "./local-storage-companion";
 import {
   checkMusicCompanion,
@@ -293,6 +294,7 @@ export default function PoolPetiscosApp() {
   const [displayPreferencesReady, setDisplayPreferencesReady] = useState(false);
   const [systemPrefersDark, setSystemPrefersDark] = useState(false);
   const [hydrated, setHydrated] = useState(false);
+  const [unreadableData, setUnreadableData] = useState(false);
   const [operatorSessionReady, setOperatorSessionReady] = useState(false);
   const [activeOperatorId, setActiveOperatorId] =
     useState<OperatorId | null>(null);
@@ -853,6 +855,14 @@ export default function PoolPetiscosApp() {
         storageWarningRef.current = false;
         primaryStorageRevisionRef.current = snapshot.revision;
         let primaryState = parsePoolState(snapshot.state);
+        // Dados já gravados que esta versão não consegue ler nunca são
+        // substituídos pela cópia do navegador nem por um caixa vazio: o
+        // sistema para aqui, sem gravar nada, até o suporte avaliar.
+        if (snapshot.state != null && primaryState === null) {
+          primaryStorageReadyRef.current = false;
+          setUnreadableData(true);
+          return;
+        }
         const pendingMatchesPrimary =
           pendingSync &&
           primaryState &&
@@ -971,9 +981,13 @@ export default function PoolPetiscosApp() {
             "warning",
           );
         }
-      } catch {
+      } catch (error) {
         if (cancelled) return;
         primaryStorageReadyRef.current = false;
+        if (error instanceof UnreadableLocalStateError) {
+          setUnreadableData(true);
+          return;
+        }
         primaryStorageSnapshotRef.current = JSON.stringify(fallbackState);
         restorePoolState(fallbackState);
         if (
@@ -3187,6 +3201,10 @@ export default function PoolPetiscosApp() {
     const nextPosition = clampPlaybackTime(seconds, audio.duration);
     audio.currentTime = nextPosition;
     setPlaybackPosition(nextPosition);
+  }
+
+  if (unreadableData) {
+    return <UnreadableDataScreen />;
   }
 
   if (!hydrated || !operatorSessionReady) {

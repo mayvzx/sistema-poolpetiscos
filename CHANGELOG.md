@@ -47,6 +47,10 @@ Todas as mudanças relevantes do Pool Petiscos são registradas neste arquivo.
 - todos os totais (painel, faturamento diário, operadores, fechamento e fluxo
   de caixa) usam a mesma regra para ignorar vendas canceladas;
 - o resumo por operador do fechamento reaproveita o cálculo do painel;
+- se o banco tiver dados que a versão não consegue ler, o sistema mostra um
+  aviso e não grava nada, em vez de abrir com a cópia do navegador ou com um
+  caixa vazio; o serviço local passa a subir mesmo nesse caso para avisar a
+  tela;
 - teste automático de atualização: uma base gravada no formato da 1.5.2 abre
   na 2.5.0 com o histórico intacto;
 - o serviço local valida cancelamentos e conferências do mesmo jeito que a

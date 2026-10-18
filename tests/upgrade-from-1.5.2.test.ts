@@ -100,3 +100,24 @@ test("abre uma base da 1.5.2, divide, cancela e grava sem perder o histórico", 
   assert.deepEqual(after, { Dinheiro: 29, Pix: 12, "Débito": 0, "Crédito": 10.6, "Cartão": 12 });
   assert.deepEqual(reparsed.products.map((p) => p.stock), [20, 12, 30], "estoque: -2/-2 da venda dividida, +2/+2 do cancelamento");
 });
+
+test("ler uma base da 1.5.2 não altera nenhum valor já gravado, só acrescenta campos", () => {
+  const parsed = parsePoolState(structuredClone(legacyState));
+  assert.ok(parsed);
+  const changed: string[] = [];
+  const walk = (before: unknown, after: unknown, path: string) => {
+    if (before !== null && typeof before === "object") {
+      if (after === null || typeof after !== "object") {
+        changed.push(path);
+        return;
+      }
+      for (const [key, value] of Object.entries(before)) {
+        walk(value, (after as Record<string, unknown>)[key], `${path}.${key}`);
+      }
+    } else if (before !== after) {
+      changed.push(path);
+    }
+  };
+  walk(legacyState, parsed, "estado");
+  assert.deepEqual(changed, []);
+});
