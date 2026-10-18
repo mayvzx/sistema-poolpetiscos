@@ -14,6 +14,7 @@ import {
   AlertTriangle,
   ArrowDownRight,
   ArrowUpRight,
+  Ban,
   Banknote,
   Bell,
   Bluetooth,
@@ -61,7 +62,7 @@ import {
 import Image from "next/image";
 import { downloadBlob } from "./browser-download";
 import { CashClosingForm } from "./cash-closing-form";
-import { StartupScreen } from "./startup-screen";
+import { StartupScreen, UnreadableDataScreen } from "./startup-screen";
 import { OperatorLogin } from "./operator-login";
 import { SettingsPanel } from "./settings-panel";
 import {
@@ -120,6 +121,7 @@ import {
   loadLocalPoolState,
   LocalStateConflictError,
   saveLocalPoolState,
+  UnreadableLocalStateError,
 } from "./local-storage-companion";
 import {
   checkMusicCompanion,
@@ -131,9 +133,27 @@ import {
 } from "./music-companion";
 import { MusicProgress } from "./music-progress";
 import {
-  calculateSalePricing,
-  formatSurchargePercent,
-} from "./payment-surcharge";
+  CHECKOUT_PAYMENT_METHODS,
+  REPORT_PAYMENT_METHODS,
+} from "./payment-methods";
+import { formatSurchargePercent } from "./payment-surcharge";
+import {
+  CANCELLATION_REASON_MAX_LENGTH,
+  CANCELLATION_REASONS,
+  cancelSale,
+  countedSales,
+  saleCancelEligibility,
+} from "./sale-cancellation";
+import {
+  formatSalePayments,
+  MAX_PAYMENT_PARTS,
+  resolveSplitDraft,
+  saleAmountForMethod,
+  salePayments,
+  singlePaymentPricing,
+  sumSalesByPaymentMethod,
+  type PaymentDraftRow,
+} from "./sale-payments";
 import {
   checkForAppUpdate,
   type AppUpdateStatus,
@@ -177,6 +197,7 @@ import type {
   ActiveCashSession,
   CartItem,
   CashClosure,
+  CashMethodCheck,
   CashMovement,
   Expense,
   OrderStatus,
@@ -193,6 +214,11 @@ import type {
   Transaction,
   View,
 } from "./types";
+
+const INITIAL_SPLIT_ROWS: PaymentDraftRow[] = [
+  { method: "Pix", amount: "" },
+  { method: "Dinheiro", amount: "" },
+];
 
 const ORDER_STAGE_CONFIG = {
   aguardando: {
@@ -268,6 +294,7 @@ export default function PoolPetiscosApp() {
   const [displayPreferencesReady, setDisplayPreferencesReady] = useState(false);
   const [systemPrefersDark, setSystemPrefersDark] = useState(false);
   const [hydrated, setHydrated] = useState(false);
+  const [unreadableData, setUnreadableData] = useState(false);
   const [operatorSessionReady, setOperatorSessionReady] = useState(false);
   const [activeOperatorId, setActiveOperatorId] =
     useState<OperatorId | null>(null);
@@ -276,6 +303,11 @@ export default function PoolPetiscosApp() {
   const [category, setCategory] = useState<(typeof categories)[number]>("Todos");
   const [customerName, setCustomerName] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("Pix");
+  // Pagamento dividido: a última linha sempre recebe o restante do pedido.
+  const [splitPayment, setSplitPayment] = useState(false);
+  const [splitRows, setSplitRows] = useState<PaymentDraftRow[]>(
+    INITIAL_SPLIT_ROWS,
+  );
   const [cashReceived, setCashReceived] = useState("");
   const [ordersMode, setOrdersMode] = useState<"andamento" | "historico">(
     "andamento",
@@ -292,8 +324,16 @@ export default function PoolPetiscosApp() {
     | "cash-open"
     | "cash-close"
     | "cash-movement"
+    | "sale-cancel"
     | null
   >(null);
+  const [saleCancelId, setSaleCancelId] = useState<string | null>(null);
+  const [saleCancelForm, setSaleCancelForm] = useState({
+    reason: "",
+    restock: false,
+  });
+  // Trava contra duplo clique: a mesma venda não pode ser cancelada duas vezes.
+  const saleCancelSubmittedRef = useRef(false);
   const [stockForm, setStockForm] = useState({
     productId: INITIAL_PRODUCTS[0].id,
     quantity: "",
@@ -312,6 +352,9 @@ export default function PoolPetiscosApp() {
   });
   const [cashOpenForm, setCashOpenForm] = useState("");
   const [cashCloseForm, setCashCloseForm] = useState("");
+  const [methodCheckForm, setMethodCheckForm] = useState<
+    Partial<Record<PaymentMethod, string>>
+  >({});
   const [cashMovementForm, setCashMovementForm] = useState({
     kind: "sangria" as CashMovement["kind"],
     description: "",
@@ -670,6 +713,8 @@ export default function PoolPetiscosApp() {
     setCart([]);
     setCustomerName("");
     setCashReceived("");
+    setSplitPayment(false);
+    setSplitRows(INITIAL_SPLIT_ROWS);
   }, []);
 
   const flushPrimaryState = useCallback(async () => {
@@ -810,6 +855,14 @@ export default function PoolPetiscosApp() {
         storageWarningRef.current = false;
         primaryStorageRevisionRef.current = snapshot.revision;
         let primaryState = parsePoolState(snapshot.state);
+        // Dados já gravados que esta versão não consegue ler nunca são
+        // substituídos pela cópia do navegador nem por um caixa vazio: o
+        // sistema para aqui, sem gravar nada, até o suporte avaliar.
+        if (snapshot.state != null && primaryState === null) {
+          primaryStorageReadyRef.current = false;
+          setUnreadableData(true);
+          return;
+        }
         const pendingMatchesPrimary =
           pendingSync &&
           primaryState &&
@@ -928,9 +981,13 @@ export default function PoolPetiscosApp() {
             "warning",
           );
         }
-      } catch {
+      } catch (error) {
         if (cancelled) return;
         primaryStorageReadyRef.current = false;
+        if (error instanceof UnreadableLocalStateError) {
+          setUnreadableData(true);
+          return;
+        }
         primaryStorageSnapshotRef.current = JSON.stringify(fallbackState);
         restorePoolState(fallbackState);
         if (
@@ -1325,12 +1382,18 @@ export default function PoolPetiscosApp() {
   }, [volume]);
 
   const todayKey = now ? formatDateKey(now.getTime()) : "";
-  const todaySales = useMemo(
+  // Vendas canceladas continuam gravadas, mas ficam fora de totais e filas.
+  const validSales = useMemo(() => countedSales(sales), [sales]);
+  const todayAllSales = useMemo(
     () =>
       todayKey
         ? sales.filter((sale) => formatDateKey(sale.timestamp) === todayKey)
         : [],
     [sales, todayKey],
+  );
+  const todaySales = useMemo(
+    () => countedSales(todayAllSales),
+    [todayAllSales],
   );
   const activeOperator = activeOperatorId
     ? getOperatorProfile(activeOperatorId)
@@ -1340,15 +1403,15 @@ export default function PoolPetiscosApp() {
     [todaySales],
   );
   const activeOrders = useMemo(
-    () => sortOrdersOldestFirst(sales.filter(isActiveOrder)),
-    [sales],
+    () => sortOrdersOldestFirst(validSales.filter(isActiveOrder)),
+    [validSales],
   );
   const completedOrders = useMemo(
     () =>
       sortOrdersNewestFirst(
         sales.filter(
           (sale) =>
-            sale.orderStatus === "entregue" &&
+            (sale.orderStatus === "entregue" || sale.cancellation) &&
             sale.serviceMode !== "venda-direta",
         ),
       ),
@@ -1384,8 +1447,8 @@ export default function PoolPetiscosApp() {
     [expenses, todayKey],
   );
   const dailyRevenue = useMemo(
-    () => (todayKey ? buildDailyRevenue(sales) : []),
-    [sales, todayKey],
+    () => (todayKey ? buildDailyRevenue(validSales) : []),
+    [validSales, todayKey],
   );
   const recentRevenue = useMemo(
     () => dailyRevenue.reduce((total, day) => total + day.total, 0),
@@ -1393,9 +1456,10 @@ export default function PoolPetiscosApp() {
   );
   const recentSalesCount = useMemo(() => {
     const visibleDays = new Set(dailyRevenue.map((day) => day.key));
-    return sales.filter((sale) => visibleDays.has(formatDateKey(sale.timestamp)))
-      .length;
-  }, [dailyRevenue, sales]);
+    return validSales.filter((sale) =>
+      visibleDays.has(formatDateKey(sale.timestamp)),
+    ).length;
+  }, [dailyRevenue, validSales]);
   const maxDailyRevenue = Math.max(
     1,
     ...dailyRevenue.map((day) => day.total),
@@ -1412,11 +1476,11 @@ export default function PoolPetiscosApp() {
   const sessionSales = useMemo(
     () =>
       activeCashSession
-        ? sales.filter(
+        ? validSales.filter(
             (sale) => sale.cashSessionId === activeCashSession.id,
           )
         : [],
-    [activeCashSession, sales],
+    [activeCashSession, validSales],
   );
   const sessionExpenses = useMemo(
     () =>
@@ -1440,10 +1504,22 @@ export default function PoolPetiscosApp() {
   const cashSalesTotal = useMemo(
     () =>
       sessionSales
-        .filter((sale) => sale.payment === "Dinheiro")
-        .reduce((total, sale) => total + sale.total, 0),
+        .reduce(
+          (total, sale) => total + saleAmountForMethod(sale, "Dinheiro"),
+          0,
+        ),
     [sessionSales],
   );
+  // Formas conferidas fora da gaveta no fechamento (extrato e maquininha).
+  const sessionMethodTotals = useMemo(() => {
+    const totals = sumSalesByPaymentMethod(
+      sessionSales,
+      CHECKOUT_PAYMENT_METHODS,
+    );
+    return CHECKOUT_PAYMENT_METHODS.filter(
+      (method) => method !== "Dinheiro" && totals[method] > 0,
+    ).map((method) => ({ method, expected: totals[method] }));
+  }, [sessionSales]);
   const cashExpenseTotal = useMemo(
     () =>
       sessionExpenses
@@ -1505,15 +1581,38 @@ export default function PoolPetiscosApp() {
       ),
     [cartDetails],
   );
-  const cartPricing = useMemo(
-    () => calculateSalePricing(cartTotal, paymentMethod),
+  const splitDraft = useMemo(
+    () =>
+      splitPayment
+        ? resolveSplitDraft(cartTotal, splitRows, parseAmount)
+        : null,
+    [cartTotal, splitPayment, splitRows],
+  );
+  const singlePricing = useMemo(
+    () => singlePaymentPricing(cartTotal, paymentMethod),
     [cartTotal, paymentMethod],
   );
+  // Enquanto a divisão estiver incompleta, mostra o pedido sem acréscimo.
+  const cartPricing = splitDraft
+    ? (splitDraft.pricing ?? singlePaymentPricing(cartTotal, "Pix"))
+    : singlePricing;
+  const paymentSplitError = splitDraft?.error ?? null;
+  const cashDueAmount = splitDraft
+    ? splitDraft.pricing
+      ? (splitDraft.pricing.payments.find((part) => part.method === "Dinheiro")
+          ?.amount ?? 0)
+      : 0
+    : paymentMethod === "Dinheiro"
+      ? cartPricing.total
+      : 0;
+  const cashInPayment = splitDraft
+    ? splitRows.some((row) => row.method === "Dinheiro")
+    : paymentMethod === "Dinheiro";
   const cashReceivedAmount = parseAmount(cashReceived);
   const cashPaymentInvalid =
-    paymentMethod === "Dinheiro" &&
+    cashDueAmount > 0 &&
     (!Number.isFinite(cashReceivedAmount) ||
-      cashReceivedAmount + Number.EPSILON < cartPricing.total);
+      cashReceivedAmount + Number.EPSILON < cashDueAmount);
 
   // Mantém a digitação imediata mesmo quando o catálogo crescer bastante.
   const deferredSaleSearch = useDeferredValue(saleSearch);
@@ -1555,11 +1654,17 @@ export default function PoolPetiscosApp() {
   const transactions = useMemo<Transaction[]>(
     () =>
       [
-        ...todaySales.map((sale) => ({
+        ...todayAllSales.map((sale) => ({
           id: sale.id,
+          saleId: sale.id,
+          cancelled: Boolean(sale.cancellation),
           timestamp: sale.timestamp,
-          description: `Venda ${sale.id}`,
-          detail: `${sale.items.reduce((sum, item) => sum + item.quantity, 0)} item(ns) • ${sale.payment} • ${sale.operatorName}`,
+          description: sale.cancellation
+            ? `Venda ${sale.id} cancelada`
+            : `Venda ${sale.id}`,
+          detail: sale.cancellation
+            ? `Motivo: ${sale.cancellation.reason} • cancelada por ${sale.cancellation.operatorName}`
+            : `${sale.items.reduce((sum, item) => sum + item.quantity, 0)} item(ns) • ${formatSalePayments(sale)} • ${sale.operatorName}`,
           amount: sale.total,
           kind: "entrada" as const,
         })),
@@ -1592,22 +1697,28 @@ export default function PoolPetiscosApp() {
                 : ("saida" as const),
           })),
       ].sort((a, b) => b.timestamp - a.timestamp),
-    [cashMovements, todayExpenses, todayKey, todaySales],
+    [cashMovements, todayExpenses, todayKey, todayAllSales],
   );
 
-  const paymentTotals = useMemo(() => {
-    const totals: Record<PaymentMethod, number> = {
-      Pix: 0,
-      Dinheiro: 0,
-      Débito: 0,
-      Crédito: 0,
-      Cartão: 0,
-    };
-    todaySales.forEach((sale) => {
-      totals[sale.payment] += sale.total;
-    });
-    return totals;
-  }, [todaySales]);
+  const cancellableSaleIds = useMemo(
+    () =>
+      new Set(
+        todayAllSales
+          .filter(
+            (sale) =>
+              saleCancelEligibility(sale, activeCashSession?.id ?? null)
+                .allowed,
+          )
+          .map((sale) => sale.id),
+      ),
+    [activeCashSession, todayAllSales],
+  );
+
+  const paymentTotals = useMemo(
+    () =>
+      sumSalesByPaymentMethod(todaySales, REPORT_PAYMENT_METHODS),
+    [todaySales],
+  );
 
   const dateLabel = useMemo(() => {
     if (!now) return "Carregando data...";
@@ -1671,6 +1782,11 @@ export default function PoolPetiscosApp() {
           eyebrow: "Dinheiro físico",
           title: "Movimentar caixa",
           aria: "Registrar sangria ou suprimento",
+        },
+        "sale-cancel": {
+          eyebrow: "Venda",
+          title: "Cancelar venda?",
+          aria: "Confirmar cancelamento da venda",
         },
       }[modal]
     : null;
@@ -1765,6 +1881,49 @@ export default function PoolPetiscosApp() {
     );
   }
 
+  function resetSplitPayment() {
+    setSplitPayment(false);
+    setSplitRows(INITIAL_SPLIT_ROWS);
+  }
+
+  function startSplitPayment() {
+    const second: PaymentMethod = paymentMethod === "Pix" ? "Dinheiro" : "Pix";
+    setSplitRows([
+      { method: paymentMethod, amount: "" },
+      { method: second, amount: "" },
+    ]);
+    setSplitPayment(true);
+  }
+
+  function updateSplitRow(index: number, change: Partial<PaymentDraftRow>) {
+    setSplitRows((current) =>
+      current.map((row, rowIndex) =>
+        rowIndex === index ? { ...row, ...change } : row,
+      ),
+    );
+  }
+
+  function addSplitRow() {
+    setSplitRows((current) => {
+      const used = new Set(current.map((row) => row.method));
+      const next = CHECKOUT_PAYMENT_METHODS.find((method) => !used.has(method));
+      if (!next || current.length >= MAX_PAYMENT_PARTS) return current;
+      return [...current, { method: next, amount: "" }];
+    });
+  }
+
+  function removeSplitRow(index: number) {
+    setSplitRows((current) => {
+      const next = current.filter((_, rowIndex) => rowIndex !== index);
+      if (next.length < 2) {
+        setSplitPayment(false);
+        if (next[0]) setPaymentMethod(next[0].method);
+        return INITIAL_SPLIT_ROWS;
+      }
+      return next;
+    });
+  }
+
   function finishSale() {
     if (!activeOperator) {
       showToast("Escolha o operador antes de registrar a venda.", "warning");
@@ -1788,10 +1947,14 @@ export default function PoolPetiscosApp() {
       );
       return;
     }
+    if (paymentSplitError) {
+      showToast(paymentSplitError, "warning");
+      return;
+    }
     if (cashPaymentInvalid) {
       showToast(
         Number.isFinite(cashReceivedAmount)
-          ? "O valor recebido é menor que o total da venda."
+          ? "O valor recebido é menor que a parte em dinheiro."
           : "Informe um valor recebido válido.",
         "warning",
       );
@@ -1822,7 +1985,8 @@ export default function PoolPetiscosApp() {
       surchargeRate: cartPricing.surchargeRate,
       surchargeAmount: cartPricing.surchargeAmount,
       total: cartPricing.total,
-      payment: paymentMethod,
+      payment: cartPricing.payment,
+      payments: cartPricing.payments,
       operatorId: activeOperator.id,
       operatorName: activeOperator.name,
       items,
@@ -1843,6 +2007,7 @@ export default function PoolPetiscosApp() {
     setCart([]);
     setCustomerName("");
     setCashReceived("");
+    resetSplitPayment();
     if (ordersEnabled) {
       setOrdersMode("andamento");
       navigateTo("comandas");
@@ -1990,7 +2155,7 @@ export default function PoolPetiscosApp() {
     );
     if (!sale) {
       const subtotal = roundMoney(order.subtotalCents / 100);
-      const pricing = calculateSalePricing(subtotal, selectedPaymentMethod);
+      const pricing = singlePaymentPricing(subtotal, selectedPaymentMethod);
       const timestamp = Date.now();
       sale = {
         id: createRecordId("PV"),
@@ -2001,6 +2166,7 @@ export default function PoolPetiscosApp() {
         surchargeAmount: pricing.surchargeAmount,
         total: pricing.total,
         payment: selectedPaymentMethod,
+        payments: pricing.payments,
         operatorId: activeOperator.id,
         operatorName: activeOperator.name,
         items: order.items.map((item) => ({
@@ -2038,7 +2204,9 @@ export default function PoolPetiscosApp() {
       }
     }
 
-    const mutationKey = `${order.id}:${order.version}:complete:${sale.id}:${sale.payment}`;
+    // Pedidos online são sempre registrados com uma única forma de pagamento.
+    const onlinePaymentMethod = salePayments(sale)[0].method;
+    const mutationKey = `${order.id}:${order.version}:complete:${sale.id}:${onlinePaymentMethod}`;
     const localMutationId =
       onlineOrderMutationsRef.current.get(mutationKey) ??
       createOnlineMutationId();
@@ -2050,7 +2218,7 @@ export default function PoolPetiscosApp() {
         action: "complete",
         localMutationId,
         localSaleId: sale.id,
-        paymentMethod: sale.payment,
+        paymentMethod: onlinePaymentMethod,
       });
       onlineOrderMutationsRef.current.delete(mutationKey);
       await refreshOnlineOrders(false);
@@ -2121,7 +2289,108 @@ export default function PoolPetiscosApp() {
     if (previousStatus) setOrderStatus(sale, previousStatus);
   }
 
+  const saleToCancel = saleCancelId
+    ? (sales.find((sale) => sale.id === saleCancelId) ?? null)
+    : null;
+
+  function openSaleCancel(saleId: string) {
+    const sale = sales.find((candidate) => candidate.id === saleId);
+    if (!sale) return;
+    const eligibility = saleCancelEligibility(
+      sale,
+      activeCashSession?.id ?? null,
+    );
+    if (!eligibility.allowed) {
+      showToast(eligibility.message, "warning");
+      return;
+    }
+    setSaleCancelId(sale.id);
+    setSaleCancelForm({ reason: "", restock: false });
+    saleCancelSubmittedRef.current = false;
+    setModal("sale-cancel");
+  }
+
+  function confirmSaleCancel(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (saleCancelSubmittedRef.current) return;
+    if (!saleToCancel || !activeOperator) {
+      setModal(null);
+      return;
+    }
+    const eligibility = saleCancelEligibility(
+      saleToCancel,
+      activeCashSession?.id ?? null,
+    );
+    if (!eligibility.allowed) {
+      setModal(null);
+      showToast(eligibility.message, "warning");
+      return;
+    }
+    if (!saleCancelForm.reason.trim()) {
+      showToast("Informe o motivo do cancelamento.", "warning");
+      return;
+    }
+    saleCancelSubmittedRef.current = true;
+    const result = cancelSale({
+      sale: saleToCancel,
+      products,
+      operatorId: activeOperator.id,
+      operatorName: activeOperator.name,
+      reason: saleCancelForm.reason,
+      restock: saleCancelForm.restock,
+      now: Date.now(),
+    });
+    setProducts(result.products);
+    setSales((current) =>
+      current.map((candidate) =>
+        candidate.id === result.sale.id && !candidate.cancellation
+          ? result.sale
+          : candidate,
+      ),
+    );
+    setSaleCancelId(null);
+    setModal(null);
+    const cashPart = saleAmountForMethod(saleToCancel, "Dinheiro");
+    showToast(
+      cashPart > 0
+        ? `Venda de ${saleToCancel.customerName} cancelada. Devolva ${currency.format(cashPart)} em dinheiro ao cliente.`
+        : `Venda de ${saleToCancel.customerName} cancelada e removida dos totais.`,
+      "info",
+    );
+  }
+
   function renderOrderCard(sale: Sale) {
+    if (sale.cancellation) {
+      return (
+        <article
+          key={sale.id}
+          data-testid={`order-${sale.id}`}
+          className="overflow-hidden rounded-2xl border border-[#e5deda] bg-[#faf8f6] p-4 opacity-80"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <span className="block text-xs font-extrabold uppercase tracking-[.08em] text-[#9c928d]">
+                {sale.id}
+              </span>
+              <h3 className="mt-1 truncate text-xl font-black tracking-[-.03em] text-[#776f6b] line-through">
+                {sale.customerName}
+              </h3>
+            </div>
+            <span className="shrink-0 rounded-full border border-[#e8c3c6] bg-[#fff0f1] px-3 py-2 text-xs font-extrabold text-[#b41622]">
+              Cancelada
+            </span>
+          </div>
+          <p className="mt-3 text-sm font-semibold text-[#6d6561]">
+            {currency.format(sale.total)} • Motivo: {sale.cancellation.reason}
+          </p>
+          <p className="mt-1 text-xs font-bold text-[#8d8581]">
+            Cancelada por {sale.cancellation.operatorName} às{" "}
+            {formatTime(sale.cancellation.cancelledAt)}
+            {sale.cancellation.restocked ? " • itens devolvidos ao estoque" : ""}
+          </p>
+        </article>
+      );
+    }
     const stage = ORDER_STAGE_CONFIG[sale.orderStatus];
     const nextStatus = nextOrderStatus(sale.orderStatus);
     const previousStatus = previousOrderStatus(sale.orderStatus);
@@ -2192,7 +2461,7 @@ export default function PoolPetiscosApp() {
 
           <div className="mt-3 flex items-center justify-between gap-3 text-sm">
             <span className="font-semibold text-[#776f6b]">
-              {itemCount} item(ns) • Pagamento: {sale.payment}
+              {itemCount} item(ns) • Pagamento: {formatSalePayments(sale)}
             </span>
             <strong className="text-base">{currency.format(sale.total)}</strong>
           </div>
@@ -2212,6 +2481,18 @@ export default function PoolPetiscosApp() {
             >
               <RotateCcw size={17} />
               {sale.orderStatus === "entregue" ? "Reabrir" : "Voltar"}
+            </button>
+          )}
+          {saleCancelEligibility(sale, activeCashSession?.id ?? null)
+            .allowed && (
+            <button
+              type="button"
+              onClick={() => openSaleCancel(sale.id)}
+              className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-[#ded7d2] bg-white px-3 text-sm font-extrabold text-[#b41622] transition hover:border-[#e8c3c6] hover:bg-[#fff0f1]"
+              aria-label={`Cancelar a venda de ${sale.customerName}`}
+            >
+              <Ban size={17} />
+              Cancelar
             </button>
           )}
           {nextStatus && (
@@ -2513,6 +2794,7 @@ export default function PoolPetiscosApp() {
     setCart([]);
     setCashReceived("");
     setPaymentMethod("Pix");
+    resetSplitPayment();
     setModal(null);
     showToast(`Caixa aberto com ${currency.format(amount)}.`, "info");
   }
@@ -2541,6 +2823,22 @@ export default function PoolPetiscosApp() {
       countedBalance,
       cashFund,
     });
+    const methodChecks: CashMethodCheck[] = [];
+    for (const { method, expected } of sessionMethodTotals) {
+      const raw = methodCheckForm[method]?.trim();
+      if (!raw) continue;
+      const informed = parseAmount(raw);
+      if (!Number.isFinite(informed) || informed < 0) {
+        showToast(`Revise o valor conferido em ${method}.`, "warning");
+        return;
+      }
+      methodChecks.push({
+        method,
+        expected,
+        informed,
+        difference: roundMoney(informed - expected),
+      });
+    }
     if (closing.withdrawalAmount > 0) {
       setCashMovements((current) => [
         {
@@ -2571,14 +2869,17 @@ export default function PoolPetiscosApp() {
         cashFund: closing.cashFund,
         withdrawalAmount: closing.withdrawalAmount,
         remainingBalance: closing.remainingBalance,
+        ...(methodChecks.length ? { methodChecks } : {}),
       },
       ...current,
     ]);
+    setMethodCheckForm({});
     setCashOpen(false);
     setActiveCashSession(null);
     setCart([]);
     setCashReceived("");
     setPaymentMethod("Pix");
+    resetSplitPayment();
     setModal(null);
     if (closing.fundShortfall > 0) {
       showToast(
@@ -2900,6 +3201,10 @@ export default function PoolPetiscosApp() {
     const nextPosition = clampPlaybackTime(seconds, audio.duration);
     audio.currentTime = nextPosition;
     setPlaybackPosition(nextPosition);
+  }
+
+  if (unreadableData) {
+    return <UnreadableDataScreen />;
   }
 
   if (!hydrated || !operatorSessionReady) {
@@ -3719,36 +4024,149 @@ export default function PoolPetiscosApp() {
                       </strong>
                     </span>
                   </label>
-                  <span className="text-[9px] font-extrabold uppercase tracking-[.13em] text-[#9c928d]">
-                    Forma de pagamento
-                  </span>
-                  <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                    {[
-                      { id: "Pix" as const, icon: QrCode },
-                      { id: "Dinheiro" as const, icon: Banknote },
-                      { id: "Débito" as const, icon: CreditCard },
-                      { id: "Crédito" as const, icon: CreditCard },
-                    ].map((method) => {
-                      const Icon = method.icon;
-                      return (
-                        <button
-                          key={method.id}
-                          type="button"
-                          onClick={() => setPaymentMethod(method.id)}
-                          aria-pressed={paymentMethod === method.id}
-                          className={`flex min-h-16 flex-col items-center justify-center gap-1 rounded-xl border text-[9px] font-extrabold transition ${
-                            paymentMethod === method.id
-                              ? "border-[#d9202c] bg-[#fff0f1] text-[#d9202c]"
-                              : "border-[#ebe5e1] text-[#776f6b]"
-                          }`}
-                        >
-                          <Icon size={18} />
-                          {method.id}
-                        </button>
-                      );
-                    })}
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-[9px] font-extrabold uppercase tracking-[.13em] text-[#9c928d]">
+                      Forma de pagamento
+                    </span>
+                    <button
+                      type="button"
+                      onClick={splitPayment ? resetSplitPayment : startSplitPayment}
+                      aria-pressed={splitPayment}
+                      data-testid="toggle-split-payment"
+                      className="rounded-lg px-2 py-1 text-[10px] font-extrabold text-[#d9202c] transition hover:bg-[#fff0f1]"
+                    >
+                      {splitPayment ? "Usar uma forma só" : "Dividir pagamento"}
+                    </button>
                   </div>
-                  {cartPricing.surchargeRate > 0 && (
+                  {!splitPayment && (
+                    <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                      {[
+                        { id: "Pix" as const, icon: QrCode },
+                        { id: "Dinheiro" as const, icon: Banknote },
+                        { id: "Débito" as const, icon: CreditCard },
+                        { id: "Crédito" as const, icon: CreditCard },
+                      ].map((method) => {
+                        const Icon = method.icon;
+                        return (
+                          <button
+                            key={method.id}
+                            type="button"
+                            onClick={() => setPaymentMethod(method.id)}
+                            aria-pressed={paymentMethod === method.id}
+                            className={`flex min-h-16 flex-col items-center justify-center gap-1 rounded-xl border text-[9px] font-extrabold transition ${
+                              paymentMethod === method.id
+                                ? "border-[#d9202c] bg-[#fff0f1] text-[#d9202c]"
+                                : "border-[#ebe5e1] text-[#776f6b]"
+                            }`}
+                          >
+                            <Icon size={18} />
+                            {method.id}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {splitPayment && (
+                    <div className="mt-2 space-y-2" data-testid="split-payment">
+                      {splitRows.map((row, index) => {
+                        const isLast = index === splitRows.length - 1;
+                        const part = splitDraft?.pricing?.payments[index];
+                        const usedElsewhere = new Set(
+                          splitRows
+                            .filter((_, rowIndex) => rowIndex !== index)
+                            .map((other) => other.method),
+                        );
+                        return (
+                          <div
+                            key={index}
+                            className="rounded-xl border border-[#ebe5e1] p-2"
+                          >
+                            <div className="flex items-center gap-2">
+                              <select
+                                value={row.method}
+                                onChange={(event) =>
+                                  updateSplitRow(index, {
+                                    method: event.target.value as PaymentMethod,
+                                  })
+                                }
+                                aria-label={`Forma de pagamento ${index + 1}`}
+                                className="h-11 min-w-0 flex-1 rounded-lg border border-[#ded7d2] bg-white px-2 text-sm font-bold outline-none focus:border-[#d9202c]"
+                              >
+                                {CHECKOUT_PAYMENT_METHODS.map((method) => (
+                                  <option
+                                    key={method}
+                                    value={method}
+                                    disabled={usedElsewhere.has(method)}
+                                  >
+                                    {method}
+                                  </option>
+                                ))}
+                              </select>
+                              {isLast ? (
+                                <span className="flex h-11 w-32 shrink-0 flex-col justify-center rounded-lg bg-[#f7f5f2] px-3 text-right">
+                                  <small className="text-[9px] font-bold text-[#8d8581]">
+                                    Restante
+                                  </small>
+                                  <strong className="text-sm">
+                                    {currency.format(
+                                      Math.max(0, splitDraft?.remaining ?? 0),
+                                    )}
+                                  </strong>
+                                </span>
+                              ) : (
+                                <input
+                                  value={row.amount}
+                                  onChange={(event) =>
+                                    updateSplitRow(index, {
+                                      amount: event.target.value,
+                                    })
+                                  }
+                                  inputMode="decimal"
+                                  placeholder="R$ 0,00"
+                                  aria-label={`Valor do pedido pago em ${row.method}`}
+                                  className="h-11 w-32 shrink-0 rounded-lg border border-[#ded7d2] px-3 text-right text-base font-bold outline-none focus:border-[#d9202c] focus:ring-4 focus:ring-[#d9202c]/10"
+                                />
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => removeSplitRow(index)}
+                                aria-label={`Remover ${row.method}`}
+                                className="flex h-11 w-9 shrink-0 items-center justify-center rounded-lg text-[#9c928d] transition hover:bg-[#fff0f1] hover:text-[#d9202c]"
+                              >
+                                <X size={16} />
+                              </button>
+                            </div>
+                            {part && part.surchargeAmount > 0 && (
+                              <p className="mt-1 px-1 text-[10px] font-bold leading-4 text-[#8d6100]">
+                                Cobrar {currency.format(part.amount)} no{" "}
+                                {row.method.toLocaleLowerCase("pt-BR")} (inclui{" "}
+                                {formatSurchargePercent(part.surchargeRate)} de
+                                acréscimo: {currency.format(part.surchargeAmount)})
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })}
+                      {splitRows.length < MAX_PAYMENT_PARTS && (
+                        <button
+                          type="button"
+                          onClick={addSplitRow}
+                          className="flex h-10 w-full items-center justify-center gap-1 rounded-xl border border-dashed border-[#ded7d2] text-[10px] font-extrabold text-[#776f6b] transition hover:border-[#d9202c] hover:text-[#d9202c]"
+                        >
+                          <Plus size={14} /> Adicionar outra forma
+                        </button>
+                      )}
+                      {paymentSplitError && cartDetails.length > 0 && (
+                        <p
+                          role="alert"
+                          className="text-[10px] font-bold text-[#b41622]"
+                        >
+                          {paymentSplitError}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {!splitPayment && cartPricing.surchargeRate > 0 && (
                     <div
                       className="mt-3 rounded-2xl border border-[#f0cf93] bg-[#fff8de] p-4 text-[#704d00]"
                       role="status"
@@ -3766,10 +4184,16 @@ export default function PoolPetiscosApp() {
                       </p>
                     </div>
                   )}
-                  {paymentMethod === "Dinheiro" && (
+                  {cashInPayment && (
                     <label className="mt-3 block">
                       <span className="mb-1.5 block text-sm font-extrabold text-[#5f5753]">
-                        Valor recebido
+                        {splitDraft
+                          ? `Valor recebido em dinheiro${
+                              cashDueAmount > 0
+                                ? ` (parte: ${currency.format(cashDueAmount)})`
+                                : ""
+                            }`
+                          : "Valor recebido"}
                       </span>
                       <input
                         value={cashReceived}
@@ -3779,8 +4203,8 @@ export default function PoolPetiscosApp() {
                         className="h-12 w-full rounded-xl border border-[#ded7d2] px-4 text-lg font-bold outline-none transition focus:border-[#d9202c] focus:ring-4 focus:ring-[#d9202c]/10"
                       />
                       {Number.isFinite(cashReceivedAmount) &&
-                        cashReceivedAmount >= cartPricing.total &&
-                        cartPricing.total > 0 && (
+                        cashReceivedAmount >= cashDueAmount &&
+                        cashDueAmount > 0 && (
                           <span
                             className="pool-emphasis mt-3 block rounded-2xl border-2 border-[#9bd0b6] bg-[#eaf8f1] p-4 text-[#185c3e] shadow-[0_10px_24px_rgba(39,134,93,.12)]"
                             role="status"
@@ -3791,7 +4215,7 @@ export default function PoolPetiscosApp() {
                             </span>
                             <strong className="mt-1 block text-3xl font-black tracking-[-.04em] sm:text-4xl">
                               {currency.format(
-                                roundMoney(cashReceivedAmount - cartPricing.total),
+                                roundMoney(cashReceivedAmount - cashDueAmount),
                               )}
                             </strong>
                           </span>
@@ -3799,7 +4223,9 @@ export default function PoolPetiscosApp() {
                       {cashReceived.trim() && cashPaymentInvalid && (
                         <span className="mt-1 block text-[10px] font-bold text-[#b41622]">
                           {Number.isFinite(cashReceivedAmount)
-                            ? "O valor ainda não cobre o pedido."
+                            ? splitDraft
+                              ? "O valor ainda não cobre a parte em dinheiro."
+                              : "O valor ainda não cobre o pedido."
                             : "Use um valor como 50,00."}
                         </span>
                       )}
@@ -3841,7 +4267,7 @@ export default function PoolPetiscosApp() {
                     type="button"
                     onClick={finishSale}
                     data-testid="finish-sale"
-                    disabled={!cartDetails.length || !cashOpen}
+                    disabled={!cartDetails.length || !cashOpen || Boolean(paymentSplitError)}
                     className="pool-primary-action mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-transparent bg-[#d9202c] px-4 text-xs font-extrabold text-white shadow-[0_10px_22px_rgba(217,32,44,.22)] transition hover:bg-[#b41622] disabled:cursor-not-allowed"
                   >
                     <Check size={18} />
@@ -4593,14 +5019,31 @@ export default function PoolPetiscosApp() {
                       </div>
                       <strong
                         className={`text-[11px] ${
-                          transaction.kind === "entrada"
-                            ? "text-[#27865d]"
-                            : "text-[#d9202c]"
+                          transaction.cancelled
+                            ? "text-[#9c928d] line-through"
+                            : transaction.kind === "entrada"
+                              ? "text-[#27865d]"
+                              : "text-[#d9202c]"
                         }`}
                       >
                         {transaction.kind === "entrada" ? "+" : "-"}{" "}
                         {currency.format(transaction.amount)}
                       </strong>
+                      {transaction.saleId &&
+                        !transaction.cancelled &&
+                        cancellableSaleIds.has(transaction.saleId) && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              openSaleCancel(transaction.saleId ?? "")
+                            }
+                            aria-label={`Cancelar ${transaction.description}`}
+                            title="Cancelar venda"
+                            className="grid size-8 shrink-0 place-items-center rounded-lg text-[#9c928d] transition hover:bg-[#fff0f1] hover:text-[#b41622]"
+                          >
+                            <Ban size={15} />
+                          </button>
+                        )}
                     </article>
                   ))}
                   {!transactions.length && (
@@ -5568,6 +6011,136 @@ export default function PoolPetiscosApp() {
                   </button>
                 </div>
               </form>
+            ) : modal === "sale-cancel" ? (
+              <form onSubmit={confirmSaleCancel} className="mt-6 space-y-5">
+                {saleToCancel ? (
+                  <>
+                    <div className="rounded-2xl bg-[#faf8f6] p-4">
+                      <strong className="block text-lg">
+                        {saleToCancel.customerName}
+                      </strong>
+                      <span className="text-sm text-[#776f6b]">
+                        {saleToCancel.id} • {formatTime(saleToCancel.timestamp)} •{" "}
+                        {currency.format(saleToCancel.total)} •{" "}
+                        {formatSalePayments(saleToCancel)}
+                      </span>
+                    </div>
+                    <fieldset>
+                      <legend className="mb-2 block text-sm font-extrabold text-[#5f5753]">
+                        Motivo
+                      </legend>
+                      <div className="mb-2 flex flex-wrap gap-2">
+                        {CANCELLATION_REASONS.map((reason) => (
+                          <button
+                            key={reason}
+                            type="button"
+                            onClick={() =>
+                              setSaleCancelForm((current) => ({
+                                ...current,
+                                reason,
+                              }))
+                            }
+                            aria-pressed={saleCancelForm.reason === reason}
+                            className={`min-h-10 rounded-xl border px-3 text-sm font-bold transition ${
+                              saleCancelForm.reason === reason
+                                ? "border-[#d9202c] bg-[#fff0f1] text-[#d9202c]"
+                                : "border-[#ebe5e1] text-[#5f5753]"
+                            }`}
+                          >
+                            {reason}
+                          </button>
+                        ))}
+                      </div>
+                      <input
+                        value={saleCancelForm.reason}
+                        onChange={(event) =>
+                          setSaleCancelForm((current) => ({
+                            ...current,
+                            reason: event.target.value,
+                          }))
+                        }
+                        maxLength={CANCELLATION_REASON_MAX_LENGTH}
+                        placeholder="Ou escreva o motivo"
+                        aria-label="Motivo do cancelamento"
+                        className="h-12 w-full rounded-xl border border-[#ded7d2] px-4 text-base outline-none transition focus:border-[#d9202c] focus:ring-4 focus:ring-[#d9202c]/10"
+                      />
+                    </fieldset>
+                    <label className="flex items-start gap-3 rounded-xl border border-[#ebe5e1] p-3 text-sm font-semibold text-[#4b4542]">
+                      <input
+                        type="checkbox"
+                        checked={saleCancelForm.restock}
+                        onChange={(event) =>
+                          setSaleCancelForm((current) => ({
+                            ...current,
+                            restock: event.target.checked,
+                          }))
+                        }
+                        className="mt-1 size-4 accent-[#d9202c]"
+                      />
+                      <span>
+                        Os itens voltaram ao estoque
+                        <span className="block text-xs font-normal text-[#776f6b]">
+                          Marque só se o produto não foi preparado nem
+                          entregue e pode ser vendido de novo. Cancelar a venda
+                          não devolve o produto sozinho.
+                        </span>
+                      </span>
+                    </label>
+                    <div
+                      role="alert"
+                      className="flex items-start gap-3 rounded-xl border border-[#f0dfad] bg-[#fff9e9] p-4 text-sm leading-5 text-[#7b6129]"
+                    >
+                      <AlertTriangle size={18} className="mt-0.5 shrink-0" />
+                      <span>
+                        O sistema não devolve dinheiro ao cliente.
+                        {saleAmountForMethod(saleToCancel, "Dinheiro") > 0 && (
+                          <>
+                            {" "}Entregue{" "}
+                            {currency.format(
+                              saleAmountForMethod(saleToCancel, "Dinheiro"),
+                            )}{" "}
+                            em dinheiro: esse valor sai do saldo esperado da
+                            gaveta.
+                          </>
+                        )}
+                        {salePayments(saleToCancel).some(
+                          (part) => part.method !== "Dinheiro",
+                        ) && (
+                          <>
+                            {" "}Pix e cartão precisam ser estornados por
+                            você no banco ou na maquininha.
+                          </>
+                        )}
+                      </span>
+                    </div>
+                    <p className="text-sm leading-5 text-[#776f6b]">
+                      A venda continua no histórico como cancelada e deixa de
+                      contar nos totais, no fechamento e nos relatórios.
+                    </p>
+                    <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setModal(null)}
+                        className="min-h-12 rounded-xl border border-[#ded7d2] px-5 text-sm font-extrabold text-[#5f5753] transition hover:bg-[#f7f5f2]"
+                      >
+                        Manter venda
+                      </button>
+                      <button
+                        type="submit"
+                        data-testid="confirm-sale-cancel"
+                        className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#b41622] px-6 text-sm font-extrabold text-white transition hover:bg-[#8f111a]"
+                      >
+                        <Ban size={18} />
+                        Sim, cancelar venda
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-sm text-[#776f6b]">
+                    Essa venda já não está disponível.
+                  </p>
+                )}
+              </form>
             ) : modal === "product-delete" ? (
               <div className="mt-6">
                 {productToDelete ? (
@@ -5844,6 +6417,14 @@ export default function PoolPetiscosApp() {
                 cashFund={cashFund}
                 countedValue={cashCloseForm}
                 onCountedValueChange={setCashCloseForm}
+                methodTotals={sessionMethodTotals}
+                methodCheckValues={methodCheckForm}
+                onMethodCheckChange={(method, value) =>
+                  setMethodCheckForm((current) => ({
+                    ...current,
+                    [method]: value,
+                  }))
+                }
                 onSubmit={submitCashClose}
               />
             ) : (

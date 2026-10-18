@@ -2,6 +2,63 @@
 
 Todas as mudanças relevantes do Pool Petiscos são registradas neste arquivo.
 
+## 2.5.0 — 2026-10-18
+
+### Pagamento dividido
+
+- uma venda pode ser paga em até quatro formas (por exemplo, parte em dinheiro
+  e parte no Pix); a última forma recebe o restante automaticamente;
+- o acréscimo de débito/crédito incide apenas sobre a parte paga no cartão;
+- o troco é calculado sobre a parte em dinheiro, e somente ela entra no saldo
+  esperado da gaveta;
+- fechamento, painel, fluxo de caixa, Excel e PDF somam cada parte na sua
+  forma de pagamento;
+- nova consulta `vw_pagamentos_venda`; vendas antigas não são reescritas e
+  continuam lidas como uma única forma.
+
+### Cancelamento de venda
+
+- uma venda do caixa aberto pode ser cancelada em **Comandas** ou no
+  **Financeiro**, com motivo obrigatório e registro de quem cancelou;
+- os itens só voltam ao estoque quando o operador marca essa opção (começa
+  desmarcada, porque um lanche preparado ou consumido não volta à prateleira);
+- uma venda cancelada não pode ser cancelada de novo, o que impede devolver
+  itens em dobro;
+- a venda cancelada continua no histórico, mas sai do painel, do fechamento,
+  do fluxo de caixa, do Excel, do PDF e do resumo por operador;
+- o sistema não devolve dinheiro: a parte em dinheiro deixa o saldo esperado
+  da gaveta e a tela avisa quanto entregar; Pix e cartão são estornados
+  manualmente no banco ou na maquininha;
+- pedidos do cardápio online e vendas de caixas já fechados não podem ser
+  cancelados por esta tela.
+
+### Conferência de Pix e cartão no fechamento
+
+- o fechamento mostra quanto o sistema registrou em Pix, débito e crédito e
+  aceita, opcionalmente, o total do extrato e da maquininha; a conferência é
+  manual, sem consulta ao banco ou à maquininha;
+- a diferença de cada forma fica gravada no fechamento, aparece no histórico
+  de sessões e no PDF do resumo.
+
+### Limpeza e consistência
+
+- as formas de pagamento passaram a ter uma única definição para venda,
+  pedidos online, relatórios e validação;
+- todos os totais (painel, faturamento diário, operadores, fechamento e fluxo
+  de caixa) usam a mesma regra para ignorar vendas canceladas;
+- o resumo por operador do fechamento reaproveita o cálculo do painel;
+- se o banco tiver dados que a versão não consegue ler, o sistema mostra um
+  aviso e não grava nada, em vez de abrir com a cópia do navegador ou com um
+  caixa vazio; o serviço local passa a subir mesmo nesse caso para avisar a
+  tela;
+- o histórico interno de revisões volta a guardar 50 versões, como na 1.5.2,
+  para que a atualização não descarte cópias antigas do estado;
+- teste automático de atualização: uma base gravada no formato da 1.5.2 abre
+  na 2.5.0 com o histórico intacto;
+- o serviço local valida cancelamentos e conferências do mesmo jeito que a
+  tela, e as consultas `vw_vendas` e `vw_pagamentos_venda` informam a
+  situação da venda.
+
 ## 2.1.0 — 2026-09-02
 
 ### Operação e conferência

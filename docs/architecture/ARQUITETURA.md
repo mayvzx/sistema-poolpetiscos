@@ -49,12 +49,13 @@ automaticamente junto com o launcher, evitando servidores locais órfãos.
 
 O estado atual é salvo de forma atômica em `app_state.state_json`. A aplicação
 trata venda, baixa de estoque e caixa como uma única revisão; assim não há risco
-de gravar apenas metade de uma operação. As últimas 12 revisões ficam em
-`state_history`; como cada revisão contém o estado completo, esse limite evita
+de gravar apenas metade de uma operação. As últimas 50 revisões ficam em
+`state_history` (o mesmo limite da 1.5.2, para que uma atualização não descarte
+revisões já guardadas); como cada revisão contém o estado completo, esse limite evita
 crescimento desnecessário do banco e os períodos maiores ficam nos backups.
 
 Para leitura humana, o banco cria consultas SQLite somente leitura:
-`vw_produtos`, `vw_vendas`, `vw_itens_venda`, `vw_despesas`,
+`vw_produtos`, `vw_vendas`, `vw_itens_venda`, `vw_pagamentos_venda`, `vw_despesas`,
 `vw_movimentos_caixa`, `vw_fechamentos_caixa` e `vw_operadores`.
 
 O navegador também mantém uma cópia de recuperação em `localStorage`. No

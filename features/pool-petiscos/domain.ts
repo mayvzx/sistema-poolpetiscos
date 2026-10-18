@@ -231,6 +231,7 @@ export function buildDailyRevenue(
 ): DailyRevenue[] {
   const totals = new Map<string, number>();
   sales.forEach((sale) => {
+    if (sale.cancellation) return;
     const key = formatDateKey(sale.timestamp);
     totals.set(key, roundMoney((totals.get(key) ?? 0) + sale.total));
   });

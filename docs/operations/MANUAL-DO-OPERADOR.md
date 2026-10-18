@@ -81,6 +81,51 @@ O valor do débito ou crédito já inclui o acréscimo no caixa e nos relatório
 Mesmo assim, Pix e cartões ainda precisam ser confirmados manualmente na
 maquininha. O sistema não considera uma transação aprovada automaticamente.
 
+### Dividir o pagamento em mais de uma forma
+
+Quando o cliente quer pagar uma parte em dinheiro e outra no Pix (ou no
+cartão):
+
+1. Monte o pedido normalmente.
+2. Em **Forma de pagamento**, selecione **Dividir pagamento**.
+3. Escolha a primeira forma e digite quanto do pedido será pago nela.
+4. A última forma recebe automaticamente o **Restante**.
+5. Use **Adicionar outra forma** para dividir em até quatro formas.
+6. Se houver dinheiro, informe o valor recebido: o troco é calculado só sobre a
+   parte em dinheiro.
+
+Exemplo: pedido de R$ 30,00, com R$ 20,00 em dinheiro e o restante no Pix. O
+Pix fica com R$ 10,00 e o total continua R$ 30,00. Se a segunda forma for
+crédito, o acréscimo de 6% vale somente para os R$ 10,00 do cartão: cobre
+R$ 10,60 na maquininha, e o total da venda fica R$ 30,60.
+
+No fechamento do caixa e nos relatórios, cada parte é somada na sua forma de
+pagamento. Somente a parte em dinheiro entra no saldo esperado da gaveta.
+
+### Cancelar uma venda lançada errado
+
+Use quando a venda foi registrada por engano, o cliente desistiu ou o
+pagamento não foi aprovado:
+
+1. Em **Comandas** (ou em **Financeiro**, na lista de movimentações), toque em
+   **Cancelar** na venda.
+2. Escolha um motivo pronto ou escreva o motivo.
+3. Marque **Os itens voltaram ao estoque** somente se o produto não foi
+   preparado nem entregue e pode ser vendido de novo. A opção começa
+   desmarcada: cancelar a venda não devolve o produto sozinho.
+4. Confirme em **Sim, cancelar venda**.
+
+O sistema não devolve dinheiro ao cliente. Se parte da venda foi paga em
+dinheiro, a tela mostra quanto entregar; esse valor sai do saldo esperado da
+gaveta. Pix e cartão precisam ser estornados por você no banco ou na
+maquininha. Uma venda cancelada não pode ser cancelada de novo, então os itens
+nunca voltam ao estoque duas vezes.
+
+A venda cancelada continua visível, marcada como cancelada, com o motivo e quem
+cancelou, mas deixa de contar no painel, no fechamento e nos relatórios. Só é
+possível cancelar vendas do caixa que está aberto. Pedidos do cardápio online
+continuam sendo recusados ou cancelados em **Pedidos online**.
+
 ## Acompanhar as comandas
 
 1. Abra **Comandas** no menu principal.
@@ -150,6 +195,15 @@ A retirada automática aparece no fluxo de caixa como **Sangria — Retirada
 automática no fechamento**. Pix e cartão continuam no financeiro, mas não
 entram no dinheiro físico contado na gaveta.
 
+### Conferir Pix e cartão no fechamento
+
+No formulário de fechamento, o bloco **Conferir Pix e cartão (opcional)**
+mostra quanto o sistema registrou em cada forma. A conferência é manual: o
+sistema não consulta o banco nem a maquininha. Digite o total do extrato do
+Pix e do relatório da maquininha; a diferença aparece na hora e fica gravada no
+fechamento. Deixe em branco o que não for conferir. Essa conferência não muda
+a contagem do dinheiro da gaveta.
+
 Cada abertura recebe uma identificação própria. Todas as vendas, despesas,
 sangrias e suprimentos daquele período ficam ligados a essa sessão, mesmo que o
 caixa atravesse a meia-noite. O sistema também registra quem abriu e quem
@@ -172,7 +226,9 @@ produtos, as quantidades e as observações do pedido.
 
 Vendas e suprimentos aparecem como entradas; despesas e sangrias aparecem como
 saídas. Nas vendas por débito ou crédito, a forma de pagamento mostra a taxa e
-o valor da entrada já contém o acréscimo cobrado.
+o valor da entrada já contém o acréscimo cobrado. Uma venda com pagamento
+dividido mostra cada forma com o seu valor, por exemplo
+`Dinheiro R$ 20,00 + Pix R$ 10,00`.
 
 Use **Baixar Excel** para obter uma planilha `.xlsx` com filtros, cores, fórmulas
 e totais. Use **Baixar PDF** para salvar, imprimir ou enviar um relatório pronto.

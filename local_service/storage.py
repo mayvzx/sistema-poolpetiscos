@@ -26,10 +26,11 @@ BACKUP_RETENTION_DAYS = 30
 BACKUP_RETENTION_WEEKS = 12
 BACKUP_RETENTION_MONTHS = 12
 PRE_RESTORE_BACKUP_RETENTION = 10
-# Cada revisão contém o estado completo. Doze versões recentes cobrem falhas
-# transitórias sem multiplicar indefinidamente o tamanho do banco ao longo dos
-# anos; a retenção histórica continua nos backups diário, semanal e mensal.
-STATE_HISTORY_RETENTION = 12
+# Cada revisão contém o estado completo; o limite evita que o banco cresça sem
+# fim, e a retenção histórica continua nos backups diário, semanal e mensal.
+# É o mesmo valor da 1.5.2: atualizar uma base antiga não pode descartar
+# revisões que ela já guardava.
+STATE_HISTORY_RETENTION = 50
 ONEDRIVE_ENVIRONMENT_KEYS = (
     "OneDriveCommercial",
     "OneDriveConsumer",
@@ -40,12 +41,17 @@ READABLE_VIEW_NAMES = (
     "vw_vendas",
     "vw_comandas",
     "vw_itens_venda",
+    "vw_pagamentos_venda",
     "vw_despesas",
     "vw_movimentos_caixa",
     "vw_fechamentos_caixa",
     "vw_operadores",
 )
 PAYMENT_METHODS = frozenset({"Pix", "Dinheiro", "Débito", "Crédito", "Cartão"})
+MIXED_PAYMENT_LABEL = "Misto"
+SALE_PAYMENT_LABELS = PAYMENT_METHODS | {MIXED_PAYMENT_LABEL}
+SURCHARGED_PAYMENT_METHODS = frozenset({"Débito", "Crédito"})
+MAX_PAYMENT_PARTS = 4
 PRODUCT_CATEGORIES = frozenset(
     {"Hambúrgueres", "Salgados", "Petiscos", "Sobremesas", "Bebidas", "Adicionais"}
 )
@@ -201,6 +207,84 @@ def _has_valid_optional_session_id(value: dict[str, Any]) -> bool:
     )
 
 
+def _is_sale_payment_part(value: object) -> bool:
+    if not isinstance(value, dict):
+        return False
+    method = value.get("method")
+    base_amount = value.get("baseAmount")
+    surcharge_rate = value.get("surchargeRate")
+    surcharge_amount = value.get("surchargeAmount")
+    amount = value.get("amount")
+    if not (
+        _is_allowed_string(method, PAYMENT_METHODS)
+        and _is_finite_number(base_amount, non_negative=True)
+        and float(base_amount) > 0
+        and _is_finite_number(surcharge_rate, non_negative=True)
+        and float(surcharge_rate) <= 0.5
+        and _is_finite_number(surcharge_amount, non_negative=True)
+        and _is_finite_number(amount, non_negative=True)
+    ):
+        return False
+    if method not in SURCHARGED_PAYMENT_METHODS and float(surcharge_rate) != 0:
+        return False
+    return _money(surcharge_amount) == _money(
+        Decimal(str(base_amount)) * Decimal(str(surcharge_rate))
+    ) and _money(amount) == _money(
+        Decimal(str(base_amount)) + Decimal(str(surcharge_amount))
+    )
+
+
+def _has_valid_sale_payments(value: dict[str, Any]) -> bool:
+    """Valida o pagamento dividido; vendas antigas não têm `payments`."""
+
+    payments = value.get("payments")
+    if payments is None:
+        return value.get("payment") != MIXED_PAYMENT_LABEL
+    if (
+        not isinstance(payments, list)
+        or not payments
+        or len(payments) > MAX_PAYMENT_PARTS
+        or any(not _is_sale_payment_part(part) for part in payments)
+    ):
+        return False
+    methods = {part["method"] for part in payments}
+    expected_label = (
+        payments[0]["method"] if len(payments) == 1 else MIXED_PAYMENT_LABEL
+    )
+    if len(methods) != len(payments) or value.get("payment") != expected_label:
+        return False
+    if "subtotal" not in value or "surchargeAmount" not in value:
+        return False
+    paid_base = sum(_money(part["baseAmount"]) for part in payments)
+    paid_surcharge = sum(_money(part["surchargeAmount"]) for part in payments)
+    return paid_base == _money(value["subtotal"]) and paid_surcharge == _money(
+        value["surchargeAmount"]
+    )
+
+
+CANCELLATION_REASON_MAX_LENGTH = 180
+
+
+def _has_valid_cancellation(value: dict[str, Any]) -> bool:
+    """Venda cancelada continua gravada; só o bloco de cancelamento é conferido."""
+
+    cancellation = value.get("cancellation")
+    if cancellation is None:
+        return True
+    if not isinstance(cancellation, dict):
+        return False
+    reason = cancellation.get("reason")
+    cancelled_at = cancellation.get("cancelledAt")
+    return bool(
+        _is_timestamp(cancelled_at)
+        and float(cancelled_at) >= float(value["timestamp"])
+        and _is_allowed_string(cancellation.get("operatorId"), SALE_OPERATOR_IDS)
+        and _is_non_empty_string(reason)
+        and len(str(reason).strip()) <= CANCELLATION_REASON_MAX_LENGTH
+        and isinstance(cancellation.get("restocked"), bool)
+    )
+
+
 def _is_sale(value: object) -> bool:
     if not isinstance(value, dict):
         return False
@@ -211,7 +295,7 @@ def _is_sale(value: object) -> bool:
         or not _has_valid_optional_session_id(value)
         or not _is_timestamp(timestamp)
         or not _is_finite_number(value.get("total"), non_negative=True)
-        or not _is_allowed_string(value.get("payment"), PAYMENT_METHODS)
+        or not _is_allowed_string(value.get("payment"), SALE_PAYMENT_LABELS)
         or not isinstance(items, list)
         or not items
         or any(not _is_sale_item(item) for item in items)
@@ -228,23 +312,33 @@ def _is_sale(value: object) -> bool:
         subtotal = value.get("subtotal")
         surcharge_rate = value.get("surchargeRate")
         surcharge_amount = value.get("surchargeAmount")
+        # Na venda mista a taxa da venda é só informativa; o acréscimo é
+        # conferido parte a parte em _has_valid_sale_payments.
+        mixed = value.get("payment") == MIXED_PAYMENT_LABEL
         if not (
             _is_finite_number(subtotal, non_negative=True)
             and _is_finite_number(surcharge_rate, non_negative=True)
             and float(surcharge_rate) <= 0.5
             and _is_finite_number(surcharge_amount, non_negative=True)
             and abs(expected_subtotal - float(subtotal)) <= 0.005
-            and _money(surcharge_amount)
-            == _money(Decimal(str(subtotal)) * Decimal(str(surcharge_rate)))
+            and (
+                mixed
+                or _money(surcharge_amount)
+                == _money(Decimal(str(subtotal)) * Decimal(str(surcharge_rate)))
+            )
             and _money(value["total"])
             == _money(Decimal(str(subtotal)) + Decimal(str(surcharge_amount)))
         ):
             return False
-        if value.get("payment") not in {"Débito", "Crédito"} and (
-            float(surcharge_rate) > 0 or float(surcharge_amount) > 0
+        if (
+            not mixed
+            and value.get("payment") not in SURCHARGED_PAYMENT_METHODS
+            and (float(surcharge_rate) > 0 or float(surcharge_amount) > 0)
         ):
             return False
     elif abs(expected_subtotal - float(value["total"])) > 0.005:
+        return False
+    if not _has_valid_sale_payments(value) or not _has_valid_cancellation(value):
         return False
     source = value.get("source", "caixa")
     if source not in {"caixa", "cardapio-online"}:
@@ -327,6 +421,37 @@ def _is_cash_movement(value: object) -> bool:
     )
 
 
+def _has_valid_method_checks(value: dict[str, Any]) -> bool:
+    """Conferência opcional de Pix e cartão registrada no fechamento."""
+
+    checks = value.get("methodChecks")
+    if checks is None:
+        return True
+    if not isinstance(checks, list) or len(checks) > len(PAYMENT_METHODS):
+        return False
+    methods: set[str] = set()
+    for check in checks:
+        if not isinstance(check, dict):
+            return False
+        method = check.get("method")
+        expected = check.get("expected")
+        informed = check.get("informed")
+        difference = check.get("difference")
+        if not (
+            _is_allowed_string(method, PAYMENT_METHODS)
+            and method != "Dinheiro"
+            and method not in methods
+            and _is_finite_number(expected, non_negative=True)
+            and _is_finite_number(informed, non_negative=True)
+            and _is_finite_number(difference)
+            and _money(Decimal(str(informed)) - Decimal(str(expected)))
+            == _money(difference)
+        ):
+            return False
+        methods.add(str(method))
+    return True
+
+
 def _is_cash_closure(value: object) -> bool:
     if not isinstance(value, dict):
         return False
@@ -349,6 +474,8 @@ def _is_cash_closure(value: object) -> bool:
         )
         <= 0.005
     ):
+        return False
+    if not _has_valid_method_checks(value):
         return False
     session_fields = (
         "sessionId",
@@ -558,6 +685,10 @@ class BackupRecord:
         }
 
 
+class UnreadableStateError(RuntimeError):
+    """O banco tem um estado que esta versão não reconhece; nada é gravado."""
+
+
 class RevisionConflict(Exception):
     def __init__(self, snapshot: StateSnapshot) -> None:
         super().__init__("O estado foi alterado por outra sessão.")
@@ -725,6 +856,15 @@ class StateStorage:
                     ),
                     'Não identificado'
                 ) AS operador,
+                CASE
+                    WHEN json_type(sale.value, '$.cancellation') IS NULL
+                        THEN 'válida'
+                    ELSE 'cancelada'
+                END AS situacao_venda,
+                json_extract(sale.value, '$.cancellation.reason')
+                    AS motivo_cancelamento,
+                json_extract(sale.value, '$.cancellation.operatorName')
+                    AS cancelada_por,
                 (
                     SELECT COALESCE(
                         SUM(
@@ -842,6 +982,75 @@ class StateStorage:
                 json_extract(sale.value, '$.items')
             ) AS item
             WHERE app_state.id = 1;
+
+            -- Uma linha por forma de pagamento usada em cada venda. Vendas
+            -- anteriores ao pagamento dividido aparecem como uma única parte.
+            CREATE VIEW vw_pagamentos_venda AS
+            SELECT
+                json_extract(sale.value, '$.id') AS venda_id,
+                json_extract(sale.value, '$.cashSessionId') AS sessao_caixa_id,
+                CAST(json_extract(sale.value, '$.timestamp') AS INTEGER)
+                    AS venda_data_hora_ms,
+                json_extract(part.value, '$.method') AS forma_pagamento,
+                CAST(json_extract(part.value, '$.baseAmount') AS REAL)
+                    AS valor_base,
+                ROUND(
+                    CAST(json_extract(part.value, '$.surchargeRate') AS REAL)
+                        * 100,
+                    2
+                ) AS acrescimo_percentual,
+                CAST(json_extract(part.value, '$.surchargeAmount') AS REAL)
+                    AS acrescimo_valor,
+                CAST(json_extract(part.value, '$.amount') AS REAL)
+                    AS valor_pago,
+                json_type(sale.value, '$.cancellation') IS NOT NULL
+                    AS venda_cancelada
+            FROM app_state
+            JOIN json_each(
+                COALESCE(app_state.state_json, '{}'),
+                '$.sales'
+            ) AS sale
+            JOIN json_each(
+                json_extract(sale.value, '$.payments')
+            ) AS part
+            WHERE app_state.id = 1
+                AND json_type(sale.value, '$.payments') = 'array'
+            UNION ALL
+            SELECT
+                json_extract(sale.value, '$.id'),
+                json_extract(sale.value, '$.cashSessionId'),
+                CAST(json_extract(sale.value, '$.timestamp') AS INTEGER),
+                json_extract(sale.value, '$.payment'),
+                CAST(
+                    COALESCE(
+                        json_extract(sale.value, '$.subtotal'),
+                        json_extract(sale.value, '$.total')
+                    ) AS REAL
+                ),
+                ROUND(
+                    CAST(
+                        COALESCE(
+                            json_extract(sale.value, '$.surchargeRate'),
+                            0
+                        ) AS REAL
+                    ) * 100,
+                    2
+                ),
+                CAST(
+                    COALESCE(
+                        json_extract(sale.value, '$.surchargeAmount'),
+                        0
+                    ) AS REAL
+                ),
+                CAST(json_extract(sale.value, '$.total') AS REAL),
+                json_type(sale.value, '$.cancellation') IS NOT NULL
+            FROM app_state
+            JOIN json_each(
+                COALESCE(app_state.state_json, '{}'),
+                '$.sales'
+            ) AS sale
+            WHERE app_state.id = 1
+                AND json_type(sale.value, '$.payments') IS NULL;
 
             CREATE VIEW vw_despesas AS
             SELECT
@@ -985,11 +1194,11 @@ class StateStorage:
             )
             parsed_revision = int(revision)
         except (TypeError, ValueError, json.JSONDecodeError) as error:
-            raise RuntimeError(
+            raise UnreadableStateError(
                 "O estado persistido no banco é inválido."
             ) from error
         if parsed_revision < 0 or (state is not None and not _is_pool_state(state)):
-            raise RuntimeError("O estado persistido no banco é inválido.")
+            raise UnreadableStateError("O estado persistido no banco é inválido.")
         return StateSnapshot(
             state=state,
             revision=parsed_revision,

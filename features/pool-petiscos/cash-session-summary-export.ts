@@ -2,6 +2,7 @@ import { downloadBytes } from "./browser-download";
 import { type CashSessionSummary, shortCashSessionId } from "./cash-session-summary";
 import { currency, formatDateKey } from "./domain";
 import { formatCashFlowDateTime } from "./cash-flow";
+import { paymentMethodLabel, REPORT_PAYMENT_METHODS } from "./payment-methods";
 
 export async function createCashSessionSummaryPdf(
   summary: CashSessionSummary,
@@ -82,11 +83,24 @@ export async function createCashSessionSummaryPdf(
     theme: "striped",
     head: [["FORMA DE PAGAMENTO", "TOTAL"]],
     body: [
-      ["Dinheiro", currency.format(summary.paymentTotals.Dinheiro)],
-      ["Pix", currency.format(summary.paymentTotals.Pix)],
-      ["Débito", currency.format(summary.paymentTotals.Débito)],
-      ["Crédito", currency.format(summary.paymentTotals.Crédito)],
-      ["Cartão (registro legado)", currency.format(summary.paymentTotals.Cartão)],
+      ...REPORT_PAYMENT_METHODS.filter(
+        (method) => method !== "Cartão" || summary.paymentTotals.Cartão > 0,
+      ).map((method) => [
+        paymentMethodLabel(method),
+        currency.format(summary.paymentTotals[method]),
+      ]),
+      ...(summary.closure.methodChecks ?? []).map((check) => [
+        `${check.method} conferido (diferença ${currency.format(check.difference)})`,
+        currency.format(check.informed),
+      ]),
+      ...(summary.cancelledCount > 0
+        ? [
+            [
+              `Vendas canceladas (${summary.cancelledCount}, fora dos totais)`,
+              currency.format(summary.cancelledTotal),
+            ],
+          ]
+        : []),
     ],
     styles: { fontSize: 8.5, cellPadding: 2.2 },
     headStyles: { fillColor: [48, 43, 41], textColor: 255 },

@@ -246,3 +246,40 @@ export function StartupScreen() {
     </>
   );
 }
+
+/**
+ * Exibida quando o banco tem dados que esta versão não consegue ler. Nada é
+ * gravado enquanto ela estiver na tela: os dados existentes ficam como estão.
+ */
+export function UnreadableDataScreen() {
+  return (
+    <>
+      <style data-pool-startup-critical>{criticalStyles}</style>
+      <main
+        id="pool-startup"
+        aria-labelledby="pool-unreadable-title"
+        aria-describedby="pool-unreadable-description"
+        data-testid="unreadable-data"
+      >
+        <section className="pool-startup__card" role="alert">
+          <p className="pool-startup__eyebrow">Pool Petiscos &amp; Lanches</p>
+          <h1 id="pool-unreadable-title" className="pool-startup__title">
+            Os dados não foram abertos
+          </h1>
+          <p
+            id="pool-unreadable-description"
+            className="pool-startup__description"
+          >
+            Esta versão não conseguiu ler os dados já gravados neste
+            computador. Para protegê-los, nada foi alterado e o caixa não
+            será aberto.
+          </p>
+          <p className="pool-startup__hint">
+            Feche o sistema e chame o suporte. Os dados continuam na pasta
+            Pool Petiscos e na cópia feita antes da atualização.
+          </p>
+        </section>
+      </main>
+    </>
+  );
+}

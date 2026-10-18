@@ -2,6 +2,7 @@
 
 import { AlertTriangle, Check, WalletCards } from "lucide-react";
 import type { FormEventHandler } from "react";
+import type { PaymentMethod } from "./types";
 import {
   calculateCashClosing,
   currency,
@@ -14,6 +15,10 @@ type CashClosingFormProps = {
   cashFund: number;
   countedValue: string;
   onCountedValueChange: (value: string) => void;
+  /** Totais do sistema para formas que não ficam na gaveta (Pix, cartão). */
+  methodTotals: { method: PaymentMethod; expected: number }[];
+  methodCheckValues: Partial<Record<PaymentMethod, string>>;
+  onMethodCheckChange: (method: PaymentMethod, value: string) => void;
   onSubmit: FormEventHandler<HTMLFormElement>;
 };
 
@@ -23,6 +28,9 @@ export function CashClosingForm({
   cashFund,
   countedValue,
   onCountedValueChange,
+  methodTotals,
+  methodCheckValues,
+  onMethodCheckChange,
   onSubmit,
 }: CashClosingFormProps) {
   const countedBalance = parseAmount(countedValue);
@@ -127,6 +135,60 @@ export function CashClosingForm({
             </div>
           )}
         </div>
+      )}
+
+      {methodTotals.length > 0 && (
+        <fieldset className="space-y-2 rounded-xl border border-[#ebe5e1] p-3">
+          <legend className="px-1 text-[9px] font-extrabold text-[#776f6b]">
+            Conferir Pix e cartão (opcional)
+          </legend>
+          <p className="text-[9px] leading-4 text-[#8d8581]">
+            Conferência manual: o sistema não consulta o banco nem a
+            maquininha. Digite o total do extrato do Pix e do relatório da
+            maquininha, ou deixe em branco o que não for conferir agora.
+          </p>
+          {methodTotals.map(({ method, expected }) => {
+            const informed = parseAmount(methodCheckValues[method] ?? "");
+            const hasValue = Number.isFinite(informed) && informed >= 0;
+            const difference = hasValue
+              ? Math.round((informed - expected) * 100) / 100
+              : 0;
+            return (
+              <label
+                key={method}
+                className="grid grid-cols-[1fr_120px] items-center gap-2"
+              >
+                <span className="text-[10px] font-bold text-[#4f4743]">
+                  {method}
+                  <span className="block text-[9px] font-normal text-[#8d8581]">
+                    Sistema: {currency.format(expected)}
+                    {hasValue && (
+                      <strong
+                        className={
+                          Math.abs(difference) < 0.005
+                            ? " text-[#23734f]"
+                            : " text-[#b41622]"
+                        }
+                      >
+                        {" "}• diferença {currency.format(difference)}
+                      </strong>
+                    )}
+                  </span>
+                </span>
+                <input
+                  inputMode="decimal"
+                  value={methodCheckValues[method] ?? ""}
+                  onChange={(event) =>
+                    onMethodCheckChange(method, event.target.value)
+                  }
+                  placeholder="R$ 0,00"
+                  aria-label={`Total conferido em ${method}`}
+                  className="h-10 rounded-xl border border-[#ebe5e1] px-3 text-right text-xs outline-none focus:border-[#d9202c]"
+                />
+              </label>
+            );
+          })}
+        </fieldset>
       )}
 
       <button
