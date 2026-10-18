@@ -16,6 +16,7 @@ import {
   shortCashSessionId,
 } from "./cash-session-summary";
 import { currency } from "./domain";
+import { paymentMethodLabel, REPORT_PAYMENT_METHODS } from "./payment-methods";
 import { formatCashFlowDateTime } from "./cash-flow";
 import type {
   ActiveCashSession,
@@ -164,14 +165,17 @@ export function CashSessionHistoryPanel({
           </div>
 
           <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
-            {(["Dinheiro", "Pix", "Débito", "Crédito", "Cartão"] as const).map(
+            {REPORT_PAYMENT_METHODS.filter(
+              (payment) =>
+                payment !== "Cartão" || summary.paymentTotals.Cartão > 0,
+            ).map(
               (payment) => (
                 <div
                   key={payment}
                   className="rounded-xl border border-[#eee8e4] bg-white px-3 py-3"
                 >
                   <span className="block text-xs font-bold text-[#8d8581]">
-                    {payment === "Cartão" ? "Cartão legado" : payment}
+                    {paymentMethodLabel(payment)}
                   </span>
                   <strong className="mt-1 block text-sm font-black">
                     {currency.format(summary.paymentTotals[payment])}
@@ -180,6 +184,33 @@ export function CashSessionHistoryPanel({
               ),
             )}
           </div>
+
+          {(summary.cancelledCount > 0 ||
+            (summary.closure.methodChecks?.length ?? 0) > 0) && (
+            <div className="mt-3 space-y-1 rounded-xl border border-[#eee8e4] bg-white px-3 py-3 text-xs">
+              {summary.cancelledCount > 0 && (
+                <p className="font-bold text-[#776f6b]">
+                  {summary.cancelledCount} venda(s) cancelada(s), somando{" "}
+                  {currency.format(summary.cancelledTotal)}, fora dos totais.
+                </p>
+              )}
+              {summary.closure.methodChecks?.map((check) => (
+                <p key={check.method} className="font-bold text-[#776f6b]">
+                  {check.method} conferido: {currency.format(check.informed)}{" "}
+                  (sistema {currency.format(check.expected)}) •{" "}
+                  <span
+                    className={
+                      Math.abs(check.difference) < 0.005
+                        ? "text-[#27865d]"
+                        : "text-[#b41622]"
+                    }
+                  >
+                    diferença {currency.format(check.difference)}
+                  </span>
+                </p>
+              ))}
+            </div>
+          )}
 
           <div className="mt-4 grid gap-3 lg:grid-cols-2">
             <article className="rounded-2xl border border-[#ebe5e1] p-4">

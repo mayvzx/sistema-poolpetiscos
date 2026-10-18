@@ -12,6 +12,7 @@ import type {
   Product,
   ProductCategory,
   Sale,
+  SaleCancellation,
   SaleItem,
   SaleOperatorId,
   SalePaymentPart,
@@ -19,19 +20,15 @@ import type {
 } from "./types";
 import { DEFAULT_CASH_FUND, roundMoney } from "./domain";
 import { operatorNameForSale } from "./operators";
+import { ALL_PAYMENT_METHODS } from "./payment-methods";
 import { surchargeRateForPayment } from "./payment-surcharge";
 import { MAX_PAYMENT_PARTS, MIXED_PAYMENT_LABEL } from "./sale-payments";
+import { CANCELLATION_REASON_MAX_LENGTH } from "./sale-cancellation";
 
 export const STORAGE_KEY = "pool-petiscos-state-v1.5.2";
 export const BACKUP_VERSION = 1;
 
-const PAYMENT_METHODS = new Set<PaymentMethod>([
-  "Pix",
-  "Dinheiro",
-  "Débito",
-  "Crédito",
-  "Cartão",
-]);
+const PAYMENT_METHODS = new Set<PaymentMethod>(ALL_PAYMENT_METHODS);
 const ORDER_STATUSES = new Set<OrderStatus>([
   "aguardando",
   "em-preparo",
@@ -163,6 +160,34 @@ function parseSalePayments(
   return payments;
 }
 
+/** `undefined` = venda válida; `null` = cancelamento inconsistente. */
+function parseSaleCancellation(
+  value: unknown,
+  saleTimestamp: number,
+): SaleCancellation | undefined | null {
+  if (value === undefined) return undefined;
+  if (
+    !isRecord(value) ||
+    !isTimestamp(value.cancelledAt) ||
+    value.cancelledAt < saleTimestamp ||
+    typeof value.operatorId !== "string" ||
+    !SALE_OPERATOR_IDS.has(value.operatorId as SaleOperatorId) ||
+    !isNonEmptyString(value.reason) ||
+    value.reason.trim().length > CANCELLATION_REASON_MAX_LENGTH ||
+    typeof value.restocked !== "boolean"
+  ) {
+    return null;
+  }
+  const operatorId = value.operatorId as SaleOperatorId;
+  return {
+    cancelledAt: value.cancelledAt,
+    operatorId,
+    operatorName: operatorNameForSale(operatorId),
+    reason: value.reason.trim(),
+    restocked: value.restocked,
+  };
+}
+
 function parseProduct(value: unknown): Product | null {
   if (
     !isRecord(value) ||
@@ -284,6 +309,11 @@ function parseSale(value: unknown): Sale | null {
   }
   const payments = parseSalePayments(value, subtotal, surchargeAmount);
   if (payments === null) return null;
+  const cancellation = parseSaleCancellation(
+    value.cancellation,
+    value.timestamp,
+  );
+  if (cancellation === null) return null;
   const customerName = isNonEmptyString(value.customerName)
     ? value.customerName.trim()
     : "Cliente sem nome";
@@ -344,6 +374,7 @@ function parseSale(value: unknown): Sale | null {
     surchargeAmount,
     total,
     ...(payments ? { payments } : {}),
+    ...(cancellation ? { cancellation } : {}),
     items: items as SaleItem[],
     customerName,
     ...(source ? { source } : {}),
@@ -403,6 +434,42 @@ function parseCashMovement(value: unknown): CashMovement | null {
   };
 }
 
+function parseMethodChecks(
+  value: unknown,
+): CashClosure["methodChecks"] | null {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.length > ALL_PAYMENT_METHODS.length) {
+    return null;
+  }
+  const checks = value.map((check) => {
+    if (
+      !isRecord(check) ||
+      !isPaymentMethod(check.method) ||
+      check.method === "Dinheiro" ||
+      !isNonNegativeMoney(check.expected) ||
+      !isNonNegativeMoney(check.informed) ||
+      !isFiniteNumber(check.difference) ||
+      Math.abs(
+        roundMoney(check.informed - check.expected) - roundMoney(check.difference),
+      ) > 0.005
+    ) {
+      return null;
+    }
+    return {
+      method: check.method,
+      expected: roundMoney(check.expected),
+      informed: roundMoney(check.informed),
+      difference: roundMoney(check.informed - check.expected),
+    };
+  });
+  if (checks.some((check) => check === null)) return null;
+  const valid = checks as NonNullable<CashClosure["methodChecks"]>;
+  if (new Set(valid.map((check) => check.method)).size !== valid.length) {
+    return null;
+  }
+  return valid;
+}
+
 function parseCashClosure(value: unknown): CashClosure | null {
   if (
     !isRecord(value) ||
@@ -438,6 +505,8 @@ function parseCashClosure(value: unknown): CashClosure | null {
   ) {
     return null;
   }
+  const methodChecks = parseMethodChecks(value.methodChecks);
+  if (methodChecks === null) return null;
   const sessionId = isNonEmptyString(value.sessionId)
     ? value.sessionId.trim()
     : `SESSAO-${value.id.trim()}`;
@@ -464,6 +533,7 @@ function parseCashClosure(value: unknown): CashClosure | null {
     remainingBalance: hasNewClosingFields
       ? roundMoney(value.remainingBalance as number)
       : roundMoney(value.countedBalance),
+    ...(methodChecks ? { methodChecks } : {}),
   };
 }
 

@@ -1,5 +1,6 @@
 import { currency, roundMoney } from "./domain";
 import { surchargeRateForPayment } from "./payment-surcharge";
+import { countedSales } from "./sale-cancellation";
 import type {
   PaymentMethod,
   Sale,
@@ -148,7 +149,7 @@ export function sumSalesByPaymentMethod<M extends PaymentMethod>(
     M,
     number
   >;
-  sales.forEach((sale) => {
+  countedSales(sales).forEach((sale) => {
     salePayments(sale).forEach((part) => {
       if (part.method in totals) {
         const method = part.method as M;

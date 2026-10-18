@@ -87,6 +87,19 @@ export type OrderStatus =
 
 export type SaleServiceMode = "comanda" | "venda-direta";
 
+/**
+ * Cancelamento de uma venda do caixa aberto. A venda nunca é apagada: ela
+ * deixa de contar nos totais e guarda quem cancelou, quando e por quê.
+ */
+export type SaleCancellation = {
+  cancelledAt: number;
+  operatorId: SaleOperatorId;
+  operatorName: string;
+  reason: string;
+  /** Se os itens voltaram ao estoque no cancelamento. */
+  restocked: boolean;
+};
+
 export type Sale = {
   id: string;
   cashSessionId?: string;
@@ -110,6 +123,7 @@ export type Sale = {
   serviceMode?: SaleServiceMode;
   orderStatus: OrderStatus;
   statusUpdatedAt: number;
+  cancellation?: SaleCancellation;
 };
 
 export type Expense = {
@@ -131,6 +145,17 @@ export type CashMovement = {
   kind: "suprimento" | "sangria";
 };
 
+/**
+ * Conferência de uma forma que não fica na gaveta (Pix, cartão): o valor do
+ * sistema contra o informado pelo extrato ou pela maquininha.
+ */
+export type CashMethodCheck = {
+  method: PaymentMethod;
+  expected: number;
+  informed: number;
+  difference: number;
+};
+
 export type CashClosure = {
   id: string;
   sessionId: string;
@@ -147,6 +172,7 @@ export type CashClosure = {
   cashFund: number;
   withdrawalAmount: number;
   remainingBalance: number;
+  methodChecks?: CashMethodCheck[];
 };
 
 export type ActiveCashSession = {
@@ -172,6 +198,9 @@ export type Toast = {
 
 export type Transaction = {
   id: string;
+  /** Presente nos lançamentos de venda, para permitir o cancelamento. */
+  saleId?: string;
+  cancelled?: boolean;
   timestamp: number;
   description: string;
   detail: string;

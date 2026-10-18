@@ -871,6 +871,74 @@ class StateStorageTest(unittest.TestCase):
             self.assertEqual(storage.read().revision, 1)
 
 
+    def test_accepts_cancelled_sales_and_closing_method_checks(self) -> None:
+        sale = {
+            "id": "V-CANCELADA",
+            "timestamp": 1_700_000_000_000,
+            "total": 20,
+            "payment": "Dinheiro",
+            "operatorId": "elaine",
+            "customerName": "Cliente",
+            "orderStatus": "entregue",
+            "statusUpdatedAt": 1_700_000_000_000,
+            "items": [{"productId": "p", "name": "Pastel", "price": 20, "quantity": 1}],
+            "cancellation": {
+                "cancelledAt": 1_700_000_060_000,
+                "operatorId": "poolblay",
+                "operatorName": "Poolblay",
+                "reason": "Lançado errado",
+                "restocked": True,
+            },
+        }
+        closure = {
+            "id": "FC1",
+            "openedAt": 1_699_999_000_000,
+            "closedAt": 1_699_999_500_000,
+            "openingBalance": 130,
+            "expectedBalance": 130,
+            "countedBalance": 130,
+            "difference": 0,
+            "methodChecks": [
+                {"method": "Pix", "expected": 42, "informed": 40, "difference": -2}
+            ],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            storage = self._storage(Path(directory))
+            state = minimal_pool_state()
+            state["sales"] = [sale]
+            state["cashClosures"] = [closure]
+            storage.save(state, 0)
+            with closing(sqlite3.connect(storage.database_path)) as connection:
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT situacao_venda, motivo_cancelamento, cancelada_por "
+                        "FROM vw_vendas"
+                    ).fetchone(),
+                    ("cancelada", "Lançado errado", "Poolblay"),
+                )
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT venda_cancelada FROM vw_pagamentos_venda"
+                    ).fetchone(),
+                    (1,),
+                )
+
+            invalid_cases = []
+            before_sale = json.loads(json.dumps(state))
+            before_sale["sales"][0]["cancellation"]["cancelledAt"] = 1
+            invalid_cases.append(before_sale)
+            no_reason = json.loads(json.dumps(state))
+            no_reason["sales"][0]["cancellation"]["reason"] = " "
+            invalid_cases.append(no_reason)
+            wrong_check = json.loads(json.dumps(state))
+            wrong_check["cashClosures"][0]["methodChecks"][0]["difference"] = 0
+            invalid_cases.append(wrong_check)
+            for invalid in invalid_cases:
+                with self.assertRaises(ValueError):
+                    storage.save(invalid, 1)
+            self.assertEqual(storage.read().revision, 1)
+
+
 class StateApiTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary_directory = tempfile.TemporaryDirectory()

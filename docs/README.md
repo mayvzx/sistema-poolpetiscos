@@ -22,6 +22,8 @@ ser colocado aqui ou enviado ao GitHub.
 
 ## Operação e implantação
 
+- [Entrega da versão 2.5.0](operations/ENTREGA-2.5.0.md): pagamento dividido,
+  cancelamento de venda, conferência de Pix e cartão e roteiro de instalação.
 - [Recomendações da versão 2.1.0](operations/RECOMENDACOES-2.1.0.md): alertas,
   impressão, conferência por pagamento e operação segura.
 

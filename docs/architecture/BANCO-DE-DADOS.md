@@ -32,10 +32,10 @@ botão **Baixar banco completo** gera o SQLite voltado à auditoria técnica.
 | Consulta | Conteúdo |
 | --- | --- |
 | `vw_produtos` | nome, categoria, preço e estoque |
-| `vw_vendas` | sessão, data, operador, subtotal, acréscimo, total, pagamento e itens |
+| `vw_vendas` | sessão, data, operador, subtotal, acréscimo, total, pagamento, itens e situação (com motivo e responsável quando cancelada) |
 | `vw_comandas` | sessão, cliente, operador, modo de atendimento, situação, horários e pagamento |
 | `vw_itens_venda` | sessão, itens, observações e valores de cada venda |
-| `vw_pagamentos_venda` | uma linha por forma de pagamento usada em cada venda |
+| `vw_pagamentos_venda` | uma linha por forma de pagamento usada em cada venda, indicando se a venda foi cancelada |
 | `vw_despesas` | sessão de caixa e despesas registradas |
 | `vw_movimentos_caixa` | sessão de caixa, sangrias e suprimentos |
 | `vw_fechamentos_caixa` | sessão, responsáveis, saldos, diferença, fundo e retirada |
@@ -60,6 +60,14 @@ reescritas: sem `payments`, elas continuam valendo como uma única forma, e
 alterar os valores históricos. O estado também guarda se a fila de comandas
 está ativa; vendas diretas ficam concluídas e não aparecem como pedidos em
 andamento.
+
+Desde a versão 2.5.0, uma venda cancelada recebe o objeto `cancellation`
+(horário, operador, motivo e se os itens voltaram ao estoque). Ela não é
+apagada: os valores originais ficam guardados, mas as telas e relatórios a
+ignoram nos totais. Um fechamento pode trazer `methodChecks`, com o valor do
+sistema, o valor informado e a diferença de Pix, débito, crédito ou cartão
+antigo. Os dois campos são opcionais, então os registros anteriores continuam
+válidos sem conversão.
 
 Os arquivos exportados e os backups automáticos mantêm o `app_state` completo,
 mas removem os snapshots redundantes de `state_history` antes da verificação de

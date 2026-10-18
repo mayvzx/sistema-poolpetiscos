@@ -2,7 +2,7 @@
 
 Todas as mudanças relevantes do Pool Petiscos são registradas neste arquivo.
 
-## Não publicado
+## 2.5.0 — 2026-10-18
 
 ### Pagamento dividido
 
@@ -15,6 +15,37 @@ Todas as mudanças relevantes do Pool Petiscos são registradas neste arquivo.
   forma de pagamento;
 - nova consulta `vw_pagamentos_venda`; vendas antigas não são reescritas e
   continuam lidas como uma única forma.
+
+### Cancelamento de venda
+
+- uma venda do caixa aberto pode ser cancelada em **Comandas** ou no
+  **Financeiro**, com motivo obrigatório e registro de quem cancelou;
+- o operador escolhe se os itens voltam ao estoque (por exemplo, quando o
+  lanche ainda não foi preparado);
+- a venda cancelada continua no histórico, mas sai do painel, do fechamento,
+  do fluxo de caixa, do Excel, do PDF e do resumo por operador;
+- a parte em dinheiro deixa o saldo esperado da gaveta e a tela avisa quanto
+  devolver; Pix e cartão continuam sendo estornados no banco ou na maquininha;
+- pedidos do cardápio online e vendas de caixas já fechados não podem ser
+  cancelados por esta tela.
+
+### Conferência de Pix e cartão no fechamento
+
+- o fechamento mostra quanto o sistema registrou em Pix, débito e crédito e
+  aceita, opcionalmente, o total do extrato e da maquininha;
+- a diferença de cada forma fica gravada no fechamento, aparece no histórico
+  de sessões e no PDF do resumo.
+
+### Limpeza e consistência
+
+- as formas de pagamento passaram a ter uma única definição para venda,
+  pedidos online, relatórios e validação;
+- todos os totais (painel, faturamento diário, operadores, fechamento e fluxo
+  de caixa) usam a mesma regra para ignorar vendas canceladas;
+- o resumo por operador do fechamento reaproveita o cálculo do painel;
+- o serviço local valida cancelamentos e conferências do mesmo jeito que a
+  tela, e as consultas `vw_vendas` e `vw_pagamentos_venda` informam a
+  situação da venda.
 
 ## 2.1.0 — 2026-09-02
 

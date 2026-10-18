@@ -1,3 +1,5 @@
+import { roundMoney } from "./domain";
+import { countedSales } from "./sale-cancellation";
 import type { OperatorId, Sale, SaleOperatorId } from "./types";
 
 export type OperatorProfile = {
@@ -67,7 +69,7 @@ export function buildOperatorSalesSummary(
     });
   }
 
-  for (const sale of sales) {
+  for (const sale of countedSales(sales)) {
     const current = summaries.get(sale.operatorId) ?? {
       id: sale.operatorId,
       name: operatorNameForSale(sale.operatorId),
@@ -75,7 +77,7 @@ export function buildOperatorSalesSummary(
       total: 0,
     };
     current.count += 1;
-    current.total += sale.total;
+    current.total = roundMoney(current.total + sale.total);
     summaries.set(sale.operatorId, current);
   }
 

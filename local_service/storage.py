@@ -261,6 +261,29 @@ def _has_valid_sale_payments(value: dict[str, Any]) -> bool:
     )
 
 
+CANCELLATION_REASON_MAX_LENGTH = 180
+
+
+def _has_valid_cancellation(value: dict[str, Any]) -> bool:
+    """Venda cancelada continua gravada; só o bloco de cancelamento é conferido."""
+
+    cancellation = value.get("cancellation")
+    if cancellation is None:
+        return True
+    if not isinstance(cancellation, dict):
+        return False
+    reason = cancellation.get("reason")
+    cancelled_at = cancellation.get("cancelledAt")
+    return bool(
+        _is_timestamp(cancelled_at)
+        and float(cancelled_at) >= float(value["timestamp"])
+        and _is_allowed_string(cancellation.get("operatorId"), SALE_OPERATOR_IDS)
+        and _is_non_empty_string(reason)
+        and len(str(reason).strip()) <= CANCELLATION_REASON_MAX_LENGTH
+        and isinstance(cancellation.get("restocked"), bool)
+    )
+
+
 def _is_sale(value: object) -> bool:
     if not isinstance(value, dict):
         return False
@@ -314,7 +337,7 @@ def _is_sale(value: object) -> bool:
             return False
     elif abs(expected_subtotal - float(value["total"])) > 0.005:
         return False
-    if not _has_valid_sale_payments(value):
+    if not _has_valid_sale_payments(value) or not _has_valid_cancellation(value):
         return False
     source = value.get("source", "caixa")
     if source not in {"caixa", "cardapio-online"}:
@@ -397,6 +420,37 @@ def _is_cash_movement(value: object) -> bool:
     )
 
 
+def _has_valid_method_checks(value: dict[str, Any]) -> bool:
+    """Conferência opcional de Pix e cartão registrada no fechamento."""
+
+    checks = value.get("methodChecks")
+    if checks is None:
+        return True
+    if not isinstance(checks, list) or len(checks) > len(PAYMENT_METHODS):
+        return False
+    methods: set[str] = set()
+    for check in checks:
+        if not isinstance(check, dict):
+            return False
+        method = check.get("method")
+        expected = check.get("expected")
+        informed = check.get("informed")
+        difference = check.get("difference")
+        if not (
+            _is_allowed_string(method, PAYMENT_METHODS)
+            and method != "Dinheiro"
+            and method not in methods
+            and _is_finite_number(expected, non_negative=True)
+            and _is_finite_number(informed, non_negative=True)
+            and _is_finite_number(difference)
+            and _money(Decimal(str(informed)) - Decimal(str(expected)))
+            == _money(difference)
+        ):
+            return False
+        methods.add(str(method))
+    return True
+
+
 def _is_cash_closure(value: object) -> bool:
     if not isinstance(value, dict):
         return False
@@ -419,6 +473,8 @@ def _is_cash_closure(value: object) -> bool:
         )
         <= 0.005
     ):
+        return False
+    if not _has_valid_method_checks(value):
         return False
     session_fields = (
         "sessionId",
@@ -795,6 +851,15 @@ class StateStorage:
                     ),
                     'Não identificado'
                 ) AS operador,
+                CASE
+                    WHEN json_type(sale.value, '$.cancellation') IS NULL
+                        THEN 'válida'
+                    ELSE 'cancelada'
+                END AS situacao_venda,
+                json_extract(sale.value, '$.cancellation.reason')
+                    AS motivo_cancelamento,
+                json_extract(sale.value, '$.cancellation.operatorName')
+                    AS cancelada_por,
                 (
                     SELECT COALESCE(
                         SUM(
@@ -932,7 +997,9 @@ class StateStorage:
                 CAST(json_extract(part.value, '$.surchargeAmount') AS REAL)
                     AS acrescimo_valor,
                 CAST(json_extract(part.value, '$.amount') AS REAL)
-                    AS valor_pago
+                    AS valor_pago,
+                json_type(sale.value, '$.cancellation') IS NOT NULL
+                    AS venda_cancelada
             FROM app_state
             JOIN json_each(
                 COALESCE(app_state.state_json, '{}'),
@@ -970,7 +1037,8 @@ class StateStorage:
                         0
                     ) AS REAL
                 ),
-                CAST(json_extract(sale.value, '$.total') AS REAL)
+                CAST(json_extract(sale.value, '$.total') AS REAL),
+                json_type(sale.value, '$.cancellation') IS NOT NULL
             FROM app_state
             JOIN json_each(
                 COALESCE(app_state.state_json, '{}'),

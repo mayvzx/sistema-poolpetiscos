@@ -28,6 +28,7 @@ import type {
   OnlineOrdersSnapshot,
   OnlineOrderStatus,
 } from "./online-orders-companion";
+import { CHECKOUT_PAYMENT_METHODS } from "./payment-methods";
 import type { PaymentMethod } from "./types";
 
 type OnlineOrdersPanelProps = {
@@ -109,12 +110,7 @@ const NEXT_ACTION: Partial<
   preparing: { action: "ready", label: "Marcar como pronto" },
 };
 
-const PAYMENT_OPTIONS: PaymentMethod[] = [
-  "Pix",
-  "Dinheiro",
-  "Débito",
-  "Crédito",
-];
+const PAYMENT_OPTIONS = CHECKOUT_PAYMENT_METHODS;
 
 function formatElapsed(timestamp: number) {
   const elapsedMinutes = Math.max(

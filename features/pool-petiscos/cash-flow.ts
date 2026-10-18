@@ -8,6 +8,8 @@ import {
   formatSurchargePercent,
   salePricing,
 } from "./payment-surcharge";
+import { REPORT_PAYMENT_METHODS } from "./payment-methods";
+import { countedSales } from "./sale-cancellation";
 import { salePayments } from "./sale-payments";
 import type { CashMovement, Expense, PaymentMethod, Sale } from "./types";
 
@@ -45,13 +47,6 @@ export type CashFlowReport = {
   paymentTotals: Record<PaymentMethod, number>;
 };
 
-const REPORT_PAYMENT_METHODS: PaymentMethod[] = [
-  "Dinheiro",
-  "Pix",
-  "Débito",
-  "Crédito",
-  "Cartão",
-];
 
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -145,7 +140,7 @@ export function buildCashFlowEntries({
   cashMovements: CashMovement[];
 }) {
   return [
-    ...sales.map<CashFlowEntry>((sale) => {
+    ...countedSales(sales).map<CashFlowEntry>((sale) => {
       const pricing = salePricing(sale);
       return {
         id: sale.id,

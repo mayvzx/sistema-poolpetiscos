@@ -14,6 +14,7 @@ import {
   AlertTriangle,
   ArrowDownRight,
   ArrowUpRight,
+  Ban,
   Banknote,
   Bell,
   Bluetooth,
@@ -130,7 +131,18 @@ import {
   type MusicDownloadJob,
 } from "./music-companion";
 import { MusicProgress } from "./music-progress";
+import {
+  CHECKOUT_PAYMENT_METHODS,
+  REPORT_PAYMENT_METHODS,
+} from "./payment-methods";
 import { formatSurchargePercent } from "./payment-surcharge";
+import {
+  CANCELLATION_REASON_MAX_LENGTH,
+  CANCELLATION_REASONS,
+  cancelSale,
+  countedSales,
+  saleCancelEligibility,
+} from "./sale-cancellation";
 import {
   formatSalePayments,
   MAX_PAYMENT_PARTS,
@@ -184,6 +196,7 @@ import type {
   ActiveCashSession,
   CartItem,
   CashClosure,
+  CashMethodCheck,
   CashMovement,
   Expense,
   OrderStatus,
@@ -201,12 +214,6 @@ import type {
   View,
 } from "./types";
 
-const CHECKOUT_PAYMENT_METHODS: PaymentMethod[] = [
-  "Pix",
-  "Dinheiro",
-  "Débito",
-  "Crédito",
-];
 const INITIAL_SPLIT_ROWS: PaymentDraftRow[] = [
   { method: "Pix", amount: "" },
   { method: "Dinheiro", amount: "" },
@@ -315,8 +322,14 @@ export default function PoolPetiscosApp() {
     | "cash-open"
     | "cash-close"
     | "cash-movement"
+    | "sale-cancel"
     | null
   >(null);
+  const [saleCancelId, setSaleCancelId] = useState<string | null>(null);
+  const [saleCancelForm, setSaleCancelForm] = useState({
+    reason: "",
+    restock: true,
+  });
   const [stockForm, setStockForm] = useState({
     productId: INITIAL_PRODUCTS[0].id,
     quantity: "",
@@ -335,6 +348,9 @@ export default function PoolPetiscosApp() {
   });
   const [cashOpenForm, setCashOpenForm] = useState("");
   const [cashCloseForm, setCashCloseForm] = useState("");
+  const [methodCheckForm, setMethodCheckForm] = useState<
+    Partial<Record<PaymentMethod, string>>
+  >({});
   const [cashMovementForm, setCashMovementForm] = useState({
     kind: "sangria" as CashMovement["kind"],
     description: "",
@@ -1350,12 +1366,18 @@ export default function PoolPetiscosApp() {
   }, [volume]);
 
   const todayKey = now ? formatDateKey(now.getTime()) : "";
-  const todaySales = useMemo(
+  // Vendas canceladas continuam gravadas, mas ficam fora de totais e filas.
+  const validSales = useMemo(() => countedSales(sales), [sales]);
+  const todayAllSales = useMemo(
     () =>
       todayKey
         ? sales.filter((sale) => formatDateKey(sale.timestamp) === todayKey)
         : [],
     [sales, todayKey],
+  );
+  const todaySales = useMemo(
+    () => countedSales(todayAllSales),
+    [todayAllSales],
   );
   const activeOperator = activeOperatorId
     ? getOperatorProfile(activeOperatorId)
@@ -1365,15 +1387,15 @@ export default function PoolPetiscosApp() {
     [todaySales],
   );
   const activeOrders = useMemo(
-    () => sortOrdersOldestFirst(sales.filter(isActiveOrder)),
-    [sales],
+    () => sortOrdersOldestFirst(validSales.filter(isActiveOrder)),
+    [validSales],
   );
   const completedOrders = useMemo(
     () =>
       sortOrdersNewestFirst(
         sales.filter(
           (sale) =>
-            sale.orderStatus === "entregue" &&
+            (sale.orderStatus === "entregue" || sale.cancellation) &&
             sale.serviceMode !== "venda-direta",
         ),
       ),
@@ -1409,8 +1431,8 @@ export default function PoolPetiscosApp() {
     [expenses, todayKey],
   );
   const dailyRevenue = useMemo(
-    () => (todayKey ? buildDailyRevenue(sales) : []),
-    [sales, todayKey],
+    () => (todayKey ? buildDailyRevenue(validSales) : []),
+    [validSales, todayKey],
   );
   const recentRevenue = useMemo(
     () => dailyRevenue.reduce((total, day) => total + day.total, 0),
@@ -1418,9 +1440,10 @@ export default function PoolPetiscosApp() {
   );
   const recentSalesCount = useMemo(() => {
     const visibleDays = new Set(dailyRevenue.map((day) => day.key));
-    return sales.filter((sale) => visibleDays.has(formatDateKey(sale.timestamp)))
-      .length;
-  }, [dailyRevenue, sales]);
+    return validSales.filter((sale) =>
+      visibleDays.has(formatDateKey(sale.timestamp)),
+    ).length;
+  }, [dailyRevenue, validSales]);
   const maxDailyRevenue = Math.max(
     1,
     ...dailyRevenue.map((day) => day.total),
@@ -1437,11 +1460,11 @@ export default function PoolPetiscosApp() {
   const sessionSales = useMemo(
     () =>
       activeCashSession
-        ? sales.filter(
+        ? validSales.filter(
             (sale) => sale.cashSessionId === activeCashSession.id,
           )
         : [],
-    [activeCashSession, sales],
+    [activeCashSession, validSales],
   );
   const sessionExpenses = useMemo(
     () =>
@@ -1471,6 +1494,16 @@ export default function PoolPetiscosApp() {
         ),
     [sessionSales],
   );
+  // Formas conferidas fora da gaveta no fechamento (extrato e maquininha).
+  const sessionMethodTotals = useMemo(() => {
+    const totals = sumSalesByPaymentMethod(
+      sessionSales,
+      CHECKOUT_PAYMENT_METHODS,
+    );
+    return CHECKOUT_PAYMENT_METHODS.filter(
+      (method) => method !== "Dinheiro" && totals[method] > 0,
+    ).map((method) => ({ method, expected: totals[method] }));
+  }, [sessionSales]);
   const cashExpenseTotal = useMemo(
     () =>
       sessionExpenses
@@ -1605,11 +1638,17 @@ export default function PoolPetiscosApp() {
   const transactions = useMemo<Transaction[]>(
     () =>
       [
-        ...todaySales.map((sale) => ({
+        ...todayAllSales.map((sale) => ({
           id: sale.id,
+          saleId: sale.id,
+          cancelled: Boolean(sale.cancellation),
           timestamp: sale.timestamp,
-          description: `Venda ${sale.id}`,
-          detail: `${sale.items.reduce((sum, item) => sum + item.quantity, 0)} item(ns) • ${formatSalePayments(sale)} • ${sale.operatorName}`,
+          description: sale.cancellation
+            ? `Venda ${sale.id} cancelada`
+            : `Venda ${sale.id}`,
+          detail: sale.cancellation
+            ? `Motivo: ${sale.cancellation.reason} • cancelada por ${sale.cancellation.operatorName}`
+            : `${sale.items.reduce((sum, item) => sum + item.quantity, 0)} item(ns) • ${formatSalePayments(sale)} • ${sale.operatorName}`,
           amount: sale.total,
           kind: "entrada" as const,
         })),
@@ -1642,18 +1681,26 @@ export default function PoolPetiscosApp() {
                 : ("saida" as const),
           })),
       ].sort((a, b) => b.timestamp - a.timestamp),
-    [cashMovements, todayExpenses, todayKey, todaySales],
+    [cashMovements, todayExpenses, todayKey, todayAllSales],
+  );
+
+  const cancellableSaleIds = useMemo(
+    () =>
+      new Set(
+        todayAllSales
+          .filter(
+            (sale) =>
+              saleCancelEligibility(sale, activeCashSession?.id ?? null)
+                .allowed,
+          )
+          .map((sale) => sale.id),
+      ),
+    [activeCashSession, todayAllSales],
   );
 
   const paymentTotals = useMemo(
     () =>
-      sumSalesByPaymentMethod(todaySales, [
-        "Pix",
-        "Dinheiro",
-        "Débito",
-        "Crédito",
-        "Cartão",
-      ] as const),
+      sumSalesByPaymentMethod(todaySales, REPORT_PAYMENT_METHODS),
     [todaySales],
   );
 
@@ -1719,6 +1766,11 @@ export default function PoolPetiscosApp() {
           eyebrow: "Dinheiro físico",
           title: "Movimentar caixa",
           aria: "Registrar sangria ou suprimento",
+        },
+        "sale-cancel": {
+          eyebrow: "Venda",
+          title: "Cancelar venda?",
+          aria: "Confirmar cancelamento da venda",
         },
       }[modal]
     : null;
@@ -2221,7 +2273,103 @@ export default function PoolPetiscosApp() {
     if (previousStatus) setOrderStatus(sale, previousStatus);
   }
 
+  const saleToCancel = saleCancelId
+    ? (sales.find((sale) => sale.id === saleCancelId) ?? null)
+    : null;
+
+  function openSaleCancel(saleId: string) {
+    const sale = sales.find((candidate) => candidate.id === saleId);
+    if (!sale) return;
+    const eligibility = saleCancelEligibility(
+      sale,
+      activeCashSession?.id ?? null,
+    );
+    if (!eligibility.allowed) {
+      showToast(eligibility.message, "warning");
+      return;
+    }
+    setSaleCancelId(sale.id);
+    setSaleCancelForm({ reason: "", restock: true });
+    setModal("sale-cancel");
+  }
+
+  function confirmSaleCancel(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!saleToCancel || !activeOperator) {
+      setModal(null);
+      return;
+    }
+    const eligibility = saleCancelEligibility(
+      saleToCancel,
+      activeCashSession?.id ?? null,
+    );
+    if (!eligibility.allowed) {
+      setModal(null);
+      showToast(eligibility.message, "warning");
+      return;
+    }
+    if (!saleCancelForm.reason.trim()) {
+      showToast("Informe o motivo do cancelamento.", "warning");
+      return;
+    }
+    const result = cancelSale({
+      sale: saleToCancel,
+      products,
+      operatorId: activeOperator.id,
+      operatorName: activeOperator.name,
+      reason: saleCancelForm.reason,
+      restock: saleCancelForm.restock,
+      now: Date.now(),
+    });
+    setProducts(result.products);
+    setSales((current) =>
+      current.map((candidate) =>
+        candidate.id === result.sale.id ? result.sale : candidate,
+      ),
+    );
+    setSaleCancelId(null);
+    setModal(null);
+    const cashPart = saleAmountForMethod(saleToCancel, "Dinheiro");
+    showToast(
+      cashPart > 0
+        ? `Venda de ${saleToCancel.customerName} cancelada. Devolva ${currency.format(cashPart)} em dinheiro ao cliente.`
+        : `Venda de ${saleToCancel.customerName} cancelada e removida dos totais.`,
+      "info",
+    );
+  }
+
   function renderOrderCard(sale: Sale) {
+    if (sale.cancellation) {
+      return (
+        <article
+          key={sale.id}
+          data-testid={`order-${sale.id}`}
+          className="overflow-hidden rounded-2xl border border-[#e5deda] bg-[#faf8f6] p-4 opacity-80"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <span className="block text-xs font-extrabold uppercase tracking-[.08em] text-[#9c928d]">
+                {sale.id}
+              </span>
+              <h3 className="mt-1 truncate text-xl font-black tracking-[-.03em] text-[#776f6b] line-through">
+                {sale.customerName}
+              </h3>
+            </div>
+            <span className="shrink-0 rounded-full border border-[#e8c3c6] bg-[#fff0f1] px-3 py-2 text-xs font-extrabold text-[#b41622]">
+              Cancelada
+            </span>
+          </div>
+          <p className="mt-3 text-sm font-semibold text-[#6d6561]">
+            {currency.format(sale.total)} • Motivo: {sale.cancellation.reason}
+          </p>
+          <p className="mt-1 text-xs font-bold text-[#8d8581]">
+            Cancelada por {sale.cancellation.operatorName} às{" "}
+            {formatTime(sale.cancellation.cancelledAt)}
+            {sale.cancellation.restocked ? " • itens devolvidos ao estoque" : ""}
+          </p>
+        </article>
+      );
+    }
     const stage = ORDER_STAGE_CONFIG[sale.orderStatus];
     const nextStatus = nextOrderStatus(sale.orderStatus);
     const previousStatus = previousOrderStatus(sale.orderStatus);
@@ -2312,6 +2460,18 @@ export default function PoolPetiscosApp() {
             >
               <RotateCcw size={17} />
               {sale.orderStatus === "entregue" ? "Reabrir" : "Voltar"}
+            </button>
+          )}
+          {saleCancelEligibility(sale, activeCashSession?.id ?? null)
+            .allowed && (
+            <button
+              type="button"
+              onClick={() => openSaleCancel(sale.id)}
+              className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-[#ded7d2] bg-white px-3 text-sm font-extrabold text-[#b41622] transition hover:border-[#e8c3c6] hover:bg-[#fff0f1]"
+              aria-label={`Cancelar a venda de ${sale.customerName}`}
+            >
+              <Ban size={17} />
+              Cancelar
             </button>
           )}
           {nextStatus && (
@@ -2642,6 +2802,22 @@ export default function PoolPetiscosApp() {
       countedBalance,
       cashFund,
     });
+    const methodChecks: CashMethodCheck[] = [];
+    for (const { method, expected } of sessionMethodTotals) {
+      const raw = methodCheckForm[method]?.trim();
+      if (!raw) continue;
+      const informed = parseAmount(raw);
+      if (!Number.isFinite(informed) || informed < 0) {
+        showToast(`Revise o valor conferido em ${method}.`, "warning");
+        return;
+      }
+      methodChecks.push({
+        method,
+        expected,
+        informed,
+        difference: roundMoney(informed - expected),
+      });
+    }
     if (closing.withdrawalAmount > 0) {
       setCashMovements((current) => [
         {
@@ -2672,9 +2848,11 @@ export default function PoolPetiscosApp() {
         cashFund: closing.cashFund,
         withdrawalAmount: closing.withdrawalAmount,
         remainingBalance: closing.remainingBalance,
+        ...(methodChecks.length ? { methodChecks } : {}),
       },
       ...current,
     ]);
+    setMethodCheckForm({});
     setCashOpen(false);
     setActiveCashSession(null);
     setCart([]);
@@ -4816,14 +4994,31 @@ export default function PoolPetiscosApp() {
                       </div>
                       <strong
                         className={`text-[11px] ${
-                          transaction.kind === "entrada"
-                            ? "text-[#27865d]"
-                            : "text-[#d9202c]"
+                          transaction.cancelled
+                            ? "text-[#9c928d] line-through"
+                            : transaction.kind === "entrada"
+                              ? "text-[#27865d]"
+                              : "text-[#d9202c]"
                         }`}
                       >
                         {transaction.kind === "entrada" ? "+" : "-"}{" "}
                         {currency.format(transaction.amount)}
                       </strong>
+                      {transaction.saleId &&
+                        !transaction.cancelled &&
+                        cancellableSaleIds.has(transaction.saleId) && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              openSaleCancel(transaction.saleId ?? "")
+                            }
+                            aria-label={`Cancelar ${transaction.description}`}
+                            title="Cancelar venda"
+                            className="grid size-8 shrink-0 place-items-center rounded-lg text-[#9c928d] transition hover:bg-[#fff0f1] hover:text-[#b41622]"
+                          >
+                            <Ban size={15} />
+                          </button>
+                        )}
                     </article>
                   ))}
                   {!transactions.length && (
@@ -5791,6 +5986,122 @@ export default function PoolPetiscosApp() {
                   </button>
                 </div>
               </form>
+            ) : modal === "sale-cancel" ? (
+              <form onSubmit={confirmSaleCancel} className="mt-6 space-y-5">
+                {saleToCancel ? (
+                  <>
+                    <div className="rounded-2xl bg-[#faf8f6] p-4">
+                      <strong className="block text-lg">
+                        {saleToCancel.customerName}
+                      </strong>
+                      <span className="text-sm text-[#776f6b]">
+                        {saleToCancel.id} • {formatTime(saleToCancel.timestamp)} •{" "}
+                        {currency.format(saleToCancel.total)} •{" "}
+                        {formatSalePayments(saleToCancel)}
+                      </span>
+                    </div>
+                    <fieldset>
+                      <legend className="mb-2 block text-sm font-extrabold text-[#5f5753]">
+                        Motivo
+                      </legend>
+                      <div className="mb-2 flex flex-wrap gap-2">
+                        {CANCELLATION_REASONS.map((reason) => (
+                          <button
+                            key={reason}
+                            type="button"
+                            onClick={() =>
+                              setSaleCancelForm((current) => ({
+                                ...current,
+                                reason,
+                              }))
+                            }
+                            aria-pressed={saleCancelForm.reason === reason}
+                            className={`min-h-10 rounded-xl border px-3 text-sm font-bold transition ${
+                              saleCancelForm.reason === reason
+                                ? "border-[#d9202c] bg-[#fff0f1] text-[#d9202c]"
+                                : "border-[#ebe5e1] text-[#5f5753]"
+                            }`}
+                          >
+                            {reason}
+                          </button>
+                        ))}
+                      </div>
+                      <input
+                        value={saleCancelForm.reason}
+                        onChange={(event) =>
+                          setSaleCancelForm((current) => ({
+                            ...current,
+                            reason: event.target.value,
+                          }))
+                        }
+                        maxLength={CANCELLATION_REASON_MAX_LENGTH}
+                        placeholder="Ou escreva o motivo"
+                        aria-label="Motivo do cancelamento"
+                        className="h-12 w-full rounded-xl border border-[#ded7d2] px-4 text-base outline-none transition focus:border-[#d9202c] focus:ring-4 focus:ring-[#d9202c]/10"
+                      />
+                    </fieldset>
+                    <label className="flex items-start gap-3 rounded-xl border border-[#ebe5e1] p-3 text-sm font-semibold text-[#4b4542]">
+                      <input
+                        type="checkbox"
+                        checked={saleCancelForm.restock}
+                        onChange={(event) =>
+                          setSaleCancelForm((current) => ({
+                            ...current,
+                            restock: event.target.checked,
+                          }))
+                        }
+                        className="mt-1 size-4 accent-[#d9202c]"
+                      />
+                      <span>
+                        Devolver os itens ao estoque
+                        <span className="block text-xs font-normal text-[#776f6b]">
+                          Desmarque se o lanche já foi preparado e descartado.
+                        </span>
+                      </span>
+                    </label>
+                    {saleAmountForMethod(saleToCancel, "Dinheiro") > 0 && (
+                      <div
+                        role="alert"
+                        className="flex items-start gap-3 rounded-xl border border-[#f0dfad] bg-[#fff9e9] p-4 text-sm leading-5 text-[#7b6129]"
+                      >
+                        <AlertTriangle size={18} className="mt-0.5 shrink-0" />
+                        Devolva{" "}
+                        {currency.format(
+                          saleAmountForMethod(saleToCancel, "Dinheiro"),
+                        )}{" "}
+                        em dinheiro ao cliente: esse valor sai do saldo esperado
+                        da gaveta. Pix e cartão precisam ser estornados no banco
+                        ou na maquininha.
+                      </div>
+                    )}
+                    <p className="text-sm leading-5 text-[#776f6b]">
+                      A venda continua no histórico como cancelada e deixa de
+                      contar nos totais, no fechamento e nos relatórios.
+                    </p>
+                    <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setModal(null)}
+                        className="min-h-12 rounded-xl border border-[#ded7d2] px-5 text-sm font-extrabold text-[#5f5753] transition hover:bg-[#f7f5f2]"
+                      >
+                        Manter venda
+                      </button>
+                      <button
+                        type="submit"
+                        data-testid="confirm-sale-cancel"
+                        className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#b41622] px-6 text-sm font-extrabold text-white transition hover:bg-[#8f111a]"
+                      >
+                        <Ban size={18} />
+                        Sim, cancelar venda
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-sm text-[#776f6b]">
+                    Essa venda já não está disponível.
+                  </p>
+                )}
+              </form>
             ) : modal === "product-delete" ? (
               <div className="mt-6">
                 {productToDelete ? (
@@ -6067,6 +6378,14 @@ export default function PoolPetiscosApp() {
                 cashFund={cashFund}
                 countedValue={cashCloseForm}
                 onCountedValueChange={setCashCloseForm}
+                methodTotals={sessionMethodTotals}
+                methodCheckValues={methodCheckForm}
+                onMethodCheckChange={(method, value) =>
+                  setMethodCheckForm((current) => ({
+                    ...current,
+                    [method]: value,
+                  }))
+                }
                 onSubmit={submitCashClose}
               />
             ) : (

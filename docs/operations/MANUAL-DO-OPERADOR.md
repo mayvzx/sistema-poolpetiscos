@@ -101,6 +101,27 @@ somente para a parte do cartão, e a tela mostra quanto cobrar na maquininha.
 No fechamento do caixa e nos relatórios, cada parte é somada na sua forma de
 pagamento. Somente a parte em dinheiro entra no saldo esperado da gaveta.
 
+### Cancelar uma venda lançada errado
+
+Use quando a venda foi registrada por engano, o cliente desistiu ou o
+pagamento não foi aprovado:
+
+1. Em **Comandas** (ou em **Financeiro**, na lista de movimentações), toque em
+   **Cancelar** na venda.
+2. Escolha um motivo pronto ou escreva o motivo.
+3. Deixe marcado **Devolver os itens ao estoque** se o lanche não foi
+   preparado. Desmarque se ele já foi feito e descartado.
+4. Confirme em **Sim, cancelar venda**.
+
+Se parte da venda foi paga em dinheiro, a tela mostra quanto devolver ao
+cliente; esse valor sai do saldo esperado da gaveta. Pix e cartão precisam ser
+estornados no banco ou na maquininha.
+
+A venda cancelada continua visível, marcada como cancelada, com o motivo e quem
+cancelou, mas deixa de contar no painel, no fechamento e nos relatórios. Só é
+possível cancelar vendas do caixa que está aberto. Pedidos do cardápio online
+continuam sendo recusados ou cancelados em **Pedidos online**.
+
 ## Acompanhar as comandas
 
 1. Abra **Comandas** no menu principal.
@@ -169,6 +190,14 @@ R$ 130 ficarão para a próxima abertura.
 A retirada automática aparece no fluxo de caixa como **Sangria — Retirada
 automática no fechamento**. Pix e cartão continuam no financeiro, mas não
 entram no dinheiro físico contado na gaveta.
+
+### Conferir Pix e cartão no fechamento
+
+No formulário de fechamento, o bloco **Conferir Pix e cartão (opcional)**
+mostra quanto o sistema registrou em cada forma. Digite o total do extrato do
+Pix e do relatório da maquininha; a diferença aparece na hora e fica gravada no
+fechamento. Deixe em branco o que não for conferir. Essa conferência não muda
+a contagem do dinheiro da gaveta.
 
 Cada abertura recebe uma identificação própria. Todas as vendas, despesas,
 sangrias e suprimentos daquele período ficam ligados a essa sessão, mesmo que o
