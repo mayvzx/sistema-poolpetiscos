@@ -112,6 +112,20 @@ test("só cancela vendas do caixa aberto e fora do cardápio online", () => {
     now: timestamp,
   }).sale;
   assert.equal(saleCancelEligibility(cancelled, "CX-1").allowed, false);
+  assert.throws(
+    () =>
+      cancelSale({
+        sale: cancelled,
+        products,
+        operatorId: "elaine",
+        operatorName: "Elaine",
+        reason: "De novo",
+        restock: true,
+        now: timestamp,
+      }),
+    /já foi cancelada/,
+    "cancelar de novo não pode devolver os itens em dobro",
+  );
 });
 
 test("venda cancelada sai de todos os totais, mas é contada à parte", () => {

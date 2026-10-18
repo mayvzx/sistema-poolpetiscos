@@ -95,8 +95,9 @@ cartão):
    parte em dinheiro.
 
 Exemplo: pedido de R$ 30,00, com R$ 20,00 em dinheiro e o restante no Pix. O
-Pix fica com R$ 10,00. Se a segunda forma for crédito, o acréscimo de 6% vale
-somente para a parte do cartão, e a tela mostra quanto cobrar na maquininha.
+Pix fica com R$ 10,00 e o total continua R$ 30,00. Se a segunda forma for
+crédito, o acréscimo de 6% vale somente para os R$ 10,00 do cartão: cobre
+R$ 10,60 na maquininha, e o total da venda fica R$ 30,60.
 
 No fechamento do caixa e nos relatórios, cada parte é somada na sua forma de
 pagamento. Somente a parte em dinheiro entra no saldo esperado da gaveta.
@@ -109,13 +110,16 @@ pagamento não foi aprovado:
 1. Em **Comandas** (ou em **Financeiro**, na lista de movimentações), toque em
    **Cancelar** na venda.
 2. Escolha um motivo pronto ou escreva o motivo.
-3. Deixe marcado **Devolver os itens ao estoque** se o lanche não foi
-   preparado. Desmarque se ele já foi feito e descartado.
+3. Marque **Os itens voltaram ao estoque** somente se o produto não foi
+   preparado nem entregue e pode ser vendido de novo. A opção começa
+   desmarcada: cancelar a venda não devolve o produto sozinho.
 4. Confirme em **Sim, cancelar venda**.
 
-Se parte da venda foi paga em dinheiro, a tela mostra quanto devolver ao
-cliente; esse valor sai do saldo esperado da gaveta. Pix e cartão precisam ser
-estornados no banco ou na maquininha.
+O sistema não devolve dinheiro ao cliente. Se parte da venda foi paga em
+dinheiro, a tela mostra quanto entregar; esse valor sai do saldo esperado da
+gaveta. Pix e cartão precisam ser estornados por você no banco ou na
+maquininha. Uma venda cancelada não pode ser cancelada de novo, então os itens
+nunca voltam ao estoque duas vezes.
 
 A venda cancelada continua visível, marcada como cancelada, com o motivo e quem
 cancelou, mas deixa de contar no painel, no fechamento e nos relatórios. Só é
@@ -194,7 +198,8 @@ entram no dinheiro físico contado na gaveta.
 ### Conferir Pix e cartão no fechamento
 
 No formulário de fechamento, o bloco **Conferir Pix e cartão (opcional)**
-mostra quanto o sistema registrou em cada forma. Digite o total do extrato do
+mostra quanto o sistema registrou em cada forma. A conferência é manual: o
+sistema não consulta o banco nem a maquininha. Digite o total do extrato do
 Pix e do relatório da maquininha; a diferença aparece na hora e fica gravada no
 fechamento. Deixe em branco o que não for conferir. Essa conferência não muda
 a contagem do dinheiro da gaveta.

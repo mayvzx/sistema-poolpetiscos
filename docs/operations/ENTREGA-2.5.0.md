@@ -5,12 +5,17 @@
 - **Pagamento dividido:** uma venda pode ser paga em até quatro formas (por
   exemplo, parte em dinheiro e parte no Pix). A última forma recebe o restante
   sozinha, o acréscimo do cartão vale só para a parte do cartão e o troco é
-  calculado só sobre a parte em dinheiro.
-- **Cancelamento de venda:** uma venda do caixa aberto pode ser cancelada com
-  motivo, escolhendo se os itens voltam ao estoque. Ela fica no histórico como
-  cancelada e sai de todos os totais.
+  calculado só sobre a parte em dinheiro. Exemplo: pedido de R$ 30 com R$ 20 em
+  dinheiro e o restante no crédito cobra R$ 10,60 na maquininha, total
+  R$ 30,60.
+- **Cancelamento de venda:** só vendas do caixa aberto, com motivo, operador e
+  horário gravados. A venda fica no histórico como cancelada, sai de todos os
+  totais e não pode ser cancelada duas vezes. Os itens só voltam ao estoque se
+  o operador marcar essa opção. O sistema não devolve dinheiro: Pix e cartão
+  são estornados manualmente.
 - **Conferência de Pix e cartão:** no fechamento, é possível informar o total
-  do extrato do Pix e da maquininha e ver a diferença de cada forma.
+  do extrato do Pix e da maquininha e ver a diferença de cada forma. É uma
+  conferência manual; o sistema não consulta banco nem maquininha.
 - **Limpeza interna:** formas de pagamento e regras de totais passaram a ter
   uma única definição, usada pela tela, relatórios e serviço local.
 
@@ -20,12 +25,14 @@ válidos e aparecem como antes.
 ## Antes de instalar na lanchonete
 
 1. Instale com o atendimento encerrado e o caixa **fechado**.
-2. Em **Financeiro > Proteção dos dados**, use **Exportar backup** e guarde o arquivo num pendrive
-   ou no Google Drive. O instalador também copia o banco para
+2. Confira a versão instalada hoje em **Configurações do Windows >
+   Aplicativos > Aplicativos instalados > Pool Petiscos** (a partir da 2.1.0
+   ela também aparece em **Configurações > Atualizações do aplicativo**). O
+   último registro é a 1.5.2, mas precisa ser confirmado nessa tela.
+3. Em **Financeiro > Proteção dos dados**, use **Exportar backup** e guarde o
+   arquivo num pendrive ou no Google Drive. O instalador também copia o banco para
    `%LOCALAPPDATA%\PoolPetiscos\update-backups`, mas a cópia externa é a sua
    garantia.
-3. Anote a versão que aparece hoje em **Configurações > Atualizações do
-   aplicativo**.
 
 ## Instalação
 
@@ -46,24 +53,33 @@ no caixa do dia:
 2. Registre uma venda de teste com **Dividir pagamento**: parte em dinheiro,
    restante no Pix. Confira o troco e o valor de cada parte.
 3. Em **Comandas**, toque em **Cancelar** nessa venda, escolha
-   **Lançado errado** e mantenha **Devolver os itens ao estoque** marcado.
-   Confira que o estoque voltou e que o painel não somou a venda.
+   **Lançado errado** e marque **Os itens voltaram ao estoque**. Confira que o
+   estoque voltou, que o painel não somou a venda e que o botão **Cancelar**
+   não aparece mais nela.
 4. Confira em **Financeiro** que as vendas antigas do dia anterior continuam
    aparecendo.
-5. No primeiro fechamento real, preencha o bloco **Conferir Pix e cartão** com
+5. Em **Configurações > Backups automáticos**, execute uma cópia agora e
+   confira se ela aparece em **Backups do Google Drive**. O instalador mantém a
+   configuração do Drive, mas só esse teste prova que a autorização da
+   lanchonete continua válida.
+6. No primeiro fechamento real, preencha o bloco **Conferir Pix e cartão** com
    o extrato e a maquininha, se quiser testar a conferência.
 
 ## Se algo der errado
 
 - O instalador interrompe a atualização se não conseguir copiar o banco.
 - Para voltar ao estado de antes, use **Restaurar backup** com o arquivo
-  exportado no passo 2, ou reinstale a versão anterior: os dados continuam na
+  exportado no passo 3 de "Antes de instalar", ou reinstale a versão anterior: os dados continuam na
   mesma pasta.
 - Os registros de diagnóstico ficam em `%LOCALAPPDATA%\PoolPetiscos\logs`.
 
 ## Validação realizada
 
-- 70 testes de regras de negócio da tela (vendas, pagamento dividido,
+- atualização sobre base antiga: uma base gravada pelo código da 1.5.2 foi
+  aberta pela 2.5.0, recebeu uma venda dividida e um cancelamento, foi
+  exportada e restaurada numa base nova com o estado idêntico; um backup
+  `.json` exportado pela 1.5.2 também é aceito;
+- 71 testes de regras de negócio da tela (vendas, pagamento dividido,
   cancelamento, fechamento, fluxo de caixa, pedidos online) e 29 testes do
   serviço local e do banco SQLite;
 - typecheck, lint e build de produção;

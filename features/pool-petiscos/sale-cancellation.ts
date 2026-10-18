@@ -63,6 +63,10 @@ export function cancelSale({
   restock: boolean;
   now: number;
 }): { sale: Sale; products: Product[] } {
+  // Impede cancelar duas vezes e, com isso, devolver os itens em dobro.
+  if (isSaleCancelled(sale)) {
+    throw new Error("Esta venda já foi cancelada.");
+  }
   const normalizedReason = reason.trim().slice(0, CANCELLATION_REASON_MAX_LENGTH);
   if (!normalizedReason) {
     throw new Error("Informe o motivo do cancelamento.");

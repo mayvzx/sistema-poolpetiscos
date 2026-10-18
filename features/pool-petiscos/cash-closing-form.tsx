@@ -143,8 +143,9 @@ export function CashClosingForm({
             Conferir Pix e cartão (opcional)
           </legend>
           <p className="text-[9px] leading-4 text-[#8d8581]">
-            Informe o total do extrato do Pix e do relatório da maquininha.
-            Deixe em branco o que não for conferir agora.
+            Conferência manual: o sistema não consulta o banco nem a
+            maquininha. Digite o total do extrato do Pix e do relatório da
+            maquininha, ou deixe em branco o que não for conferir agora.
           </p>
           {methodTotals.map(({ method, expected }) => {
             const informed = parseAmount(methodCheckValues[method] ?? "");

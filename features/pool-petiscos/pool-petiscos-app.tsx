@@ -328,8 +328,10 @@ export default function PoolPetiscosApp() {
   const [saleCancelId, setSaleCancelId] = useState<string | null>(null);
   const [saleCancelForm, setSaleCancelForm] = useState({
     reason: "",
-    restock: true,
+    restock: false,
   });
+  // Trava contra duplo clique: a mesma venda não pode ser cancelada duas vezes.
+  const saleCancelSubmittedRef = useRef(false);
   const [stockForm, setStockForm] = useState({
     productId: INITIAL_PRODUCTS[0].id,
     quantity: "",
@@ -2289,12 +2291,14 @@ export default function PoolPetiscosApp() {
       return;
     }
     setSaleCancelId(sale.id);
-    setSaleCancelForm({ reason: "", restock: true });
+    setSaleCancelForm({ reason: "", restock: false });
+    saleCancelSubmittedRef.current = false;
     setModal("sale-cancel");
   }
 
   function confirmSaleCancel(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (saleCancelSubmittedRef.current) return;
     if (!saleToCancel || !activeOperator) {
       setModal(null);
       return;
@@ -2312,6 +2316,7 @@ export default function PoolPetiscosApp() {
       showToast("Informe o motivo do cancelamento.", "warning");
       return;
     }
+    saleCancelSubmittedRef.current = true;
     const result = cancelSale({
       sale: saleToCancel,
       products,
@@ -2324,7 +2329,9 @@ export default function PoolPetiscosApp() {
     setProducts(result.products);
     setSales((current) =>
       current.map((candidate) =>
-        candidate.id === result.sale.id ? result.sale : candidate,
+        candidate.id === result.sale.id && !candidate.cancellation
+          ? result.sale
+          : candidate,
       ),
     );
     setSaleCancelId(null);
@@ -6053,27 +6060,41 @@ export default function PoolPetiscosApp() {
                         className="mt-1 size-4 accent-[#d9202c]"
                       />
                       <span>
-                        Devolver os itens ao estoque
+                        Os itens voltaram ao estoque
                         <span className="block text-xs font-normal text-[#776f6b]">
-                          Desmarque se o lanche já foi preparado e descartado.
+                          Marque só se o produto não foi preparado nem
+                          entregue e pode ser vendido de novo. Cancelar a venda
+                          não devolve o produto sozinho.
                         </span>
                       </span>
                     </label>
-                    {saleAmountForMethod(saleToCancel, "Dinheiro") > 0 && (
-                      <div
-                        role="alert"
-                        className="flex items-start gap-3 rounded-xl border border-[#f0dfad] bg-[#fff9e9] p-4 text-sm leading-5 text-[#7b6129]"
-                      >
-                        <AlertTriangle size={18} className="mt-0.5 shrink-0" />
-                        Devolva{" "}
-                        {currency.format(
-                          saleAmountForMethod(saleToCancel, "Dinheiro"),
-                        )}{" "}
-                        em dinheiro ao cliente: esse valor sai do saldo esperado
-                        da gaveta. Pix e cartão precisam ser estornados no banco
-                        ou na maquininha.
-                      </div>
-                    )}
+                    <div
+                      role="alert"
+                      className="flex items-start gap-3 rounded-xl border border-[#f0dfad] bg-[#fff9e9] p-4 text-sm leading-5 text-[#7b6129]"
+                    >
+                      <AlertTriangle size={18} className="mt-0.5 shrink-0" />
+                      <span>
+                        O sistema não devolve dinheiro ao cliente.
+                        {saleAmountForMethod(saleToCancel, "Dinheiro") > 0 && (
+                          <>
+                            {" "}Entregue{" "}
+                            {currency.format(
+                              saleAmountForMethod(saleToCancel, "Dinheiro"),
+                            )}{" "}
+                            em dinheiro: esse valor sai do saldo esperado da
+                            gaveta.
+                          </>
+                        )}
+                        {salePayments(saleToCancel).some(
+                          (part) => part.method !== "Dinheiro",
+                        ) && (
+                          <>
+                            {" "}Pix e cartão precisam ser estornados por
+                            você no banco ou na maquininha.
+                          </>
+                        )}
+                      </span>
+                    </div>
                     <p className="text-sm leading-5 text-[#776f6b]">
                       A venda continua no histórico como cancelada e deixa de
                       contar nos totais, no fechamento e nos relatórios.
