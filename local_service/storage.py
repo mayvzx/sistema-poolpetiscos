@@ -26,10 +26,11 @@ BACKUP_RETENTION_DAYS = 30
 BACKUP_RETENTION_WEEKS = 12
 BACKUP_RETENTION_MONTHS = 12
 PRE_RESTORE_BACKUP_RETENTION = 10
-# Cada revisão contém o estado completo. Doze versões recentes cobrem falhas
-# transitórias sem multiplicar indefinidamente o tamanho do banco ao longo dos
-# anos; a retenção histórica continua nos backups diário, semanal e mensal.
-STATE_HISTORY_RETENTION = 12
+# Cada revisão contém o estado completo; o limite evita que o banco cresça sem
+# fim, e a retenção histórica continua nos backups diário, semanal e mensal.
+# É o mesmo valor da 1.5.2: atualizar uma base antiga não pode descartar
+# revisões que ela já guardava.
+STATE_HISTORY_RETENTION = 50
 ONEDRIVE_ENVIRONMENT_KEYS = (
     "OneDriveCommercial",
     "OneDriveConsumer",

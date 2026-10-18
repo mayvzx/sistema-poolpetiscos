@@ -51,6 +51,8 @@ Todas as mudanças relevantes do Pool Petiscos são registradas neste arquivo.
   aviso e não grava nada, em vez de abrir com a cópia do navegador ou com um
   caixa vazio; o serviço local passa a subir mesmo nesse caso para avisar a
   tela;
+- o histórico interno de revisões volta a guardar 50 versões, como na 1.5.2,
+  para que a atualização não descarte cópias antigas do estado;
 - teste automático de atualização: uma base gravada no formato da 1.5.2 abre
   na 2.5.0 com o histórico intacto;
 - o serviço local valida cancelamentos e conferências do mesmo jeito que a

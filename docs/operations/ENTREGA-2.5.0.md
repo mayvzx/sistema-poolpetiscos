@@ -31,6 +31,8 @@ A atualização não pode apagar nem alterar nenhum dado. O que garante isso:
   `%LOCALAPPDATA%\PoolPetiscos`, que ele não apaga;
 - antes de trocar qualquer arquivo, ele copia o banco para `update-backups` e
   compara o SHA-256 da cópia com o original; se não bater, para sem instalar;
+- o histórico interno de revisões continua com 50 versões, como na 1.5.2,
+  então nenhuma cópia antiga do estado é descartada na atualização;
 - ao abrir uma base antiga, a 2.5.0 não muda nenhum valor gravado: só
   acrescenta campos novos quando algo for registrado (testado sobre uma base da
   1.5.2; abrir o sistema até a tela de PIN não grava nada);
