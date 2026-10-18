@@ -54,7 +54,7 @@ de gravar apenas metade de uma operação. As últimas 12 revisões ficam em
 crescimento desnecessário do banco e os períodos maiores ficam nos backups.
 
 Para leitura humana, o banco cria consultas SQLite somente leitura:
-`vw_produtos`, `vw_vendas`, `vw_itens_venda`, `vw_despesas`,
+`vw_produtos`, `vw_vendas`, `vw_itens_venda`, `vw_pagamentos_venda`, `vw_despesas`,
 `vw_movimentos_caixa`, `vw_fechamentos_caixa` e `vw_operadores`.
 
 O navegador também mantém uma cópia de recuperação em `localStorage`. No

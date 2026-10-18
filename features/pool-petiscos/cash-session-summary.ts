@@ -1,4 +1,5 @@
 import { roundMoney } from "./domain";
+import { sumSalesByPaymentMethod } from "./sale-payments";
 import type {
   CashClosure,
   CashMovement,
@@ -63,16 +64,7 @@ export function buildCashSessionSummary({
   const sessionMovements = cashMovements.filter(
     (movement) => movement.cashSessionId === closure.sessionId,
   );
-  const paymentTotals = Object.fromEntries(
-    PAYMENT_METHODS.map((payment) => [
-      payment,
-      roundMoney(
-        sessionSales
-          .filter((sale) => sale.payment === payment)
-          .reduce((total, sale) => total + sale.total, 0),
-      ),
-    ]),
-  ) as Record<PaymentMethod, number>;
+  const paymentTotals = sumSalesByPaymentMethod(sessionSales, PAYMENT_METHODS);
   const operatorMap = new Map<string, CashSessionOperatorSummary>();
   sessionSales.forEach((sale) => {
     const current = operatorMap.get(sale.operatorId) ?? {

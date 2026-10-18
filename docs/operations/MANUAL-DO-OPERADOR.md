@@ -81,6 +81,26 @@ O valor do débito ou crédito já inclui o acréscimo no caixa e nos relatório
 Mesmo assim, Pix e cartões ainda precisam ser confirmados manualmente na
 maquininha. O sistema não considera uma transação aprovada automaticamente.
 
+### Dividir o pagamento em mais de uma forma
+
+Quando o cliente quer pagar uma parte em dinheiro e outra no Pix (ou no
+cartão):
+
+1. Monte o pedido normalmente.
+2. Em **Forma de pagamento**, selecione **Dividir pagamento**.
+3. Escolha a primeira forma e digite quanto do pedido será pago nela.
+4. A última forma recebe automaticamente o **Restante**.
+5. Use **Adicionar outra forma** para dividir em até quatro formas.
+6. Se houver dinheiro, informe o valor recebido: o troco é calculado só sobre a
+   parte em dinheiro.
+
+Exemplo: pedido de R$ 30,00, com R$ 20,00 em dinheiro e o restante no Pix. O
+Pix fica com R$ 10,00. Se a segunda forma for crédito, o acréscimo de 6% vale
+somente para a parte do cartão, e a tela mostra quanto cobrar na maquininha.
+
+No fechamento do caixa e nos relatórios, cada parte é somada na sua forma de
+pagamento. Somente a parte em dinheiro entra no saldo esperado da gaveta.
+
 ## Acompanhar as comandas
 
 1. Abra **Comandas** no menu principal.
@@ -172,7 +192,9 @@ produtos, as quantidades e as observações do pedido.
 
 Vendas e suprimentos aparecem como entradas; despesas e sangrias aparecem como
 saídas. Nas vendas por débito ou crédito, a forma de pagamento mostra a taxa e
-o valor da entrada já contém o acréscimo cobrado.
+o valor da entrada já contém o acréscimo cobrado. Uma venda com pagamento
+dividido mostra cada forma com o seu valor, por exemplo
+`Dinheiro R$ 20,00 + Pix R$ 10,00`.
 
 Use **Baixar Excel** para obter uma planilha `.xlsx` com filtros, cores, fórmulas
 e totais. Use **Baixar PDF** para salvar, imprimir ou enviar um relatório pronto.

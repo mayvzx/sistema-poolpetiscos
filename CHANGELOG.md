@@ -2,6 +2,20 @@
 
 Todas as mudanças relevantes do Pool Petiscos são registradas neste arquivo.
 
+## Não publicado
+
+### Pagamento dividido
+
+- uma venda pode ser paga em até quatro formas (por exemplo, parte em dinheiro
+  e parte no Pix); a última forma recebe o restante automaticamente;
+- o acréscimo de débito/crédito incide apenas sobre a parte paga no cartão;
+- o troco é calculado sobre a parte em dinheiro, e somente ela entra no saldo
+  esperado da gaveta;
+- fechamento, painel, fluxo de caixa, Excel e PDF somam cada parte na sua
+  forma de pagamento;
+- nova consulta `vw_pagamentos_venda`; vendas antigas não são reescritas e
+  continuam lidas como uma única forma.
+
 ## 2.1.0 — 2026-09-02
 
 ### Operação e conferência
