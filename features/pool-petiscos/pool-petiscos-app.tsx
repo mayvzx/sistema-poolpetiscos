@@ -130,10 +130,17 @@ import {
   type MusicDownloadJob,
 } from "./music-companion";
 import { MusicProgress } from "./music-progress";
+import { formatSurchargePercent } from "./payment-surcharge";
 import {
-  calculateSalePricing,
-  formatSurchargePercent,
-} from "./payment-surcharge";
+  formatSalePayments,
+  MAX_PAYMENT_PARTS,
+  resolveSplitDraft,
+  saleAmountForMethod,
+  salePayments,
+  singlePaymentPricing,
+  sumSalesByPaymentMethod,
+  type PaymentDraftRow,
+} from "./sale-payments";
 import {
   checkForAppUpdate,
   type AppUpdateStatus,
@@ -193,6 +200,17 @@ import type {
   Transaction,
   View,
 } from "./types";
+
+const CHECKOUT_PAYMENT_METHODS: PaymentMethod[] = [
+  "Pix",
+  "Dinheiro",
+  "Débito",
+  "Crédito",
+];
+const INITIAL_SPLIT_ROWS: PaymentDraftRow[] = [
+  { method: "Pix", amount: "" },
+  { method: "Dinheiro", amount: "" },
+];
 
 const ORDER_STAGE_CONFIG = {
   aguardando: {
@@ -276,6 +294,11 @@ export default function PoolPetiscosApp() {
   const [category, setCategory] = useState<(typeof categories)[number]>("Todos");
   const [customerName, setCustomerName] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("Pix");
+  // Pagamento dividido: a última linha sempre recebe o restante do pedido.
+  const [splitPayment, setSplitPayment] = useState(false);
+  const [splitRows, setSplitRows] = useState<PaymentDraftRow[]>(
+    INITIAL_SPLIT_ROWS,
+  );
   const [cashReceived, setCashReceived] = useState("");
   const [ordersMode, setOrdersMode] = useState<"andamento" | "historico">(
     "andamento",
@@ -670,6 +693,8 @@ export default function PoolPetiscosApp() {
     setCart([]);
     setCustomerName("");
     setCashReceived("");
+    setSplitPayment(false);
+    setSplitRows(INITIAL_SPLIT_ROWS);
   }, []);
 
   const flushPrimaryState = useCallback(async () => {
@@ -1440,8 +1465,10 @@ export default function PoolPetiscosApp() {
   const cashSalesTotal = useMemo(
     () =>
       sessionSales
-        .filter((sale) => sale.payment === "Dinheiro")
-        .reduce((total, sale) => total + sale.total, 0),
+        .reduce(
+          (total, sale) => total + saleAmountForMethod(sale, "Dinheiro"),
+          0,
+        ),
     [sessionSales],
   );
   const cashExpenseTotal = useMemo(
@@ -1505,15 +1532,38 @@ export default function PoolPetiscosApp() {
       ),
     [cartDetails],
   );
-  const cartPricing = useMemo(
-    () => calculateSalePricing(cartTotal, paymentMethod),
+  const splitDraft = useMemo(
+    () =>
+      splitPayment
+        ? resolveSplitDraft(cartTotal, splitRows, parseAmount)
+        : null,
+    [cartTotal, splitPayment, splitRows],
+  );
+  const singlePricing = useMemo(
+    () => singlePaymentPricing(cartTotal, paymentMethod),
     [cartTotal, paymentMethod],
   );
+  // Enquanto a divisão estiver incompleta, mostra o pedido sem acréscimo.
+  const cartPricing = splitDraft
+    ? (splitDraft.pricing ?? singlePaymentPricing(cartTotal, "Pix"))
+    : singlePricing;
+  const paymentSplitError = splitDraft?.error ?? null;
+  const cashDueAmount = splitDraft
+    ? splitDraft.pricing
+      ? (splitDraft.pricing.payments.find((part) => part.method === "Dinheiro")
+          ?.amount ?? 0)
+      : 0
+    : paymentMethod === "Dinheiro"
+      ? cartPricing.total
+      : 0;
+  const cashInPayment = splitDraft
+    ? splitRows.some((row) => row.method === "Dinheiro")
+    : paymentMethod === "Dinheiro";
   const cashReceivedAmount = parseAmount(cashReceived);
   const cashPaymentInvalid =
-    paymentMethod === "Dinheiro" &&
+    cashDueAmount > 0 &&
     (!Number.isFinite(cashReceivedAmount) ||
-      cashReceivedAmount + Number.EPSILON < cartPricing.total);
+      cashReceivedAmount + Number.EPSILON < cashDueAmount);
 
   // Mantém a digitação imediata mesmo quando o catálogo crescer bastante.
   const deferredSaleSearch = useDeferredValue(saleSearch);
@@ -1559,7 +1609,7 @@ export default function PoolPetiscosApp() {
           id: sale.id,
           timestamp: sale.timestamp,
           description: `Venda ${sale.id}`,
-          detail: `${sale.items.reduce((sum, item) => sum + item.quantity, 0)} item(ns) • ${sale.payment} • ${sale.operatorName}`,
+          detail: `${sale.items.reduce((sum, item) => sum + item.quantity, 0)} item(ns) • ${formatSalePayments(sale)} • ${sale.operatorName}`,
           amount: sale.total,
           kind: "entrada" as const,
         })),
@@ -1595,19 +1645,17 @@ export default function PoolPetiscosApp() {
     [cashMovements, todayExpenses, todayKey, todaySales],
   );
 
-  const paymentTotals = useMemo(() => {
-    const totals: Record<PaymentMethod, number> = {
-      Pix: 0,
-      Dinheiro: 0,
-      Débito: 0,
-      Crédito: 0,
-      Cartão: 0,
-    };
-    todaySales.forEach((sale) => {
-      totals[sale.payment] += sale.total;
-    });
-    return totals;
-  }, [todaySales]);
+  const paymentTotals = useMemo(
+    () =>
+      sumSalesByPaymentMethod(todaySales, [
+        "Pix",
+        "Dinheiro",
+        "Débito",
+        "Crédito",
+        "Cartão",
+      ] as const),
+    [todaySales],
+  );
 
   const dateLabel = useMemo(() => {
     if (!now) return "Carregando data...";
@@ -1765,6 +1813,49 @@ export default function PoolPetiscosApp() {
     );
   }
 
+  function resetSplitPayment() {
+    setSplitPayment(false);
+    setSplitRows(INITIAL_SPLIT_ROWS);
+  }
+
+  function startSplitPayment() {
+    const second: PaymentMethod = paymentMethod === "Pix" ? "Dinheiro" : "Pix";
+    setSplitRows([
+      { method: paymentMethod, amount: "" },
+      { method: second, amount: "" },
+    ]);
+    setSplitPayment(true);
+  }
+
+  function updateSplitRow(index: number, change: Partial<PaymentDraftRow>) {
+    setSplitRows((current) =>
+      current.map((row, rowIndex) =>
+        rowIndex === index ? { ...row, ...change } : row,
+      ),
+    );
+  }
+
+  function addSplitRow() {
+    setSplitRows((current) => {
+      const used = new Set(current.map((row) => row.method));
+      const next = CHECKOUT_PAYMENT_METHODS.find((method) => !used.has(method));
+      if (!next || current.length >= MAX_PAYMENT_PARTS) return current;
+      return [...current, { method: next, amount: "" }];
+    });
+  }
+
+  function removeSplitRow(index: number) {
+    setSplitRows((current) => {
+      const next = current.filter((_, rowIndex) => rowIndex !== index);
+      if (next.length < 2) {
+        setSplitPayment(false);
+        if (next[0]) setPaymentMethod(next[0].method);
+        return INITIAL_SPLIT_ROWS;
+      }
+      return next;
+    });
+  }
+
   function finishSale() {
     if (!activeOperator) {
       showToast("Escolha o operador antes de registrar a venda.", "warning");
@@ -1788,10 +1879,14 @@ export default function PoolPetiscosApp() {
       );
       return;
     }
+    if (paymentSplitError) {
+      showToast(paymentSplitError, "warning");
+      return;
+    }
     if (cashPaymentInvalid) {
       showToast(
         Number.isFinite(cashReceivedAmount)
-          ? "O valor recebido é menor que o total da venda."
+          ? "O valor recebido é menor que a parte em dinheiro."
           : "Informe um valor recebido válido.",
         "warning",
       );
@@ -1822,7 +1917,8 @@ export default function PoolPetiscosApp() {
       surchargeRate: cartPricing.surchargeRate,
       surchargeAmount: cartPricing.surchargeAmount,
       total: cartPricing.total,
-      payment: paymentMethod,
+      payment: cartPricing.payment,
+      payments: cartPricing.payments,
       operatorId: activeOperator.id,
       operatorName: activeOperator.name,
       items,
@@ -1843,6 +1939,7 @@ export default function PoolPetiscosApp() {
     setCart([]);
     setCustomerName("");
     setCashReceived("");
+    resetSplitPayment();
     if (ordersEnabled) {
       setOrdersMode("andamento");
       navigateTo("comandas");
@@ -1990,7 +2087,7 @@ export default function PoolPetiscosApp() {
     );
     if (!sale) {
       const subtotal = roundMoney(order.subtotalCents / 100);
-      const pricing = calculateSalePricing(subtotal, selectedPaymentMethod);
+      const pricing = singlePaymentPricing(subtotal, selectedPaymentMethod);
       const timestamp = Date.now();
       sale = {
         id: createRecordId("PV"),
@@ -2001,6 +2098,7 @@ export default function PoolPetiscosApp() {
         surchargeAmount: pricing.surchargeAmount,
         total: pricing.total,
         payment: selectedPaymentMethod,
+        payments: pricing.payments,
         operatorId: activeOperator.id,
         operatorName: activeOperator.name,
         items: order.items.map((item) => ({
@@ -2038,7 +2136,9 @@ export default function PoolPetiscosApp() {
       }
     }
 
-    const mutationKey = `${order.id}:${order.version}:complete:${sale.id}:${sale.payment}`;
+    // Pedidos online são sempre registrados com uma única forma de pagamento.
+    const onlinePaymentMethod = salePayments(sale)[0].method;
+    const mutationKey = `${order.id}:${order.version}:complete:${sale.id}:${onlinePaymentMethod}`;
     const localMutationId =
       onlineOrderMutationsRef.current.get(mutationKey) ??
       createOnlineMutationId();
@@ -2050,7 +2150,7 @@ export default function PoolPetiscosApp() {
         action: "complete",
         localMutationId,
         localSaleId: sale.id,
-        paymentMethod: sale.payment,
+        paymentMethod: onlinePaymentMethod,
       });
       onlineOrderMutationsRef.current.delete(mutationKey);
       await refreshOnlineOrders(false);
@@ -2192,7 +2292,7 @@ export default function PoolPetiscosApp() {
 
           <div className="mt-3 flex items-center justify-between gap-3 text-sm">
             <span className="font-semibold text-[#776f6b]">
-              {itemCount} item(ns) • Pagamento: {sale.payment}
+              {itemCount} item(ns) • Pagamento: {formatSalePayments(sale)}
             </span>
             <strong className="text-base">{currency.format(sale.total)}</strong>
           </div>
@@ -2513,6 +2613,7 @@ export default function PoolPetiscosApp() {
     setCart([]);
     setCashReceived("");
     setPaymentMethod("Pix");
+    resetSplitPayment();
     setModal(null);
     showToast(`Caixa aberto com ${currency.format(amount)}.`, "info");
   }
@@ -2579,6 +2680,7 @@ export default function PoolPetiscosApp() {
     setCart([]);
     setCashReceived("");
     setPaymentMethod("Pix");
+    resetSplitPayment();
     setModal(null);
     if (closing.fundShortfall > 0) {
       showToast(
@@ -3719,36 +3821,149 @@ export default function PoolPetiscosApp() {
                       </strong>
                     </span>
                   </label>
-                  <span className="text-[9px] font-extrabold uppercase tracking-[.13em] text-[#9c928d]">
-                    Forma de pagamento
-                  </span>
-                  <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                    {[
-                      { id: "Pix" as const, icon: QrCode },
-                      { id: "Dinheiro" as const, icon: Banknote },
-                      { id: "Débito" as const, icon: CreditCard },
-                      { id: "Crédito" as const, icon: CreditCard },
-                    ].map((method) => {
-                      const Icon = method.icon;
-                      return (
-                        <button
-                          key={method.id}
-                          type="button"
-                          onClick={() => setPaymentMethod(method.id)}
-                          aria-pressed={paymentMethod === method.id}
-                          className={`flex min-h-16 flex-col items-center justify-center gap-1 rounded-xl border text-[9px] font-extrabold transition ${
-                            paymentMethod === method.id
-                              ? "border-[#d9202c] bg-[#fff0f1] text-[#d9202c]"
-                              : "border-[#ebe5e1] text-[#776f6b]"
-                          }`}
-                        >
-                          <Icon size={18} />
-                          {method.id}
-                        </button>
-                      );
-                    })}
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-[9px] font-extrabold uppercase tracking-[.13em] text-[#9c928d]">
+                      Forma de pagamento
+                    </span>
+                    <button
+                      type="button"
+                      onClick={splitPayment ? resetSplitPayment : startSplitPayment}
+                      aria-pressed={splitPayment}
+                      data-testid="toggle-split-payment"
+                      className="rounded-lg px-2 py-1 text-[10px] font-extrabold text-[#d9202c] transition hover:bg-[#fff0f1]"
+                    >
+                      {splitPayment ? "Usar uma forma só" : "Dividir pagamento"}
+                    </button>
                   </div>
-                  {cartPricing.surchargeRate > 0 && (
+                  {!splitPayment && (
+                    <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                      {[
+                        { id: "Pix" as const, icon: QrCode },
+                        { id: "Dinheiro" as const, icon: Banknote },
+                        { id: "Débito" as const, icon: CreditCard },
+                        { id: "Crédito" as const, icon: CreditCard },
+                      ].map((method) => {
+                        const Icon = method.icon;
+                        return (
+                          <button
+                            key={method.id}
+                            type="button"
+                            onClick={() => setPaymentMethod(method.id)}
+                            aria-pressed={paymentMethod === method.id}
+                            className={`flex min-h-16 flex-col items-center justify-center gap-1 rounded-xl border text-[9px] font-extrabold transition ${
+                              paymentMethod === method.id
+                                ? "border-[#d9202c] bg-[#fff0f1] text-[#d9202c]"
+                                : "border-[#ebe5e1] text-[#776f6b]"
+                            }`}
+                          >
+                            <Icon size={18} />
+                            {method.id}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {splitPayment && (
+                    <div className="mt-2 space-y-2" data-testid="split-payment">
+                      {splitRows.map((row, index) => {
+                        const isLast = index === splitRows.length - 1;
+                        const part = splitDraft?.pricing?.payments[index];
+                        const usedElsewhere = new Set(
+                          splitRows
+                            .filter((_, rowIndex) => rowIndex !== index)
+                            .map((other) => other.method),
+                        );
+                        return (
+                          <div
+                            key={index}
+                            className="rounded-xl border border-[#ebe5e1] p-2"
+                          >
+                            <div className="flex items-center gap-2">
+                              <select
+                                value={row.method}
+                                onChange={(event) =>
+                                  updateSplitRow(index, {
+                                    method: event.target.value as PaymentMethod,
+                                  })
+                                }
+                                aria-label={`Forma de pagamento ${index + 1}`}
+                                className="h-11 min-w-0 flex-1 rounded-lg border border-[#ded7d2] bg-white px-2 text-sm font-bold outline-none focus:border-[#d9202c]"
+                              >
+                                {CHECKOUT_PAYMENT_METHODS.map((method) => (
+                                  <option
+                                    key={method}
+                                    value={method}
+                                    disabled={usedElsewhere.has(method)}
+                                  >
+                                    {method}
+                                  </option>
+                                ))}
+                              </select>
+                              {isLast ? (
+                                <span className="flex h-11 w-32 shrink-0 flex-col justify-center rounded-lg bg-[#f7f5f2] px-3 text-right">
+                                  <small className="text-[9px] font-bold text-[#8d8581]">
+                                    Restante
+                                  </small>
+                                  <strong className="text-sm">
+                                    {currency.format(
+                                      Math.max(0, splitDraft?.remaining ?? 0),
+                                    )}
+                                  </strong>
+                                </span>
+                              ) : (
+                                <input
+                                  value={row.amount}
+                                  onChange={(event) =>
+                                    updateSplitRow(index, {
+                                      amount: event.target.value,
+                                    })
+                                  }
+                                  inputMode="decimal"
+                                  placeholder="R$ 0,00"
+                                  aria-label={`Valor do pedido pago em ${row.method}`}
+                                  className="h-11 w-32 shrink-0 rounded-lg border border-[#ded7d2] px-3 text-right text-base font-bold outline-none focus:border-[#d9202c] focus:ring-4 focus:ring-[#d9202c]/10"
+                                />
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => removeSplitRow(index)}
+                                aria-label={`Remover ${row.method}`}
+                                className="flex h-11 w-9 shrink-0 items-center justify-center rounded-lg text-[#9c928d] transition hover:bg-[#fff0f1] hover:text-[#d9202c]"
+                              >
+                                <X size={16} />
+                              </button>
+                            </div>
+                            {part && part.surchargeAmount > 0 && (
+                              <p className="mt-1 px-1 text-[10px] font-bold leading-4 text-[#8d6100]">
+                                Cobrar {currency.format(part.amount)} no{" "}
+                                {row.method.toLocaleLowerCase("pt-BR")} (inclui{" "}
+                                {formatSurchargePercent(part.surchargeRate)} de
+                                acréscimo: {currency.format(part.surchargeAmount)})
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })}
+                      {splitRows.length < MAX_PAYMENT_PARTS && (
+                        <button
+                          type="button"
+                          onClick={addSplitRow}
+                          className="flex h-10 w-full items-center justify-center gap-1 rounded-xl border border-dashed border-[#ded7d2] text-[10px] font-extrabold text-[#776f6b] transition hover:border-[#d9202c] hover:text-[#d9202c]"
+                        >
+                          <Plus size={14} /> Adicionar outra forma
+                        </button>
+                      )}
+                      {paymentSplitError && cartDetails.length > 0 && (
+                        <p
+                          role="alert"
+                          className="text-[10px] font-bold text-[#b41622]"
+                        >
+                          {paymentSplitError}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {!splitPayment && cartPricing.surchargeRate > 0 && (
                     <div
                       className="mt-3 rounded-2xl border border-[#f0cf93] bg-[#fff8de] p-4 text-[#704d00]"
                       role="status"
@@ -3766,10 +3981,16 @@ export default function PoolPetiscosApp() {
                       </p>
                     </div>
                   )}
-                  {paymentMethod === "Dinheiro" && (
+                  {cashInPayment && (
                     <label className="mt-3 block">
                       <span className="mb-1.5 block text-sm font-extrabold text-[#5f5753]">
-                        Valor recebido
+                        {splitDraft
+                          ? `Valor recebido em dinheiro${
+                              cashDueAmount > 0
+                                ? ` (parte: ${currency.format(cashDueAmount)})`
+                                : ""
+                            }`
+                          : "Valor recebido"}
                       </span>
                       <input
                         value={cashReceived}
@@ -3779,8 +4000,8 @@ export default function PoolPetiscosApp() {
                         className="h-12 w-full rounded-xl border border-[#ded7d2] px-4 text-lg font-bold outline-none transition focus:border-[#d9202c] focus:ring-4 focus:ring-[#d9202c]/10"
                       />
                       {Number.isFinite(cashReceivedAmount) &&
-                        cashReceivedAmount >= cartPricing.total &&
-                        cartPricing.total > 0 && (
+                        cashReceivedAmount >= cashDueAmount &&
+                        cashDueAmount > 0 && (
                           <span
                             className="pool-emphasis mt-3 block rounded-2xl border-2 border-[#9bd0b6] bg-[#eaf8f1] p-4 text-[#185c3e] shadow-[0_10px_24px_rgba(39,134,93,.12)]"
                             role="status"
@@ -3791,7 +4012,7 @@ export default function PoolPetiscosApp() {
                             </span>
                             <strong className="mt-1 block text-3xl font-black tracking-[-.04em] sm:text-4xl">
                               {currency.format(
-                                roundMoney(cashReceivedAmount - cartPricing.total),
+                                roundMoney(cashReceivedAmount - cashDueAmount),
                               )}
                             </strong>
                           </span>
@@ -3799,7 +4020,9 @@ export default function PoolPetiscosApp() {
                       {cashReceived.trim() && cashPaymentInvalid && (
                         <span className="mt-1 block text-[10px] font-bold text-[#b41622]">
                           {Number.isFinite(cashReceivedAmount)
-                            ? "O valor ainda não cobre o pedido."
+                            ? splitDraft
+                              ? "O valor ainda não cobre a parte em dinheiro."
+                              : "O valor ainda não cobre o pedido."
                             : "Use um valor como 50,00."}
                         </span>
                       )}
@@ -3841,7 +4064,7 @@ export default function PoolPetiscosApp() {
                     type="button"
                     onClick={finishSale}
                     data-testid="finish-sale"
-                    disabled={!cartDetails.length || !cashOpen}
+                    disabled={!cartDetails.length || !cashOpen || Boolean(paymentSplitError)}
                     className="pool-primary-action mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-transparent bg-[#d9202c] px-4 text-xs font-extrabold text-white shadow-[0_10px_22px_rgba(217,32,44,.22)] transition hover:bg-[#b41622] disabled:cursor-not-allowed"
                   >
                     <Check size={18} />

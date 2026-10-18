@@ -21,6 +21,7 @@ READABLE_VIEWS = {
     "vendas": "vw_vendas",
     "comandas": "vw_comandas",
     "itens-venda": "vw_itens_venda",
+    "pagamentos-venda": "vw_pagamentos_venda",
     "despesas": "vw_despesas",
     "movimentos-caixa": "vw_movimentos_caixa",
     "fechamentos-caixa": "vw_fechamentos_caixa",

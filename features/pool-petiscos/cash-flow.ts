@@ -8,6 +8,7 @@ import {
   formatSurchargePercent,
   salePricing,
 } from "./payment-surcharge";
+import { salePayments } from "./sale-payments";
 import type { CashMovement, Expense, PaymentMethod, Sale } from "./types";
 
 export type CashFlowMovement = "Entrada" | "Saída";
@@ -20,6 +21,8 @@ export type CashFlowEntry = {
   description: string;
   details: string;
   payment: string;
+  /** Quanto entrou em cada forma; numa venda mista há mais de uma parte. */
+  paymentParts: { method: PaymentMethod; amount: number }[];
   amount: number;
   observation: string;
   source: "sale" | "expense" | "cash-movement";
@@ -90,10 +93,15 @@ export function formatSaleItems(sale: Sale) {
 }
 
 function salePaymentDescription(sale: Sale) {
-  const pricing = salePricing(sale);
-  return pricing.surchargeRate > 0
-    ? `${sale.payment} (+${formatSurchargePercent(pricing.surchargeRate)})`
-    : sale.payment;
+  const parts = salePayments(sale);
+  const describe = (part: (typeof parts)[number]) =>
+    part.surchargeRate > 0
+      ? `${part.method} (+${formatSurchargePercent(part.surchargeRate)})`
+      : part.method;
+  if (parts.length === 1) return describe(parts[0]);
+  return parts
+    .map((part) => `${describe(part)} ${currency.format(part.amount)}`)
+    .join(" + ");
 }
 
 export function formatReportDateKey(key: string) {
@@ -148,6 +156,10 @@ export function buildCashFlowEntries({
           : `Venda ${sale.id}`,
         details: formatSaleItems(sale),
         payment: salePaymentDescription(sale),
+        paymentParts: salePayments(sale).map((part) => ({
+          method: part.method,
+          amount: part.amount,
+        })),
         amount: roundMoney(sale.total),
         observation:
           pricing.surchargeAmount > 0
@@ -165,6 +177,9 @@ export function buildCashFlowEntries({
       description: expense.description,
       details: expense.category,
       payment: expense.payment,
+      paymentParts: [
+        { method: expense.payment, amount: roundMoney(expense.amount) },
+      ],
       amount: roundMoney(expense.amount),
       observation: "Despesa registrada",
       source: "expense",
@@ -179,6 +194,9 @@ export function buildCashFlowEntries({
           ? "Suprimento de caixa"
           : "Sangria de caixa",
       payment: "Dinheiro",
+      paymentParts: [
+        { method: "Dinheiro", amount: roundMoney(movement.amount) },
+      ],
       amount: roundMoney(movement.amount),
       observation: "Movimento de caixa",
       source: "cash-movement",
@@ -253,8 +271,9 @@ export function buildCashFlowReport(
       payment,
       roundMoney(
         saleEntries
-          .filter((entry) => entry.payment === payment || entry.payment.startsWith(`${payment} `))
-          .reduce((total, entry) => total + entry.amount, 0),
+          .flatMap((entry) => entry.paymentParts)
+          .filter((part) => part.method === payment)
+          .reduce((total, part) => total + part.amount, 0),
       ),
     ]),
   ) as Record<PaymentMethod, number>;

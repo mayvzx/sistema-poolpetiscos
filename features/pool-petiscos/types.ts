@@ -15,6 +15,22 @@ export type PaymentMethod =
   | "Crédito"
   | "Cartão";
 
+/** Rótulo de pagamento da venda: uma forma única ou "Misto" quando dividida. */
+export type SalePaymentLabel = PaymentMethod | "Misto";
+
+/**
+ * Parte de uma venda paga em uma forma. `baseAmount` é a fatia do subtotal dos
+ * itens; o acréscimo do cartão incide somente sobre ela; `amount` é o que o
+ * cliente pagou nessa forma (base + acréscimo).
+ */
+export type SalePaymentPart = {
+  method: PaymentMethod;
+  baseAmount: number;
+  surchargeRate: number;
+  surchargeAmount: number;
+  amount: number;
+};
+
 export type OperatorId = "elaine" | "poolblay";
 
 export type OperatorCredential = {
@@ -79,7 +95,9 @@ export type Sale = {
   surchargeRate?: number;
   surchargeAmount?: number;
   total: number;
-  payment: PaymentMethod;
+  payment: SalePaymentLabel;
+  /** Ausente nas vendas anteriores ao pagamento dividido (uma única forma). */
+  payments?: SalePaymentPart[];
   operatorId: SaleOperatorId;
   operatorName: string;
   items: SaleItem[];

@@ -14,10 +14,13 @@ import type {
   Sale,
   SaleItem,
   SaleOperatorId,
+  SalePaymentPart,
   SaleServiceMode,
 } from "./types";
 import { DEFAULT_CASH_FUND, roundMoney } from "./domain";
 import { operatorNameForSale } from "./operators";
+import { surchargeRateForPayment } from "./payment-surcharge";
+import { MAX_PAYMENT_PARTS, MIXED_PAYMENT_LABEL } from "./sale-payments";
 
 export const STORAGE_KEY = "pool-petiscos-state-v1.5.2";
 export const BACKUP_VERSION = 1;
@@ -77,6 +80,89 @@ function isPaymentMethod(value: unknown): value is PaymentMethod {
   return typeof value === "string" && PAYMENT_METHODS.has(value as PaymentMethod);
 }
 
+function isSalePaymentLabel(value: unknown) {
+  return value === MIXED_PAYMENT_LABEL || isPaymentMethod(value);
+}
+
+function parseSalePaymentPart(value: unknown): SalePaymentPart | null {
+  if (
+    !isRecord(value) ||
+    !isPaymentMethod(value.method) ||
+    !isNonNegativeMoney(value.baseAmount) ||
+    value.baseAmount <= 0 ||
+    !isFiniteNumber(value.surchargeRate) ||
+    !isNonNegativeMoney(value.surchargeAmount) ||
+    !isNonNegativeMoney(value.amount)
+  ) {
+    return null;
+  }
+  const baseAmount = roundMoney(value.baseAmount);
+  const surchargeAmount = roundMoney(value.surchargeAmount);
+  const amount = roundMoney(value.amount);
+  // A taxa de cada parte segue a regra da forma usada, preservada na venda.
+  const allowedRate =
+    value.method === "Débito" || value.method === "Crédito"
+      ? value.surchargeRate >= 0 && value.surchargeRate <= 0.5
+      : value.surchargeRate === 0;
+  if (
+    !allowedRate ||
+    Math.abs(roundMoney(baseAmount * value.surchargeRate) - surchargeAmount) >
+      0.005 ||
+    Math.abs(roundMoney(baseAmount + surchargeAmount) - amount) > 0.005
+  ) {
+    return null;
+  }
+  return {
+    method: value.method,
+    baseAmount,
+    surchargeRate: value.surchargeRate,
+    surchargeAmount,
+    amount,
+  };
+}
+
+/**
+ * Valida as partes de uma venda com pagamento dividido. Retorna `undefined`
+ * para vendas antigas (sem partes), `null` para partes inconsistentes.
+ */
+function parseSalePayments(
+  value: Record<string, unknown>,
+  subtotal: number,
+  surchargeAmount: number,
+): SalePaymentPart[] | undefined | null {
+  if (value.payments === undefined) {
+    return value.payment === MIXED_PAYMENT_LABEL ? null : undefined;
+  }
+  if (
+    !Array.isArray(value.payments) ||
+    value.payments.length === 0 ||
+    value.payments.length > MAX_PAYMENT_PARTS
+  ) {
+    return null;
+  }
+  const parts = value.payments.map(parseSalePaymentPart);
+  if (parts.some((part) => part === null)) return null;
+  const payments = parts as SalePaymentPart[];
+  const methods = new Set(payments.map((part) => part.method));
+  const expectedLabel =
+    payments.length === 1 ? payments[0].method : MIXED_PAYMENT_LABEL;
+  const paidBase = roundMoney(
+    payments.reduce((total, part) => total + part.baseAmount, 0),
+  );
+  const paidSurcharge = roundMoney(
+    payments.reduce((total, part) => total + part.surchargeAmount, 0),
+  );
+  if (
+    methods.size !== payments.length ||
+    value.payment !== expectedLabel ||
+    Math.abs(paidBase - subtotal) > 0.005 ||
+    Math.abs(paidSurcharge - surchargeAmount) > 0.005
+  ) {
+    return null;
+  }
+  return payments;
+}
+
 function parseProduct(value: unknown): Product | null {
   if (
     !isRecord(value) ||
@@ -134,7 +220,7 @@ function parseSale(value: unknown): Sale | null {
     !isNonEmptyString(value.id) ||
     !isTimestamp(value.timestamp) ||
     !isNonNegativeMoney(value.total) ||
-    !isPaymentMethod(value.payment) ||
+    !isSalePaymentLabel(value.payment) ||
     !Array.isArray(value.items) ||
     value.items.length === 0
   ) {
@@ -174,21 +260,30 @@ function parseSale(value: unknown): Sale | null {
     subtotal = roundMoney(value.subtotal);
     surchargeRate = value.surchargeRate;
     surchargeAmount = roundMoney(value.surchargeAmount);
+    // Na venda mista a taxa da venda é só informativa: o acréscimo é
+    // calculado e validado por parte, em parseSalePayments.
+    const mixed = value.payment === MIXED_PAYMENT_LABEL;
     if (
       Math.abs(itemTotal - subtotal) > 0.005 ||
-      Math.abs(
-        roundMoney(subtotal * surchargeRate) - surchargeAmount,
-      ) > 0.005 ||
-      ((value.payment !== "Débito" && value.payment !== "Crédito") &&
+      (!mixed &&
+        Math.abs(
+          roundMoney(subtotal * surchargeRate) - surchargeAmount,
+        ) > 0.005) ||
+      (!mixed &&
+        surchargeRateForPayment(value.payment as PaymentMethod) === 0 &&
         (surchargeRate > 0 || surchargeAmount > 0))
     ) {
       return null;
     }
+  } else if (value.payment === MIXED_PAYMENT_LABEL) {
+    return null;
   }
   const total = roundMoney(value.total);
   if (Math.abs(roundMoney(subtotal + surchargeAmount) - total) > 0.005) {
     return null;
   }
+  const payments = parseSalePayments(value, subtotal, surchargeAmount);
+  if (payments === null) return null;
   const customerName = isNonEmptyString(value.customerName)
     ? value.customerName.trim()
     : "Cliente sem nome";
@@ -248,6 +343,7 @@ function parseSale(value: unknown): Sale | null {
     surchargeRate,
     surchargeAmount,
     total,
+    ...(payments ? { payments } : {}),
     items: items as SaleItem[],
     customerName,
     ...(source ? { source } : {}),

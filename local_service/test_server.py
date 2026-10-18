@@ -775,6 +775,100 @@ class StateStorageTest(unittest.TestCase):
                     ).fetchone(),
                     (152.0, 152.0, 0.0, 130.0, 22.0, 130.0),
                 )
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT forma_pagamento, valor_base, "
+                        "acrescimo_percentual, acrescimo_valor, valor_pago "
+                        "FROM vw_pagamentos_venda"
+                    ).fetchall(),
+                    [("Crédito", 37.0, 6.0, 2.22, 39.22)],
+                )
+
+    def test_accepts_split_payment_and_keeps_legacy_sales(self) -> None:
+        def sale(sale_id: str, **fields: object) -> dict[str, object]:
+            return {
+                "id": sale_id,
+                "timestamp": 1_700_000_000_000,
+                "operatorId": "elaine",
+                "customerName": "Cliente",
+                "serviceMode": "venda-direta",
+                "orderStatus": "entregue",
+                "statusUpdatedAt": 1_700_000_000_000,
+                "items": [
+                    {"productId": "coxinha", "name": "Coxinha", "price": 6, "quantity": 2},
+                    {"productId": "pastel", "name": "Pastel", "price": 9, "quantity": 2},
+                ],
+                **fields,
+            }
+
+        legacy = sale("V-ANTIGA", total=30, payment="Dinheiro")
+        mixed = sale(
+            "V-MISTA",
+            subtotal=30,
+            surchargeRate=0.04,
+            surchargeAmount=1.2,
+            total=31.2,
+            payment="Misto",
+            payments=[
+                {
+                    "method": "Dinheiro",
+                    "baseAmount": 10,
+                    "surchargeRate": 0,
+                    "surchargeAmount": 0,
+                    "amount": 10,
+                },
+                {
+                    "method": "Crédito",
+                    "baseAmount": 20,
+                    "surchargeRate": 0.06,
+                    "surchargeAmount": 1.2,
+                    "amount": 21.2,
+                },
+            ],
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            storage = self._storage(Path(directory))
+            state = minimal_pool_state()
+            state["sales"] = [legacy, mixed]
+            storage.save(state, 0)
+            with closing(sqlite3.connect(storage.database_path)) as connection:
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT venda_id, forma_pagamento, valor_pago "
+                        "FROM vw_pagamentos_venda ORDER BY venda_id, forma_pagamento"
+                    ).fetchall(),
+                    [
+                        ("V-ANTIGA", "Dinheiro", 30.0),
+                        ("V-MISTA", "Crédito", 21.2),
+                        ("V-MISTA", "Dinheiro", 10.0),
+                    ],
+                )
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT forma_pagamento, total FROM vw_vendas "
+                        "WHERE id = 'V-MISTA'"
+                    ).fetchone(),
+                    ("Misto", 31.2),
+                )
+
+            tampered_cases = []
+            wrong_sum = json.loads(json.dumps(mixed))
+            wrong_sum["payments"][0].update(baseAmount=5, amount=5)
+            tampered_cases.append(wrong_sum)
+            pix_with_surcharge = json.loads(json.dumps(mixed))
+            pix_with_surcharge["payments"][0].update(
+                method="Pix", surchargeRate=0.06, surchargeAmount=0.6, amount=10.6
+            )
+            tampered_cases.append(pix_with_surcharge)
+            without_parts = json.loads(json.dumps(mixed))
+            del without_parts["payments"]
+            tampered_cases.append(without_parts)
+            for tampered in tampered_cases:
+                invalid = minimal_pool_state()
+                invalid["sales"] = [tampered]
+                with self.assertRaises(ValueError):
+                    storage.save(invalid, 1)
+            self.assertEqual(storage.read().revision, 1)
 
 
 class StateApiTest(unittest.TestCase):
